@@ -2192,6 +2192,24 @@ button:disabled { cursor: not-allowed; opacity: 0.48; }
   background: transparent;
   cursor: grab;
 }
+/* Keep hit areas stationary while cards lift and fan out. The upper strip
+   allows horizontal browsing across raised cards; outer slots include the
+   exposed ends of the hand. Pseudo-elements belong to the draggable button. */
+.component-palette .deck-hover-button::before {
+  content: "";
+  position: absolute;
+  top: -26px;
+  bottom: -10px;
+  left: 0;
+  right: 0;
+}
+.component-palette .deck-hover-slot:first-child .deck-hover-button::before { left: min(0px, calc(50% - 70px)); }
+.component-palette .deck-hover-slot:last-child .deck-hover-button::before { right: min(0px, calc(50% - 70px)); }
+.component-palette .palette-items,
+.component-palette .palette-items * {
+  -webkit-user-select: none;
+  user-select: none;
+}
 .component-palette .deck-hover-button:active { cursor: grabbing; }
 .component-palette .deck-hover-button:disabled { cursor: default; }
 .component-palette .deck-hover-slot .palette-item {
