@@ -16,7 +16,7 @@ const ring = part(/<circle[^>]+r="449"[^>]*\/>/);
 const headX = Number(head.match(/cx="([\d.]+)"/)![1]);
 const headY = Number(head.match(/cy="([\d.]+)"/)![1]);
 const headRadius = Number(head.match(/r="([\d.]+)"/)![1]);
-const ink = head.match(/fill="([^"]+)"/)![1];
+const ink = 'var(--ink)';
 const scale = headRadius / 9;
 const rest = rigGeometry(REST);
 

@@ -17,8 +17,11 @@
 .tutorial-mascot { width: 92px; height: 92px; transform-origin: 50% 75%; transition: width .85s, height .85s; }
 .is-logo .tutorial-mascot { width: 160px; height: 160px; }
 .oaw-guide-art { display: block; width: 100%; height: 100%; overflow: visible; filter: drop-shadow(0 2px 2px var(--shadow)); }
+.oaw-guide-art [data-rig="profile"] > path { fill: var(--ink); }
+.oaw-guide-art linearGradient stop { stop-color: var(--accent); }
+.oaw-guide-art linearGradient stop:first-child { stop-color: color-mix(in srgb, var(--accent) 65%, var(--ink)); }
+.oaw-guide-art linearGradient stop:last-child { stop-color: var(--accent-strong); }
 .is-logo .oaw-guide-art { filter: none; }
-:root[data-theme="dark"] .tutorial-mascot .oaw-guide-art { filter: drop-shadow(0 0 1px #a4bad3) drop-shadow(0 2px 2px var(--shadow)); }
 .tutorial-bubble { position: absolute; width: 256px; max-width: calc(100vw - 32px); bottom: calc(100% + 9px); left: 0; border: 1px solid var(--line-strong); border-radius: 16px 16px 16px 5px; background: var(--surface-raised); box-shadow: var(--panel-shadow); padding: 12px 14px 10px; pointer-events: auto; }
 .tutorial-bubble::after { content: ''; position: absolute; bottom: -8px; left: 44px; width: 13px; height: 13px; background: var(--surface-raised); border-right: 1px solid var(--line-strong); border-bottom: 1px solid var(--line-strong); transform: skewY(25deg) rotate(25deg); }
 .tutorial-bubble header { display: flex; align-items: center; gap: 3px; margin-bottom: 7px; }

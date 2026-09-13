@@ -19,7 +19,7 @@ it('keeps the canonical welcome logo, then exposes two skinned legs and one circ
     rerender(<OawGuide motion={motion} />);
     const head = container.querySelector('[data-rig="head"]');
     expect(head?.getAttribute('r')).toBe('81');
-    expect(head?.getAttribute('fill')).toBe('#192638');
+    expect(head?.getAttribute('fill')).toBe('var(--ink)');
     expect(head?.getAttribute('cx')).toBe('627');
     expect(container.querySelectorAll('[data-rig="left-leg"], [data-rig="right-leg"]')).toHaveLength(2);
     expect(container.querySelector('[data-rig="front"]')?.getAttribute('opacity')).toBe('1');
