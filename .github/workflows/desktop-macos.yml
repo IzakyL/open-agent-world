@@ -1,0 +1,32 @@
+name: Build macOS desktop preview
+on:
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: macos-14
+            arch: arm64
+          - runner: macos-15-intel
+            arch: x86_64
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - uses: astral-sh/setup-uv@v6
+      - name: Install Rust
+        run: rustup toolchain install stable --profile minimal && rustup default stable
+      - name: Build and verify app
+        run: bash scripts/build-desktop.sh
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Open-Agent-World-macos-${{ matrix.arch }}
+          path: desktop/src-tauri/target/release/bundle/dmg/*.dmg
+          if-no-files-found: error

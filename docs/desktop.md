@@ -105,6 +105,34 @@ The payload starts with the interpreter and standard library from the build mach
 
 The build retains previous payloads under `.open-agent-world/desktop-previous-*` until manually removed. `-SkipFrontend` and `-SkipPayload` are available when rebuilding only the desktop shell; use them only when those inputs have not changed. The initial package is unsigned; no certificate, publishing destination, or automatic update service is configured.
 
+## Build a macOS preview installer
+
+On a Mac with Xcode Command Line Tools, Rust, Node.js 20+, uv and Python 3.11+, run:
+
+```bash
+bash scripts/build-desktop.sh
+```
+
+The script downloads a standalone Python 3.12 runtime, installs locked backend
+dependencies, and builds an `.app` and `.dmg` for the build machine's architecture.
+It tests the bundled Python and plugins again from inside the completed `.app`,
+and verifies the application signature. Outputs are under
+`desktop/src-tauri/target/release/bundle/macos/` and `bundle/dmg/`.
+End users open the DMG and drag **Open Agent World** to **Applications**; they do
+not need Python, Node or uv. Local Sandbox execution remains unsupported on macOS.
+
+The **Build macOS desktop preview** GitHub Actions workflow can be run manually
+to build separate Apple Silicon (`arm64`) and Intel (`x86_64`) DMG artifacts on
+native macOS runners. Download the matching artifact from the completed run.
+The workflow only uploads build artifacts; it does not publish a release.
+
+These are preview builds with ad-hoc signing, not notarized public releases.
+macOS may block downloaded previews. Distribution to ordinary users still needs
+Developer ID signing, Apple notarization, and installation/UI acceptance on a
+clean Mac. See [Tauri macOS signing](https://v2.tauri.app/distribute/sign/macos/).
+The deployment target is macOS 12; actual compatibility of bundled native Python
+wheels must be verified on the oldest supported OS before claiming support.
+
 ## Verification
 
 ```powershell
