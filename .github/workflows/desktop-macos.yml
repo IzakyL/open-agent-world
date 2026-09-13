@@ -1,6 +1,8 @@
 name: Build macOS desktop preview
 on:
   workflow_dispatch:
+  push:
+    branches: [codex/macos-desktop-preview]
 permissions:
   contents: read
 jobs:
