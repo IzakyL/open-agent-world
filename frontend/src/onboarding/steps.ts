@@ -1,11 +1,12 @@
 import type { WorldCard, WorldEdge, FlowViewportState } from '../types/world';
 import type { NodeSurfaceLevel } from '../state/nodeSurfaces';
 import type { GlueBond } from '../state/glue';
+import type { LibrarySnapshot } from '../state/cardLibrary';
 import type { WorldInteraction } from '../state/interactions';
 
 export type Role = 'demo' | 'practice' | 'agent' | 'conversation' | 'sandbox' | 'glueA' | 'glueB' | 'minister';
-export type Target = Role | 'center' | 'terrain' | 'deck' | 'tools' | 'zoom-controls' | 'settings' | 'model-connection' | 'model-credentials' | 'model-list' | 'model-save';
-export type Demonstration = 'deck' | 'place' | 'connect' | 'glue' | 'unglue' | 'minister';
+export type Target = Role | 'center' | 'terrain' | 'deck' | 'tools' | 'zoom-controls' | 'library' | 'library-pack' | 'library-decks' | 'settings' | 'model-connection' | 'model-credentials' | 'model-list' | 'model-save';
+export type Demonstration = 'library' | 'deck' | 'place' | 'connect' | 'glue' | 'unglue' | 'minister';
 export interface TutorialStep {
   id: string;
   chapter: number;
@@ -14,7 +15,7 @@ export interface TutorialStep {
   target: Target;
   action?: Demonstration;
   button?: string;
-  expects?: 'settings-open' | 'model-connection' | 'models-saved' | 'pan' | 'zoom' | 'place' | 'move' | 'select' | 'open' | 'close' | 'focus' | 'delete' | 'configure' | 'workspace' | 'message' | 'connect' | 'glue' | 'presence';
+  expects?: 'library-open' | 'pack-open' | 'library-cards' | 'deck-ready' | 'settings-open' | 'model-connection' | 'models-saved' | 'pan' | 'zoom' | 'place' | 'move' | 'select' | 'open' | 'close' | 'focus' | 'delete' | 'configure' | 'workspace' | 'message' | 'connect' | 'glue' | 'presence';
   role?: Role;
   optional?: string;
   review?: boolean;
@@ -25,7 +26,10 @@ export const STEPS: readonly TutorialStep[] = [
   { id: 'enter', chapter: 0, dialogue: 'Oh, hello! There’s a whole world beyond this little ring. Come explore with me.', target: 'center', button: 'Let’s go' },
   { id: 'pan', chapter: 0, dialogue: 'Follow me over here. Drag an empty patch of canvas to move around.', hint: 'Drag the background, away from cards.', target: 'terrain', expects: 'pan' },
   { id: 'zoom', chapter: 0, dialogue: 'A little closer… or a little further. Scroll to zoom. The + and − buttons work too.', target: 'zoom-controls', expects: 'zoom' },
-  { id: 'deck', chapter: 1, dialogue: 'Cards come from packs, then live in your deck. Let’s collect the essentials and add them to your active deck.', target: 'deck', action: 'deck', button: 'Prepare my deck' },
+  { id: 'deck', chapter: 1, dialogue: 'Let’s prepare your hand together. Open the Library here to find your first pack.', target: 'library', expects: 'library-open', action: 'library', button: 'Open Library' },
+  { id: 'starter-pack', chapter: 1, dialogue: 'This pack contains the essentials. Click it to tear it open and collect its cards.', target: 'library-pack', expects: 'pack-open' },
+  { id: 'starter-cards', chapter: 1, dialogue: 'Your cards are collected! Click the opened wrapper to browse them.', target: 'library-pack', expects: 'library-cards' },
+  { id: 'deck-build', chapter: 1, dialogue: 'Drag Text, Agent, Conversation and Sandbox into a deck on the right. You can create a new deck there, too.', hint: 'You can also click Add to… and choose a destination.', target: 'library-decks', expects: 'deck-ready', review: true, button: 'Use this deck' },
   { id: 'place-demo', chapter: 1, dialogue: 'Watch this Text card travel from the deck into the world. This one is my temporary prop.', target: 'deck', action: 'place', button: 'Show me' },
   { id: 'place', chapter: 1, dialogue: 'Your turn! Drag a Text card from the deck onto a clear patch. Clicking the deck card also places it.', target: 'deck', expects: 'place', role: 'practice' },
   { id: 'move', chapter: 1, dialogue: 'Give your card a new home. Drag its title or an empty part of its frame.', target: 'practice', expects: 'move', role: 'practice' },
@@ -72,6 +76,7 @@ export interface Observation {
   viewport: FlowViewportState;
   settled: boolean;
   settingsOpen?: boolean;
+  library?: { open: boolean; tab: string; snapshot: LibrarySnapshot | null; selectedDeckId: string };
   deleted: string[];
 }
 export interface Baseline { position?: { x: number; y: number }; viewport: FlowViewportState; config?: string }
@@ -81,6 +86,14 @@ export function stepComplete(step: TutorialStep, refs: Partial<Record<Role, stri
   const card = state.cards.find(item => item.id === id);
   const level = id ? state.surfaces[id] ?? 'preview' : 'node';
   switch (step.expects) {
+    case 'library-open': return Boolean(state.library?.open);
+    case 'pack-open': return Boolean(state.library?.open && starterPack(state.library.snapshot)?.opened);
+    case 'library-cards': return Boolean(state.library?.open && state.library.tab === 'cards');
+    case 'deck-ready': {
+      const library = state.library, snapshot = library?.snapshot;
+      const deck = snapshot?.decks.find(item => item.id === (library?.selectedDeckId || snapshot.active_deck_id));
+      return Boolean(library?.open && library.tab === 'cards' && deck && STARTER_CARDS.every(id => snapshot?.available_card_ids.includes(id) && deck.entries.some(entry => entry.kind === 'node' && entry.id === id)));
+    }
     case 'settings-open': return Boolean(state.settingsOpen);
     case 'model-connection': return event?.type === 'model-connection-selected';
     case 'models-saved': return event?.type === 'models-saved';
@@ -101,4 +114,9 @@ export function stepComplete(step: TutorialStep, refs: Partial<Record<Role, stri
     case 'glue': return event?.type === 'glue-saved' && event.bonds.some(bond => [bond.a, bond.b].includes(refs.glueA ?? '') && [bond.a, bond.b].includes(refs.glueB ?? ''));
     default: return false;
   }
+}
+
+export const STARTER_CARDS = ['text', 'agent', 'conversation', 'sandbox'];
+export function starterPack(snapshot: LibrarySnapshot | null | undefined) {
+  return Object.values(snapshot?.packs ?? {}).find(pack => pack.owned && STARTER_CARDS.every(id => pack.definition.cards.includes(id)));
 }

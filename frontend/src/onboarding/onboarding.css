@@ -59,5 +59,9 @@
 @media (max-height: 650px) { .onboarding-welcome { top: calc(32% + 45px); } .onboarding-logo-ring { top: calc(32% - 112px); } .onboarding-welcome > p { margin-bottom: 16px; } .tutorial-bubble p { font-size: 12px; } }
 @media (prefers-reduced-motion: reduce) { .tutorial-guide, .tutorial-mascot, .onboarding-logo-ring { transition: none; } }
 
-.is-zoom-guide .tutorial-mascot { margin-left: calc(min(256px, 100vw - 32px) - 92px); }
-.is-zoom-guide .tutorial-bubble::after { left: auto; right: 35px; }
+.is-right-guide .tutorial-mascot { margin-left: calc(min(256px, 100vw - 32px) - 92px); }
+.is-right-guide .tutorial-bubble::after { left: auto; right: 35px; }
+
+.onboarding-layer.is-library-guide { position: fixed; z-index: 85; }
+.tutorial-flight-layer { position: fixed; inset: 0; pointer-events: none; }
+.tutorial-placement-flight { position: absolute; transform-origin: top left; pointer-events: none; }

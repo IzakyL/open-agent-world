@@ -3,17 +3,30 @@ import { createPortal } from 'react-dom';
 import { getNodesBounds, getViewportForBounds, useReactFlow, useViewport } from '@xyflow/react';
 import { ArrowRight, ChevronDown, Compass, RotateCcw, X } from 'lucide-react';
 import { useCallback, useEffect, useLayoutEffect, useRef, useState, type CSSProperties } from 'react';
+import { useCardLibrary } from '../state/cardLibrary';
 import { useWorldStore } from '../state/worldStore';
 import { useNodeSurfaceStore } from '../state/nodeSurfaces';
 import { beginGlueEdit, glueGroup, persistGlue, useGlueStore } from '../state/glue';
 import { nodePositionFromSurfacePosition } from '../canvas/nodeDisplacement';
 import { OawGuide, type GuideMotion } from './OawGuide';
-import { CHAPTERS, STEPS, type Role, type Target } from './steps';
+import { CHAPTERS, STEPS, starterPack, type Role, type Target } from './steps';
 import { tutorial, useTutorialStore, type GuideVisuals } from './controller';
 import './onboarding.css';
 import { placeGuide, vacantPosition } from './placement';
 
 function nodeElement(id: string) { return document.querySelector<HTMLElement>(`.world-canvas > .react-flow .react-flow__node[data-id="${CSS.escape(id)}"]`); }
+/** Only illuminate the part of a target visible inside its scroll containers. */
+function visibleBounds(element: HTMLElement) {
+  const rect = element.getBoundingClientRect();
+  let left = Math.max(0, rect.left), top = Math.max(0, rect.top);
+  let right = Math.min(innerWidth, rect.right), bottom = Math.min(innerHeight, rect.bottom);
+  for (let parent = element.parentElement; parent; parent = parent.parentElement) {
+    const style = getComputedStyle(parent), bounds = parent.getBoundingClientRect();
+    if (/(auto|scroll|hidden|clip)/.test(style.overflowX)) { left = Math.max(left, bounds.left); right = Math.min(right, bounds.right); }
+    if (/(auto|scroll|hidden|clip)/.test(style.overflowY)) { top = Math.max(top, bounds.top); bottom = Math.min(bottom, bounds.bottom); }
+  }
+  return new DOMRect(left, top, Math.max(0, right - left), Math.max(0, bottom - top));
+}
 const reducedMotion = () => window.matchMedia('(prefers-reduced-motion: reduce)').matches;
 async function frameElement(id: string, signal: AbortSignal) {
   const deadline = performance.now() + 6000;
@@ -39,6 +52,7 @@ async function animate(element: Element, keyframes: Keyframe[], signal: AbortSig
 export function Onboarding() {
   useLocale();
   const s = useTutorialStore();
+  const libraryOpen = useCardLibrary(w => w.open);
   const sync = useWorldStore(w => w.syncState);
   const cards = useWorldStore(w => w.cards);
   const surfaces = useNodeSurfaceStore(w => w.surfaceLevels);
@@ -50,6 +64,7 @@ export function Onboarding() {
   const tracePath = useRef<SVGPathElement>(null);
   const guide = useRef<HTMLDivElement>(null);
   const spotlight = useRef<HTMLDivElement>(null);
+  const flightLayer = useRef<HTMLDivElement>(null);
   const focusSequence = useRef(0);
   const welcome = s.view === 'welcome';
   const active = s.view === 'active';
@@ -84,8 +99,28 @@ export function Onboarding() {
   }, [flow]);
 
   useEffect(() => {
+    let revealPlacement: (() => void) | undefined;
     const bridge: GuideVisuals = {
       focus: focusSubjects,
+      preparePlace(existingId) {
+        // Subscribe before creation so the rule exists before React paints the
+        // new node, including while its name is saved and the camera settles.
+        const existing = new Set(useWorldStore.getState().cards.map(card => card.id));
+        const style = document.createElement('style');
+        document.head.append(style);
+        let staged = existingId;
+        const hide = (id: string) => {
+          style.textContent = `.world-canvas .react-flow__node[data-id="${CSS.escape(id)}"] { visibility: hidden !important; opacity: 0 !important; }`;
+        };
+        if (staged) hide(staged);
+        const unsubscribe = useWorldStore.subscribe(state => {
+          if (staged) return;
+          const card = state.cards.find(card => card.type === 'text' && !existing.has(card.id));
+          if (card) { staged = card.id; hide(card.id); }
+        });
+        revealPlacement = () => { unsubscribe(); style.remove(); };
+        return revealPlacement;
+      },
       findSpace(preferred, size) {
         const offset = { x: (96 - size.width) / 2, y: (96 - size.height) / 2 };
         const obstacles = flow.getNodes().filter(node => !node.hidden).map(node => ({
@@ -97,11 +132,33 @@ export function Onboarding() {
       },
       async place(id, signal) {
         const element = await frameElement(id, signal);
+        if (reducedMotion()) { revealPlacement?.(); return; }
+        // Animate an inert screen-space copy. The real node stays at its final
+        // bounds, so guide placement and the spotlight never chase the flight.
         const box = element.getBoundingClientRect();
+        const source = document.querySelector('[data-palette-card="text"] [data-deck-visual]')?.getBoundingClientRect();
         const deck = document.querySelector('[data-tutorial="deck"]')?.getBoundingClientRect();
-        const x = (deck?.left ?? 30) + (deck?.width ?? 160) / 2 - box.left;
-        const y = (deck?.top ?? window.innerHeight - 100) - box.top;
-        await animate(element, [{ translate: `${x}px ${y}px`, scale: '.55', opacity: .3 }, { translate: '0 0', scale: '1', opacity: 1 }], signal);
+        const x = (source && source.width ? source.left : (deck?.left ?? 30) + (deck?.width ?? 160) / 2) - box.left;
+        const y = (source && source.width ? source.top : deck?.top ?? window.innerHeight - 100) - box.top;
+        const flight = document.createElement('div');
+        flight.className = 'tutorial-placement-flight';
+        Object.assign(flight.style, { left: `${box.left}px`, top: `${box.top}px`, width: `${box.width}px`, height: `${box.height}px` });
+        const copy = element.cloneNode(true) as HTMLElement;
+        for (const child of [copy, ...copy.querySelectorAll<HTMLElement>('*')]) {
+          for (const attribute of [...child.attributes]) if (attribute.name === 'id' || attribute.name.startsWith('data-') || attribute.name.startsWith('aria-')) child.removeAttribute(attribute.name);
+        }
+        copy.classList.remove('react-flow__node', 'selected');
+        Object.assign(copy.style, { position: 'absolute', left: '0', top: '0', visibility: 'visible', transform: `scale(${flow.getZoom()})`, transformOrigin: 'top left', transition: 'none' });
+        copy.inert = true;
+        flight.append(copy); flightLayer.current?.append(flight);
+        try {
+          await animate(flight, [
+            { translate: `${x}px ${y}px`, scale: '.55', opacity: .75 },
+            { translate: '0 0', scale: '1', opacity: 1 },
+          ], signal, 1000);
+          // Reveal and remove the identical copy in one turn: no reset frame.
+          revealPlacement?.();
+        } finally { flight.remove(); }
       },
       async connect(source, target, signal) {
         const a = (await frameElement(source, signal)).getBoundingClientRect();
@@ -145,6 +202,16 @@ export function Onboarding() {
   }, [step.id, flow]);
 
   const targetElement = useCallback((target: Target) => {
+    if (target === 'library' || target.startsWith('library-')) {
+      const library = useCardLibrary.getState();
+      if (!library.open || target === 'library') return document.querySelector<HTMLElement>('[data-tutorial="library"]');
+      if (target === 'library-pack') {
+        if (library.tab !== 'packs') return document.querySelector<HTMLElement>('[data-tutorial="library-tab-packs"]');
+        const pack = starterPack(library.snapshot);
+        return pack ? document.querySelector<HTMLElement>(`[data-pack-id="${CSS.escape(pack.definition.id)}"]`) : null;
+      }
+      return document.querySelector<HTMLElement>('[data-tutorial="library-decks"]') ?? document.querySelector<HTMLElement>('[data-tutorial="library-tab-cards"]');
+    }
     if (target === 'zoom-controls') return document.querySelector<HTMLElement>('.world-canvas .world-controls');
     if (target === 'deck' || target === 'tools' || target === 'settings' || target.startsWith('model-')) {
       if (target.startsWith('model-') && !useWorldStore.getState().settingsOpen) return document.querySelector<HTMLElement>('[data-tutorial="settings"]');
@@ -179,9 +246,9 @@ export function Onboarding() {
         highlighted?.removeAttribute('data-tutorial-highlight');
         highlighted = element;
         if (s.view === 'active') highlighted?.setAttribute('data-tutorial-highlight', 'true');
-        if (target.startsWith('model-')) highlighted?.scrollIntoView({ block: 'nearest', inline: 'nearest' });
+        if (target.startsWith('model-') || target.startsWith('library-')) highlighted?.scrollIntoView({ block: 'nearest', inline: 'nearest' });
       }
-      const bounds = element?.getBoundingClientRect();
+      const bounds = element ? visibleBounds(element) : undefined;
       if (spotlight.current) {
         const visible = s.view === 'active' && bounds && bounds.width > 0 && bounds.height > 0
           && bounds.right > 0 && bounds.bottom > 0 && bounds.left < window.innerWidth && bounds.top < window.innerHeight;
@@ -198,7 +265,7 @@ export function Onboarding() {
       const width = window.innerWidth, height = window.innerHeight;
       let x = width / 2 - 80, y = height * (height <= 650 ? .32 : .38) - 112;
       if (!welcome) {
-        const rect = targetElement(target)?.getBoundingClientRect();
+        const rect = bounds && bounds.width > 0 && bounds.height > 0 ? bounds : undefined;
         const bubbleWidth = Math.min(256, width - 32);
         if (rect) {
           // Prefer space beside the subject. Large workspaces leave a readable
@@ -212,13 +279,14 @@ export function Onboarding() {
         } else { x = width * .57; y = height * .43; }
         if (target === 'deck') { x = Math.min(width - bubbleWidth - 20, (rect?.right ?? 260) + 24); y = height - 185; }
         if (target === 'tools') { x = width - bubbleWidth - 78; y = height - 205; }
-        const mascotOffset = target === 'zoom-controls' ? bubbleWidth - 92 : 0;
+        const mascotOffset = (target === 'zoom-controls' || target === 'library-decks') ? bubbleWidth - 92 : 0;
         if (target === 'zoom-controls' && rect) { x = rect.left + rect.width / 2 - mascotOffset - 46; y = rect.top - 108; }
+        if (target === 'library-decks' && rect) { x = rect.left - bubbleWidth - 18; y = rect.top - 16; }
         x = Math.max(16, Math.min(width - bubbleWidth - 16, x));
         const bubbleHeight = guide.current?.querySelector<HTMLElement>('.tutorial-bubble')?.offsetHeight ?? 180;
         const obstacles = [...document.querySelectorAll<HTMLElement>(target.startsWith('model-')
           ? '.settings-dialog input, .settings-dialog select, .settings-dialog button, .settings-dialog .field-label'
-          : '.world-canvas .react-flow__node, .top-bar, .component-palette, .map-tools, .world-controls, .react-flow__minimap, .minister-presence:not([hidden]), .minister-panel, .toast-stack, .edge-inspector')]
+          : libraryOpen ? '.library-tabs button, .pack-touch-area, .library-card-inspect, .library-card-add, .library-deck-rail' : '.world-canvas .react-flow__node, .top-bar, .component-palette, .map-tools, .world-controls, .react-flow__minimap, .minister-presence:not([hidden]), .minister-panel, .toast-stack, .edge-inspector')]
           .map(element => element.getBoundingClientRect()).filter(box => box.width > 0 && box.height > 0);
         const placed = placeGuide({ x, y }, rect, { width: bubbleWidth, height: bubbleHeight }, { width, height }, obstacles, mascotOffset);
         x = placed.x; y = placed.y;
@@ -228,7 +296,7 @@ export function Onboarding() {
     }
     place();
     return () => { cancelAnimationFrame(frame); highlighted?.removeAttribute('data-tutorial-highlight'); };
-  }, [welcome, s.view, s.target, step.target, targetElement, flow, viewport.x, viewport.y, viewport.zoom, cards.length]);
+  }, [welcome, libraryOpen, s.view, s.target, step.target, targetElement, flow, viewport.x, viewport.y, viewport.zoom, cards.length]);
 
   if (s.view === 'hidden') return null;
   const motion: GuideMotion = welcome || s.view === 'paused' ? 'idle' : s.busy ? 'think' : step.id === 'enter' ? 'enter' : step.expects ? 'indicate' : 'speak';
@@ -238,11 +306,12 @@ export function Onboarding() {
   const needsModelsTab = settingsStep && resolvedTarget === 'models-tab';
   const needsConnection = settingsStep && step.target !== 'model-connection' && resolvedTarget === 'model-connection';
   const waitingForTarget = settingsStep && (needsSettings || needsModelsTab || needsConnection);
-  const dialogue = needsSettings ? 'Click settings to continue setting up your model.'
+  const libraryStep = step.target === 'library' || step.target.startsWith('library-');
+  const dialogue = libraryStep && !libraryOpen && step.id !== 'deck' ? 'Open the Library again to continue preparing your deck.' : needsSettings ? 'Click settings to continue setting up your model.'
     : needsModelsTab ? 'Click Models here.'
     : needsConnection ? 'Add or select a connection first.' : step.dialogue;
   const missing = role && step.expects !== 'place' && step.expects !== 'delete' && !cards.some(card => card.id === s.session?.refs[role]);
-  return createPortal(<div className={`onboarding-layer ${welcome ? 'is-welcome' : 'is-tutorial'} ${settingsStep ? 'is-settings-guide' : ''}`}>
+  return createPortal(<div className={`onboarding-layer ${welcome ? 'is-welcome' : 'is-tutorial'} ${settingsStep ? 'is-settings-guide' : ''} ${libraryOpen ? 'is-library-guide' : ''}`}>
     <div className="tutorial-spotlight-layer" aria-hidden="true"><div ref={spotlight} className="tutorial-spotlight" hidden /></div>
     <div className={`onboarding-logo-ring ${welcome ? '' : 'has-entered'}`}><OawGuide ringOnly /></div>
     {welcome && <section className="onboarding-welcome" aria-label={t("Welcome to Open Agent World")}>
@@ -256,8 +325,9 @@ export function Onboarding() {
       </div>
       {s.error && <p className="onboarding-error" role="alert">{s.error}</p>}
     </section>}
+    <div ref={flightLayer} className="tutorial-flight-layer" aria-hidden="true" />
     {trace && <svg className="tutorial-connection-trace" aria-hidden="true"><path ref={tracePath} d={`M ${trace.a.x},${trace.a.y} C ${trace.a.x + 65},${trace.a.y} ${trace.b.x - 65},${trace.b.y} ${trace.b.x},${trace.b.y}`} pathLength="1" /></svg>}
-    <div ref={guide} className={`tutorial-guide ${welcome ? 'is-logo' : ''} ${compact ? 'is-compact' : ''} ${(s.target ?? step.target) === 'zoom-controls' ? 'is-zoom-guide' : ''}`}
+    <div ref={guide} className={`tutorial-guide ${welcome ? 'is-logo' : ''} ${compact ? 'is-compact' : ''} ${['zoom-controls', 'library-decks'].includes(s.target ?? step.target) ? 'is-right-guide' : ''}`}
       style={{ '--guide-x': `${position.x}px`, '--guide-y': `${position.y}px` } as CSSProperties}>
       {!welcome && <div className="tutorial-bubble" role="region" aria-label={t("Tutorial guide")} data-step={step.id}>
         <header><span>{s.view === 'paused' ? t("Your walk is saved") : `${step.chapter + 1} / ${CHAPTERS.length} · ${t(CHAPTERS[step.chapter])}`}</span>
@@ -273,7 +343,7 @@ export function Onboarding() {
               <button className="onboarding-icon-button" disabled={s.busy} onClick={() => void tutorial.replay()} aria-label={t("Restart tutorial")}><RotateCcw size={14} /></button>
               {s.error && <button className="onboarding-text-button" disabled={s.busy} onClick={() => void tutorial.exit('skipped')}>{t("Retry cleanup")}</button>}
             </> : <>
-              {step.button && <button className="tutorial-next" disabled={s.busy || sync === 'offline' || waitingForTarget} onClick={() => void tutorial.continue()}>{s.busy ? t("One moment…") : t(step.button)}<ArrowRight size={13} /></button>}
+              {step.button && <button className="tutorial-next" disabled={s.busy || sync === 'offline' || waitingForTarget || (step.id === 'deck-build' && !s.ready)} onClick={() => void tutorial.continue()}>{s.busy ? t("One moment…") : t(step.button)}<ArrowRight size={13} /></button>}
               {!step.button && <span className="tutorial-waiting"><i />{s.busy ? t("One moment…") : s.ready ? t("Settings saved") : t("Your turn")}</span>}
               {((step.expects && !settingsStep && step.id !== 'model-settings') || s.error) && <button className="onboarding-icon-button" aria-label={t("Recover this step")} title={t("Find the card, or recover a missing card")} disabled={s.busy} onClick={() => void tutorial.recover()}><Compass size={15} /></button>}
             </>}
@@ -283,5 +353,5 @@ export function Onboarding() {
       </div>}
       <div className="tutorial-mascot"><OawGuide motion={motion} inLogo={welcome} movementTarget={guide} celebration={s.celebration} /></div>
     </div>
-  </div>, document.body);
+  </div>, libraryOpen ? document.querySelector('.card-library-modal') ?? document.body : document.body);
 }

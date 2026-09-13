@@ -3,6 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { worldApi } from '../api/client';
 import { useWorldStore } from '../state/worldStore';
 import { useNodeSurfaceStore } from '../state/nodeSurfaces';
+import { useCardLibrary, type LibrarySnapshot } from '../state/cardLibrary';
 import { useGlueStore } from '../state/glue';
 import { reportInteraction } from '../state/interactions';
 import { buildCardDraft } from '../state/helpers';
@@ -21,6 +22,7 @@ let detach: (() => void) | undefined;
 
 beforeEach(() => {
   vi.restoreAllMocks();
+  useCardLibrary.setState({ snapshot: null, open: false, busy: false, tab: "packs", selectedDeckId: "" });
   useTutorialStore.setState({ status: 'new', view: 'hidden', session: undefined, error: undefined, busy: false, ready: false });
   useWorldStore.setState({ cards: [], edges: [], catalog: TEST_CATALOG, syncState: 'online', stressCards: [], viewport,
     historyBusy: false, positionCommitBusy: false, undoStack: [], redoStack: [], cardTombstones: {}, toasts: [], selectedCardIds: [] });
@@ -32,6 +34,30 @@ beforeEach(() => {
 afterEach(() => { detach?.(); detach = undefined; });
 
 describe('tutorial progression', () => {
+  it('waits for all four cards in the chosen deck and activates only that deck', async () => {
+    const entries = ['text', 'agent', 'conversation', 'sandbox'].map(id => ({ kind: 'node' as const, id }));
+    const library: LibrarySnapshot = { schema_version: 1, revision: 1, migration_pending: false, plugins: {}, packs: {}, card_definitions: {}, collection: {},
+      decks: [{ id: 'starter', name: 'My deck', icon: 'folder', entries: [] }, { id: 'chosen', name: 'Research', icon: 'layers', entries: entries.slice(0, 3) }],
+      active_deck_id: 'starter', available_card_ids: entries.map(entry => entry.id), available_pack_ids: [] };
+    useTutorialStore.setState({ status: 'started', view: 'active', session: { id: 'deck', step: 'deck-build', initialIds: [], refs: {}, demos: [] } });
+    useCardLibrary.setState({ snapshot: library, open: true, tab: 'cards', selectedDeckId: 'chosen' });
+    tutorial.resume(); detach = tutorial.attach(bridge);
+    await tutorial.continue();
+    expect(useTutorialStore.getState().session?.step).toBe('deck-build');
+    const complete = { ...library, decks: library.decks.map(deck => deck.id === 'chosen' ? { ...deck, entries } : deck) };
+    useCardLibrary.setState({ snapshot: complete });
+    expect(useTutorialStore.getState().ready).toBe(true);
+    useCardLibrary.setState({ selectedDeckId: 'starter' });
+    expect(useTutorialStore.getState().ready).toBe(false);
+    useCardLibrary.setState({ selectedDeckId: 'chosen' });
+    const edit = vi.spyOn(worldApi, 'editCardLibrary').mockResolvedValue({ ...complete, revision: 2, active_deck_id: 'chosen' });
+    await tutorial.continue();
+    expect(edit).toHaveBeenCalledWith(expect.objectContaining({ action: 'activate_deck', id: 'chosen' }));
+    expect(useTutorialStore.getState().session?.step).toBe('place-demo');
+    expect(useCardLibrary.getState().open).toBe(false);
+    expect(useCardLibrary.getState().snapshot?.decks[0].entries).toEqual([]);
+  });
+
   it('waits for settings and a successful model save before returning to the Agent', async () => {
     useWorldStore.setState({ settingsOpen: false });
     useTutorialStore.setState({ status: 'started', view: 'active', session: {
@@ -160,9 +186,33 @@ describe('first-run persistence and ownership', () => {
     const world = { ...snapshot(props), edges: [{ id: 'edge', source: 'connected', target: 'user', relationship: 'read', direction: 'forward' as const }] };
     expect(disposableDemos(demos, world, [{ a: 'glued', b: 'user' }]).map(item => item.id)).toEqual(['plain']);
   });
+  it('stages placement before focusing and plays one flight before revealing the card', async () => {
+    const demo = card('demo');
+    await tutorial.start();
+    useWorldStore.setState({ cards: [demo] });
+    useTutorialStore.setState(s => ({ session: { ...s.session!, step: 'place-demo', refs: { demo: demo.id } } }));
+    const order: string[] = [];
+    let finish!: () => void;
+    detach = tutorial.attach({ ...bridge,
+      preparePlace: () => { order.push('hide'); return () => { order.push('reveal'); }; },
+      focus: async () => { order.push('focus'); },
+      place: async () => { order.push('flight'); await new Promise<void>(resolve => { finish = resolve; }); },
+    });
+    const action = tutorial.perform('place');
+    await vi.waitFor(() => expect(order).toEqual(['hide', 'focus', 'flight']));
+    const repeated = tutorial.perform('place');
+    finish();
+    await action; await repeated;
+    expect(order).toEqual(['hide', 'focus', 'flight', 'reveal']);
+    expect(useTutorialStore.getState().session?.step).toBe('place');
+  });
+
   it('waits for in-flight creation before cleaning up a skipped demonstration', async () => {
     let resolve!: (card: WorldCard) => void;
     const created = card('late-prop');
+    const reveal = vi.fn();
+    const place = vi.fn(async () => {});
+    detach = tutorial.attach({ ...bridge, preparePlace: () => reveal, place });
     vi.spyOn(worldApi, 'createNode').mockImplementation(() => new Promise(done => { resolve = done; }));
     vi.spyOn(worldApi, 'getTextContent').mockResolvedValue('');
     vi.spyOn(worldApi, 'deleteNode').mockResolvedValue(undefined);
@@ -174,6 +224,8 @@ describe('first-run persistence and ownership', () => {
     resolve(created);
     await action; await skipped;
     expect(worldApi.deleteNode).toHaveBeenCalledWith('late-prop');
+    expect(reveal).toHaveBeenCalledOnce();
+    expect(place).not.toHaveBeenCalled();
     expect(useTutorialStore.getState()).toMatchObject({ view: 'hidden', status: 'skipped', session: undefined });
   });
   it('preserves a cleanup ledger on deletion failure for a retry', async () => {

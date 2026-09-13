@@ -48,6 +48,7 @@ export const useTutorialStore = createStore<TutorialState>()(persist((): Tutoria
 }));
 
 export interface GuideVisuals {
+  preparePlace?: (existingId?: string) => () => void;
   findSpace?: (preferred: WorldPosition, size: { width: number; height: number }) => WorldPosition;
   place: (id: string, signal: AbortSignal) => Promise<void>;
   connect: (source: string, target: string, signal: AbortSignal) => Promise<void>;
@@ -72,7 +73,7 @@ function saveSession(patch: Partial<TutorialSession>) {
 function observation(): Observation {
   const w = world(), surfaces = useNodeSurfaceStore.getState();
   return { cards: w.cards, edges: w.edges, selected: w.selectedCardIds, surfaces: surfaces.surfaceLevels,
-    bonds: useGlueStore.getState().bonds, viewport: w.viewport, settingsOpen: w.settingsOpen,
+    bonds: useGlueStore.getState().bonds, viewport: w.viewport, settingsOpen: w.settingsOpen, library: useCardLibrary.getState(),
     settled: !surfaces.dragging && !w.positionCommitBusy && !w.historyBusy && w.syncState === 'online',
     deleted: [...Object.keys(w.cardTombstones), ...w.undoStack.flatMap(op => op.kind === 'cards-deleted' ? op.cards.map(card => card.id) : [])],
   };
@@ -115,10 +116,9 @@ function observe(event?: WorldInteraction) {
     const card = candidates.find(card => world().selectedCardIds.includes(card.id)) ?? candidates.at(-1);
     if (card) saveSession({ refs: { ...s.session.refs, [step.role]: card.id } });
   }
-  if (stepComplete(step, state().session!.refs, baseline, observation(), event)) {
-    if (step.review) { if (!state().ready) useTutorialStore.setState({ ready: true }); }
-    else goNext();
-  }
+  const complete = stepComplete(step, state().session!.refs, baseline, observation(), event);
+  if (step.review) { if (state().ready !== complete) useTutorialStore.setState({ ready: complete }); }
+  else if (complete) goNext();
 }
 
 /** Verify the entire world, not just the currently loaded viewport chunks. */
@@ -195,13 +195,19 @@ function requireCard(role: Role) {
 }
 async function demonstrate(action: Demonstration, signal: AbortSignal) {
   switch (action) {
+    case 'library': useCardLibrary.setState({ tab: 'packs' }); useCardLibrary.getState().show(); break;
     case 'deck': await prepareDeck(['text', 'agent', 'conversation', 'sandbox']); break;
     case 'place': {
-      const preferred = center(-190, 50);
-      const card = await create('demo', visuals?.findSpace?.(preferred, { width: 380, height: 240 }) ?? preferred, true, signal);
-      useTutorialStore.setState({ target: 'demo' });
-      await visuals?.focus([card.id]);
-      await visuals?.place(card.id, signal);
+      const bridge = visuals;
+      const reveal = bridge?.preparePlace?.(cardFor('demo')?.id);
+      try {
+        const preferred = center(-190, 50);
+        const card = await create('demo', bridge?.findSpace?.(preferred, { width: 380, height: 240 }) ?? preferred, true, signal);
+        await bridge?.focus([card.id]);
+        ensureActive(signal);
+        useTutorialStore.setState({ target: 'demo' });
+        await bridge?.place(card.id, signal);
+      } finally { reveal?.(); }
       break;
     }
     case 'connect': {
@@ -314,7 +320,7 @@ export const tutorial = {
       if (state().view === 'welcome' && !state().busy && world().cards.length) void tutorial.directly();
       observe(); void checkWelcome();
     }),
-      useNodeSurfaceStore.subscribe(() => observe()), observeInteractions(observe)];
+      useNodeSurfaceStore.subscribe(() => observe()), useCardLibrary.subscribe(() => observe()), observeInteractions(observe)];
     void checkWelcome();
     return () => { unsubscribers.forEach(off => off()); if (visuals === bridge) visuals = undefined; };
   },
@@ -357,6 +363,15 @@ export const tutorial = {
   async continue() {
     if (state().busy || stopping) return;
     const step = currentStep();
+    if (step.id === 'deck-build') {
+      if (!baseline || !stepComplete(step, state().session!.refs, baseline, observation())) return;
+      return runTask(async signal => {
+        const library = useCardLibrary.getState();
+        const id = library.selectedDeckId || library.snapshot!.active_deck_id;
+        if (!await library.edit({ action: 'activate_deck', id })) throw new Error(library.error || 'Your deck could not be activated. Retry.');
+        ensureActive(signal); library.close(); goNext();
+      });
+    }
     if (step.id === 'finish') return tutorial.exit('completed');
     if (step.id === 'workflow') await visuals?.focus(state().session?.refs.demo ? [state().session!.refs.demo!] : []);
     if (step.action) return tutorial.perform(step.action);

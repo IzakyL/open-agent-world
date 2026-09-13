@@ -14,6 +14,7 @@ test("Minister can be collected and placed from the ordinary card deck", async (
   await pack.getByRole("button", { name: "View cards in Core essentials" }).click();
   await library.getByLabel("Search cards", { exact: true }).fill("Minister");
   await library.getByRole("button", { name: "Add Minister to deck", exact: true }).click();
+  await library.locator(".library-deck-destination.is-selected > button").click();
   await library.getByRole("button", { name: "Close Library" }).click();
   const tray = page.getByRole("complementary", { name: "Active card deck" });
   await tray.hover();

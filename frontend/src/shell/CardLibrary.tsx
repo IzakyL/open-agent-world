@@ -8,6 +8,7 @@ import { collectedLibraryCards, displayDeckName, formationSource, libraryCardMat
 import { LibraryPack } from "./LibraryPack";
 import { LibraryCard as PhysicalLibraryCard } from "./LibraryCard";
 import "./cardLibrary.css";
+import { LibraryDeckRail } from "./LibraryDeckRail";
 
 type Tab = "packs" | "cards" | "decks" | "store";
 const PAGE_SIZE = 30;
@@ -19,20 +20,24 @@ export function CardLibrary() {
   const legions = useWorldStore(state => state.legions);
   const deleteLegion = useWorldStore(state => state.deleteLegion);
   const modal = useRef<HTMLDialogElement>(null);
-  const [tab, setTab] = useState<Tab>("packs");
+  const tab = library.tab;
+  const setTab = (tab: Tab) => useCardLibrary.setState({ tab });
   const [query, setQuery] = useState("");
   const [filter, setFilter] = useState("");
   const [sourceFilter, setSourceFilter] = useState("");
   const [showInternal, setShowInternal] = useState(false);
   const [page, setPage] = useState(0);
   const [selected, setSelected] = useState<DeckEntry | null>(null);
-  const [deckId, setDeckId] = useState("");
+  const deckId = library.selectedDeckId;
+  const setDeckId = (selectedDeckId: string) => useCardLibrary.setState({ selectedDeckId });
+  const [dragged, setDragged] = useState<DeckEntry | null>(null);
+  const [adding, setAdding] = useState<LibraryCard | null>(null);
   const [name, setName] = useState("");
   const [rename, setRename] = useState("");
   const [reveal, setReveal] = useState<string | null>(null);
   useEffect(() => {
-    if (library.open) modal.current?.showModal();
-    else modal.current?.close();
+    if (library.open) { modal.current?.showModal(); if (library.tab === "packs") setQuery(""); }
+    else { modal.current?.close(); setDragged(null); setAdding(null); }
   }, [library.open]);
   useEffect(() => { setPage(0); }, [query, filter, sourceFilter, showInternal, tab]);
   const snapshot = library.snapshot;
@@ -77,11 +82,13 @@ export function CardLibrary() {
   const renderCard = (item: LibraryCard) => {
     const included = deck?.entries.some(entry => same(entry, item));
     return <PhysicalLibraryCard key={`${item.kind}:${item.id}`} selected={Boolean(selected && same(selected, item))} color={item.definition?.color ?? "#78967b"}>
-      <button className="library-card-inspect" onClick={() => setSelected(item)} aria-label={t("Inspect {v0}", { v0: String(item.label) })}><CatalogIcon definition={item.definition} size={26} /><span>{t(item.category)}</span><strong>{item.label}</strong><small>{item.description}</small>
+      <button className="library-card-inspect" draggable={item.available && !item.internal && !library.busy}
+        onDragStart={event => { if (!item.available || item.internal || library.busy) { event.preventDefault(); return; } event.dataTransfer.setData('application/x-oaw-library-card', JSON.stringify({ kind: item.kind, id: item.id })); event.dataTransfer.effectAllowed = 'copy'; setDragged(item); setAdding(null); }}
+        onDragEnd={() => setDragged(null)} data-library-card={item.id} onClick={() => setSelected(item)} aria-label={t("Inspect {v0}", { v0: String(item.label) })}><CatalogIcon definition={item.definition} size={26} /><span>{t(item.category)}</span><strong>{item.label}</strong><small>{item.description}</small>
         {!item.available && !item.internal ? <span className="library-unavailable">{t("Unavailable")}</span> : null}</button>
       {item.internal && !included ? <div className="library-card-usage">{item.owners.length ? t("Use through its container") : t("Created by a world action")}</div> :
-        <button className={`library-card-add ${included ? "is-in-deck" : ""}`} disabled={library.busy || !deck || (!included && !item.available)} onClick={() => toggleCard(item)} aria-label={t(included ? 'Remove {v0} from deck' : 'Add {v0} to deck', { v0: item.label })}>
-          {included ? <Check size={14} /> : <Plus size={14} />}{included ? t("In deck · Remove") : t("Add to deck")}</button>}
+        <button className={`library-card-add ${included ? "is-in-deck" : ""}`} disabled={library.busy || !deck || (!included && !item.available)} onClick={() => included ? toggleCard(item) : setAdding(item)} aria-label={t(included ? 'Remove {v0} from deck' : 'Add {v0} to deck', { v0: item.label })}>
+          {included ? <Check size={14} /> : <Plus size={14} />}{included ? t("In {deck} · Remove", { deck: displayDeckName(deck!) }) : t("Add to…")}</button>}
     </PhysicalLibraryCard>;
   };
 
@@ -91,7 +98,7 @@ export function CardLibrary() {
       <button className="top-icon-button" aria-label={t("Close Library")} onClick={library.close}><X size={18} /></button></header>
     <nav className="library-tabs" aria-label={t("Library sections")}>{([
       ["packs", t("Packs"), Archive], ["cards", t("Cards"), LibraryBig], ["decks", t("Decks"), Layers3], ["store", t("Store"), Store],
-    ] as const).map(([id, label, Icon]) => <button key={id} className={tab === id ? "is-active" : ""} aria-pressed={tab === id} onClick={() => { setTab(id); setReveal(null); }}>
+    ] as const).map(([id, label, Icon]) => <button key={id} data-tutorial={`library-tab-${id}`} className={tab === id ? "is-active" : ""} aria-pressed={tab === id} onClick={() => { setTab(id); setReveal(null); }}>
       <Icon size={16} />{label}<small>{id === "packs" ? Object.keys(snapshot?.packs ?? {}).length : id === "cards" ? allCards.length : id === "decks" ? snapshot?.decks.length ?? 0 : t("Soon")}</small>
     </button>)}</nav>
     <div className="library-flow">{t("Open a pack")} <ChevronRight size={12} /> {t("Collect cards")} <ChevronRight size={12} /> {t("Build a deck")} <ChevronRight size={12} /> {t("Place in your world")}</div>
@@ -106,7 +113,7 @@ export function CardLibrary() {
           )}</div>
           {reveal && snapshot.packs[reveal] ? <span className="library-announcement" role="status">{t(snapshot.packs[reveal].definition.name)} {t("opened. Click its empty wrapper to view cards.")}</span> : null}
         </> : null}
-        {tab === "cards" ? <>
+        {tab === "cards" ? <><div className="library-card-layout"><div data-tutorial="library-cards">
           <div className="library-section-heading"><div><h3>{t("Card Library")}</h3><p>{allCards.length} {t("collected cards and saved formations · Grouped by source pack")}</p></div>{deckSelect}</div>
           {sourcePack ? <div className="library-source-actions" aria-label={t("Source pack controls")}>
             <span>{t(sourcePack.definition.name)} · {!sourcePlugin?.installed ? t("Plugin uninstalled") : !sourcePlugin.enabled ? t("Plugin disabled") : t("Installed · Enabled")}</span>
@@ -120,7 +127,6 @@ export function CardLibrary() {
             <select aria-label={t("Card category")} value={filter} onChange={event => setFilter(event.target.value)}><option value="">{t("All categories")}</option>{categories.map(category => <option key={category} value={category}>{t(category)}</option>)}</select>
             <label className="library-internal-toggle"><input type="checkbox" checked={showInternal} onChange={event => setShowInternal(event.target.checked)} />{t("Show internal cards")}{internalCount ? ` (${internalCount})` : ""}</label>
             <span>{filtered.length} {t("results")}</span></div>
-          <div className="library-card-layout"><div>
             {groups.map(({ source, items, count }) => <details key={JSON.stringify([source.id, currentPage, query, filter, sourceFilter, showInternal])} className="library-source-group"
               open={Boolean(sourceFilter || query.trim() || filter || showInternal || sources.length === 1)}>
               <summary><Archive size={18} /><div><h4>{source.name}</h4><small>{t(source.pluginName)}</small></div><span>{count} {t(count === 1 ? "card" : "cards")}</span><ChevronRight className="library-group-chevron" size={16} /></summary>
@@ -129,16 +135,16 @@ export function CardLibrary() {
             </details>)}
             {!filtered.length ? <div className="library-empty"><LibraryBig size={30} /><strong>{allCards.length ? t("No matching cards") : t("Your collection starts with a pack")}</strong><p>{!showInternal && internalCount ? t("{v0} matching internal cards are hidden. Show internal cards to inspect their purpose and container.", { v0: String(internalCount) }) : allCards.length ? t("Try another search, source pack or category.") : t("Visit Packs and open one to discover its cards.")}</p><button className="secondary-button" onClick={() => { if (!showInternal && internalCount) setShowInternal(true); else { setTab("packs"); setQuery(""); } }}>{!showInternal && internalCount ? t("Show internal cards") : t("Browse packs")}</button></div> : null}
             {pages > 1 ? <div className="library-pagination"><button aria-label={t("Previous cards")} disabled={currentPage === 0} onClick={() => setPage(currentPage - 1)}><ChevronLeft size={16} /></button><span>{t("Page")} {currentPage + 1} {t("of")} {pages}</span><button aria-label={t("Next cards")} disabled={currentPage >= pages - 1} onClick={() => setPage(currentPage + 1)}><ChevronRight size={16} /></button></div> : null}
-          </div><aside className="library-card-detail" aria-label={t("Card details")}>{detail ? <><CatalogIcon definition={detail.definition} size={36} /><span className="library-badge">{t(detail.category)}</span><h3>{detail.label}</h3><p>{detail.description}</p>
+          </div><div className="library-card-sidebar"><LibraryDeckRail selectedId={deck?.id} onSelect={setDeckId} dragged={dragged} adding={adding} onAdded={() => { setAdding(null); setDragged(null); }} onCancel={() => setAdding(null)} cards={allCards} /><aside className="library-card-detail" aria-label={t("Card details")}>{detail ? <><CatalogIcon definition={detail.definition} size={36} /><span className="library-badge">{t(detail.category)}</span><h3>{detail.label}</h3><p>{detail.description}</p>
             {detail.internal ? <div className="library-usage-detail"><small>{t("How to use")}</small><p>{detail.owners.length ? t("Open {v0} to use this card. It is created inside the container.", { v0: String(detail.owners.map(owner => owner.label).join(" or ")) }) : t("This card is created by a container or world action.")} {t("It cannot be added to a deck on its own.")}</p>
               {detail.owners.map(owner => snapshot.collection[owner.id]?.unlocked ? <button key={owner.id} className="library-text-button" onClick={() => setSelected({ kind: "node", id: owner.id })}>{t("Inspect")} {libraryCardMetadata(snapshot, owner).label} <ChevronRight size={14} /></button> : <p key={owner.id}>{t("Open its source pack to collect")} {owner.label}.</p>)}</div> : null}
             {detail.definition ? <><small>{t("Source plugin")}</small><p>{snapshot.plugins[detail.definition.plugin_id]?.descriptor.name ?? detail.definition.plugin_id}</p><small>{t("Collected from")}</small><p>{detail.sources.map(source => source.name).join(", ")}</p><small>{t("Collected")} {new Date(snapshot.collection[detail.id].unlocked_at).toLocaleDateString(useLocale.getState().locale)}</small></> : <p>{t("A formation you saved from your world. Its members keep their original plugin dependencies.")}</p>}
             {(detail.definition && (!snapshot.plugins[detail.definition.plugin_id]?.installed || !snapshot.plugins[detail.definition.plugin_id]?.enabled)) || (!detail.available && !detail.internal) ? <p className="library-unavailable">{detail.kind === "legion" ? t("This formation has unavailable dependencies.") : t("This content is unavailable. Install or enable its plugin to use it again.")}</p> : null}
             {!detail.internal || deck?.entries.some(entry => same(entry, detail)) ? <button className="secondary-button" disabled={library.busy || !deck || (!detail.available && !deck.entries.some(entry => same(entry, detail)))}
-              aria-label={deck?.entries.some(entry => same(entry, detail)) ? t("Remove inspected card from deck") : t("Add inspected card to deck")} onClick={() => toggleCard(detail)}>
-              {deck?.entries.some(entry => same(entry, detail)) ? t("Remove from deck") : t("Add to deck")}</button> : null}
+              aria-label={deck?.entries.some(entry => same(entry, detail)) ? t("Remove inspected card from deck") : t("Add inspected card to deck")} onClick={() => deck?.entries.some(entry => same(entry, detail)) ? toggleCard(detail) : setAdding(detail)}>
+              {deck?.entries.some(entry => same(entry, detail)) ? t("Remove from deck") : t("Add to…")}</button> : null}
             {detail.kind === "legion" ? <button className="library-text-button" onClick={() => { if (window.confirm(t("Remove {v0} from the Legion library?", { v0: String(detail.label) }))) void deleteLegion(detail.id); }}>{t("Delete saved formation")}</button> : null}
-          </> : <><Layers3 size={30} /><h3>{t("Explore a card")}</h3><p>{t("Select a card to inspect its purpose and origin.")}</p><p>{t("Removing a card from a deck keeps it in your collection.")}</p></>}</aside></div>
+          </> : <><Layers3 size={30} /><h3>{t("Explore a card")}</h3><p>{t("Select a card to inspect its purpose and origin.")}</p><p>{t("Removing a card from a deck keeps it in your collection.")}</p></>}</aside></div></div>
         </> : null}
         {tab === "decks" ? <>
           <div className="library-section-heading"><div><h3>{t("Your decks")}</h3><p>{t("The active deck is the hand shown at the bottom of your world.")}</p></div>{deckSelect}</div>

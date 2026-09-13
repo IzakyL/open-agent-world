@@ -42,7 +42,7 @@ export function ComponentPalette() {
     if (payload.kind === "node") useEquipmentDrag.getState().set({ ...buildCardDraft(payload.type, { x: 0, y: 0 }, catalog.node_types.find(item => item.id === payload.type)), id: "" });
   };
   return <aside className="component-palette" aria-label={t("Active card deck")} data-tutorial="deck"
-    style={{ "--deck-tab-count": (snapshot?.decks.length ?? 0) + 1 } as CSSProperties}>
+    style={{ "--deck-tab-count": (snapshot?.decks.length ?? 0) + 1, "--deck-hand-count": deck?.entries.length ?? 0 } as CSSProperties}>
     <div className="deck-tabs">
       <div className="deck-tab-scroll" role="tablist" aria-label={t("Card decks")}>
         {snapshot?.decks.map(item => <button type="button" role="tab" key={item.id} aria-selected={item.id === deck?.id}
@@ -120,7 +120,7 @@ export function ComponentPalette() {
           const label = definition ? t(definition.label) : legion?.name ?? entry.id;
           const payload: PaletteDragPayload = entry.kind === "node" ? { version: 1, kind: "node", type: entry.id }
             : { version: 1, kind: "legion", id: entry.id, revision: legion?.revision ?? 0 };
-          return <button type="button" key={`${entry.kind}:${entry.id}`} className="deck-hover-button" aria-disabled={!available}
+          return <button type="button" key={`${entry.kind}:${entry.id}`} className="deck-hover-button" data-palette-card={entry.id} aria-disabled={!available}
             draggable={!removing && !library.busy} onDragStart={event => {
               dragged.current = { ...entry, sourceDeckId: showLegions ? undefined : deck.id };
               if (available) beginDrag(event, payload);

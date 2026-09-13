@@ -1,3 +1,4 @@
+import { prepareTutorialDeck } from './tutorial-deck';
 import { expect, test, type Page } from '@playwright/test';
 
 test.describe('canvas onboarding', () => {
@@ -91,7 +92,7 @@ test.describe('canvas onboarding', () => {
     await at(page, 'zoom');
     await page.mouse.move(170, 200); await page.mouse.wheel(0, -240);
     await at(page, 'deck');
-    await page.getByRole('button', { name: 'Prepare my deck', exact: true }).click();
+    await prepareTutorialDeck(page);
     await at(page, 'place-demo');
     await page.getByRole('button', { name: 'Show me', exact: true }).click();
     await at(page, 'place');

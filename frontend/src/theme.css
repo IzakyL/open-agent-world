@@ -1454,8 +1454,8 @@ button:disabled { cursor: not-allowed; opacity: 0.48; }
   --deck-tab-width: 64px;
   --deck-tab-step: 68px;
   --deck-tab-chrome: 54px;
-  --deck-preferred-width: max(320px, calc(var(--deck-tab-count, 1) * var(--deck-tab-step) + var(--deck-tab-chrome)));
-  width: min(var(--deck-preferred-width), 760px, calc(100vw - 530px));
+  --deck-preferred-width: max(520px, calc(var(--deck-tab-count, 1) * var(--deck-tab-step) + var(--deck-tab-chrome)), calc(200px + min(var(--deck-hand-count, 0), 8) * 76px));
+  width: min(var(--deck-preferred-width), 760px, calc(100vw - 360px));
   min-width: 0;
   padding: 7px;
   border-radius: 20px;
@@ -1573,7 +1573,9 @@ button:disabled { cursor: not-allowed; opacity: 0.48; }
 }
 
 .component-palette:hover .deck-stage,
-.component-palette:focus-within .deck-stage {
+.component-palette:focus-within .deck-stage,
+.component-palette[data-tutorial-highlight] .deck-stage,
+body:has(.tutorial-bubble[data-step="place-demo"]) .component-palette .deck-stage {
   min-height: var(--deck-open-height);
   max-height: var(--deck-open-height);
   margin-top: 5px;

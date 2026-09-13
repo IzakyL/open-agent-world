@@ -6417,5 +6417,61 @@
   "(not installed)": [
     "(not installed)",
     "（未安装）"
+  ],
+  "Added {card} to {deck}": [
+    "Added {card} to {deck}",
+    "已将{card}加入{deck}"
+  ],
+  "Deck destinations": [
+    "Deck destinations",
+    "卡组位置"
+  ],
+  "Choose a deck for {card}": [
+    "Choose a deck for {card}",
+    "为{card}选择卡组"
+  ],
+  "Drag a card here to add it to a deck.": [
+    "Drag a card here to add it to a deck.",
+    "将卡牌拖到这里，放入你想要的卡组。"
+  ],
+  "{count} cards": [
+    "{count} cards",
+    "{count} 张卡牌"
+  ],
+  "In {deck} · Remove": [
+    "In {deck} · Remove",
+    "已在{deck}中 · 移除"
+  ],
+  "Add to…": [
+    "Add to…",
+    "添加到…"
+  ],
+  "Let’s prepare your hand together. Open the Library here to find your first pack.": [
+    "Let’s prepare your hand together. Open the Library here to find your first pack.",
+    "我们一起准备卡组。打开这里的仓库，找到你的初始卡包。"
+  ],
+  "This pack contains the essentials. Click it to tear it open and collect its cards.": [
+    "This pack contains the essentials. Click it to tear it open and collect its cards.",
+    "这个卡包包含基础卡牌。点击撕开卡包，将卡牌收入仓库。"
+  ],
+  "Your cards are collected! Click the opened wrapper to browse them.": [
+    "Your cards are collected! Click the opened wrapper to browse them.",
+    "卡牌已收入仓库！点击拆开的包装，查看里面的卡牌。"
+  ],
+  "Drag Text, Agent, Conversation and Sandbox into a deck on the right. You can create a new deck there, too.": [
+    "Drag Text, Agent, Conversation and Sandbox into a deck on the right. You can create a new deck there, too.",
+    "将文本、智能体、对话和沙盒拖入右侧的同一个卡组，也可以在这里新建卡组。"
+  ],
+  "You can also click Add to… and choose a destination.": [
+    "You can also click Add to… and choose a destination.",
+    "也可以点击“添加到…”，再选择目标卡组。"
+  ],
+  "Open the Library again to continue preparing your deck.": [
+    "Open the Library again to continue preparing your deck.",
+    "重新打开仓库，继续准备你的卡组。"
+  ],
+  "Remove {card} from {deck}": [
+    "Remove {card} from {deck}",
+    "从{deck}移除{card}"
   ]
 }
