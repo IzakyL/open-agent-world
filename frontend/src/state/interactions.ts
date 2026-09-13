@@ -1,6 +1,8 @@
 /** Successful UI interactions that cannot be inferred from a world snapshot.
  * No message content, credentials, or persistent world data belongs here. */
 export type WorldInteraction =
+  | { type: 'model-connection-selected' }
+  | { type: 'models-saved' }
   | { type: 'viewport'; x: number; y: number; zoom: number }
   | { type: 'focus'; ids: string[] }
   | { type: 'message-sent'; cardId: string; conversationId: string }

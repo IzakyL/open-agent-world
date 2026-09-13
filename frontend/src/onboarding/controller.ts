@@ -72,7 +72,7 @@ function saveSession(patch: Partial<TutorialSession>) {
 function observation(): Observation {
   const w = world(), surfaces = useNodeSurfaceStore.getState();
   return { cards: w.cards, edges: w.edges, selected: w.selectedCardIds, surfaces: surfaces.surfaceLevels,
-    bonds: useGlueStore.getState().bonds, viewport: w.viewport,
+    bonds: useGlueStore.getState().bonds, viewport: w.viewport, settingsOpen: w.settingsOpen,
     settled: !surfaces.dragging && !w.positionCommitBusy && !w.historyBusy && w.syncState === 'online',
     deleted: [...Object.keys(w.cardTombstones), ...w.undoStack.flatMap(op => op.kind === 'cards-deleted' ? op.cards.map(card => card.id) : [])],
   };
@@ -94,6 +94,7 @@ function goNext() {
       for (const id of Object.values(state().session?.refs ?? {})) useNodeSurfaceStore.getState().dismiss(id);
     }
     if (step.expects === 'connect') world().selectEdge(undefined);
+    if (next.id === 'configure' && step.id === 'model-save') useWorldStore.setState({ settingsOpen: false });
     saveSession({ step: next.id });
     useTutorialStore.setState(s => ({ error: undefined, target: undefined, ready: false, celebration: s.celebration + (step.expects ? 1 : 0) }));
     rebase();

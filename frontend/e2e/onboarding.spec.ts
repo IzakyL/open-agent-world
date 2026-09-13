@@ -149,6 +149,16 @@ test.describe('canvas onboarding', () => {
     await page.getByRole('button', { name: 'Build my first workflow', exact: true }).click();
     await at(page, 'agent');
     await place('Agent', 350, 320);
+    await at(page, 'model-settings');
+    await page.getByRole('button', { name: 'Open settings', exact: true }).click();
+    await at(page, 'model-connection');
+    await page.getByRole('button', { name: 'Add connection', exact: true }).click();
+    await at(page, 'model-credentials');
+    await page.getByRole('button', { name: 'Next', exact: true }).click();
+    await at(page, 'model-list');
+    await page.getByRole('button', { name: 'Next', exact: true }).click();
+    await at(page, 'model-save');
+    await page.getByRole('button', { name: 'Set up later', exact: true }).click();
     await at(page, 'configure');
     const agentId = await idOf('agent'), agent = node(agentId);
     await agent.locator('.card-kind-icon').click();

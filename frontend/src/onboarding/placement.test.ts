@@ -4,6 +4,29 @@ import { placeGuide, vacantPosition, type GuideRect } from './placement';
 const intersects = (a: GuideRect, b: GuideRect) => a.x < b.x + b.width && a.x + a.width > b.x && a.y < b.y + b.height && a.y + a.height > b.y;
 
 describe('guide placement', () => {
+  it('places the zoom mascot above its controls without covering nearby tools or the minimap', () => {
+    const subject = { x: 1100, y: 700, width: 34, height: 99 };
+    const obstacles = [subject, { x: 860, y: 755, width: 76, height: 44 }, { x: 950, y: 720, width: 136, height: 79 }];
+    const bubble = { width: 256, height: 140 };
+    const offset = bubble.width - 92;
+    const point = placeGuide({ x: 907, y: 592 }, subject, bubble, { width: 1160, height: 820 }, obstacles, offset);
+    const mascot = { x: point.x + offset, y: point.y, width: 92, height: 92 };
+    expect(mascot.y + mascot.height).toBeLessThan(subject.y);
+    expect(Math.abs(mascot.x + 46 - (subject.x + subject.width / 2))).toBeLessThan(32);
+    for (const obstacle of obstacles) {
+      expect(intersects(mascot, obstacle)).toBe(false);
+      expect(intersects({ x: point.x, y: point.y - bubble.height - 9, ...bubble }, obstacle)).toBe(false);
+    }
+  });
+
+  it('prioritizes the highlighted control in a crowded settings dialog', () => {
+    const subject = { x: 248, y: 645, width: 492, height: 49 };
+    const bubble = { width: 256, height: 130 };
+    const fields = [390, 454, 559].map(y => ({ x: 248, y, width: 492, height: 34 }));
+    const point = placeGuide({ x: 248, y: 565 }, subject, bubble, { width: 800, height: 800 }, fields);
+    expect(intersects({ x: point.x, y: point.y - bubble.height - 9, ...bubble }, subject)).toBe(false);
+  });
+
   it('keeps the bubble inside a narrow screen and off an open workspace', () => {
     const workspace = { x: 300, y: 80, width: 450, height: 440 };
     const bubble = { width: 256, height: 180 };

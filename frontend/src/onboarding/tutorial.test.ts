@@ -32,6 +32,40 @@ beforeEach(() => {
 afterEach(() => { detach?.(); detach = undefined; });
 
 describe('tutorial progression', () => {
+  it('waits for settings and a successful model save before returning to the Agent', async () => {
+    useWorldStore.setState({ settingsOpen: false });
+    useTutorialStore.setState({ status: 'started', view: 'active', session: {
+      id: 'models', step: 'model-settings', initialIds: [], demos: [], refs: {},
+    } });
+    tutorial.resume();
+    detach = tutorial.attach(bridge);
+    await tutorial.continue();
+    expect(useTutorialStore.getState().session?.step).toBe('model-settings');
+    useWorldStore.getState().toggleSettings();
+    expect(useTutorialStore.getState().session?.step).toBe('model-connection');
+    reportInteraction({ type: 'model-connection-selected' });
+    expect(useTutorialStore.getState().session?.step).toBe('model-credentials');
+    await tutorial.continue();
+    expect(useTutorialStore.getState().session?.step).toBe('model-list');
+    await tutorial.continue();
+    expect(useTutorialStore.getState().session?.step).toBe('model-save');
+    useWorldStore.setState({ settingsOpen: false });
+    expect(useTutorialStore.getState().session?.step).toBe('model-save');
+    reportInteraction({ type: 'models-saved' });
+    expect(useTutorialStore.getState().session?.step).toBe('configure');
+  });
+
+  it('closes settings when model setup is explicitly deferred', async () => {
+    useWorldStore.setState({ settingsOpen: true });
+    useTutorialStore.setState({ status: 'started', view: 'active', session: {
+      id: 'models', step: 'model-save', initialIds: [], demos: [], refs: {},
+    } });
+    tutorial.resume();
+    await tutorial.continue();
+    expect(useTutorialStore.getState().session?.step).toBe('configure');
+    expect(useWorldStore.getState().settingsOpen).toBe(false);
+  });
+
   it('does not re-enter a completed step when closing its surfaces publishes synchronously', async () => {
     const agent = card('agent', 'agent');
     useWorldStore.setState({ cards: [card('demo'), agent] });

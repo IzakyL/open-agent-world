@@ -1,4 +1,5 @@
 import { t, useLocale } from "../i18n";
+import { createPortal } from 'react-dom';
 import { getNodesBounds, getViewportForBounds, useReactFlow, useViewport } from '@xyflow/react';
 import { ArrowRight, ChevronDown, Compass, RotateCcw, X } from 'lucide-react';
 import { useCallback, useEffect, useLayoutEffect, useRef, useState, type CSSProperties } from 'react';
@@ -48,6 +49,7 @@ export function Onboarding() {
   const [trace, setTrace] = useState<{ a: { x: number; y: number }; b: { x: number; y: number } }>();
   const tracePath = useRef<SVGPathElement>(null);
   const guide = useRef<HTMLDivElement>(null);
+  const spotlight = useRef<HTMLDivElement>(null);
   const focusSequence = useRef(0);
   const welcome = s.view === 'welcome';
   const active = s.view === 'active';
@@ -143,10 +145,19 @@ export function Onboarding() {
   }, [step.id, flow]);
 
   const targetElement = useCallback((target: Target) => {
-    if (target === 'deck' || target === 'tools') return document.querySelector<HTMLElement>(`[data-tutorial="${target}"]`);
+    if (target === 'zoom-controls') return document.querySelector<HTMLElement>('.world-canvas .world-controls');
+    if (target === 'deck' || target === 'tools' || target === 'settings' || target.startsWith('model-')) {
+      if (target.startsWith('model-') && !useWorldStore.getState().settingsOpen) return document.querySelector<HTMLElement>('[data-tutorial="settings"]');
+      return document.querySelector<HTMLElement>(`[data-tutorial="${target}"]`)
+        ?? document.querySelector<HTMLElement>('[data-tutorial="model-connection"]')
+        ?? document.querySelector<HTMLElement>('[data-tutorial="models-tab"]');
+    }
     const id = useTutorialStore.getState().session?.refs[target as Role];
     return id ? nodeElement(id) : null;
   }, []);
+
+  const [resolvedTarget, setResolvedTarget] = useState<string>();
+  const [hasConnection, setHasConnection] = useState(false);
 
   useEffect(() => {
     if (!active || s.busy || useNodeSurfaceStore.getState().dragging) return;
@@ -167,8 +178,23 @@ export function Onboarding() {
       if (element !== highlighted) {
         highlighted?.removeAttribute('data-tutorial-highlight');
         highlighted = element;
-        highlighted?.setAttribute('data-tutorial-highlight', 'true');
+        if (s.view === 'active') highlighted?.setAttribute('data-tutorial-highlight', 'true');
+        if (target.startsWith('model-')) highlighted?.scrollIntoView({ block: 'nearest', inline: 'nearest' });
       }
+      const bounds = element?.getBoundingClientRect();
+      if (spotlight.current) {
+        const visible = s.view === 'active' && bounds && bounds.width > 0 && bounds.height > 0
+          && bounds.right > 0 && bounds.bottom > 0 && bounds.left < window.innerWidth && bounds.top < window.innerHeight;
+        spotlight.current.hidden = !visible;
+        if (visible) {
+          Object.assign(spotlight.current.style, {
+            left: `${bounds.left - 8}px`, top: `${bounds.top - 8}px`,
+            width: `${bounds.width + 16}px`, height: `${bounds.height + 16}px`,
+          });
+        }
+      }
+      setResolvedTarget(element?.dataset.tutorial);
+      setHasConnection(Boolean(document.querySelector('[data-tutorial="model-credentials"]')));
       const width = window.innerWidth, height = window.innerHeight;
       let x = width / 2 - 80, y = height * (height <= 650 ? .32 : .38) - 112;
       if (!welcome) {
@@ -186,11 +212,15 @@ export function Onboarding() {
         } else { x = width * .57; y = height * .43; }
         if (target === 'deck') { x = Math.min(width - bubbleWidth - 20, (rect?.right ?? 260) + 24); y = height - 185; }
         if (target === 'tools') { x = width - bubbleWidth - 78; y = height - 205; }
+        const mascotOffset = target === 'zoom-controls' ? bubbleWidth - 92 : 0;
+        if (target === 'zoom-controls' && rect) { x = rect.left + rect.width / 2 - mascotOffset - 46; y = rect.top - 108; }
         x = Math.max(16, Math.min(width - bubbleWidth - 16, x));
         const bubbleHeight = guide.current?.querySelector<HTMLElement>('.tutorial-bubble')?.offsetHeight ?? 180;
-        const obstacles = [...document.querySelectorAll<HTMLElement>('.world-canvas .react-flow__node, .top-bar, .component-palette, .map-tools, .world-controls, .minister-presence:not([hidden]), .minister-panel, .toast-stack, .edge-inspector')]
+        const obstacles = [...document.querySelectorAll<HTMLElement>(target.startsWith('model-')
+          ? '.settings-dialog input, .settings-dialog select, .settings-dialog button, .settings-dialog .field-label'
+          : '.world-canvas .react-flow__node, .top-bar, .component-palette, .map-tools, .world-controls, .react-flow__minimap, .minister-presence:not([hidden]), .minister-panel, .toast-stack, .edge-inspector')]
           .map(element => element.getBoundingClientRect()).filter(box => box.width > 0 && box.height > 0);
-        const placed = placeGuide({ x, y }, rect, { width: bubbleWidth, height: bubbleHeight }, { width, height }, obstacles);
+        const placed = placeGuide({ x, y }, rect, { width: bubbleWidth, height: bubbleHeight }, { width, height }, obstacles, mascotOffset);
         x = placed.x; y = placed.y;
       }
       setPosition(previous => Math.abs(previous.x - x) + Math.abs(previous.y - y) > 1 ? { x, y } : previous);
@@ -203,8 +233,17 @@ export function Onboarding() {
   if (s.view === 'hidden') return null;
   const motion: GuideMotion = welcome || s.view === 'paused' ? 'idle' : s.busy ? 'think' : step.id === 'enter' ? 'enter' : step.expects ? 'indicate' : 'speak';
   const role = step.role;
+  const settingsStep = step.target.startsWith('model-');
+  const needsSettings = settingsStep && resolvedTarget === 'settings';
+  const needsModelsTab = settingsStep && resolvedTarget === 'models-tab';
+  const needsConnection = settingsStep && step.target !== 'model-connection' && resolvedTarget === 'model-connection';
+  const waitingForTarget = settingsStep && (needsSettings || needsModelsTab || needsConnection);
+  const dialogue = needsSettings ? 'Click settings to continue setting up your model.'
+    : needsModelsTab ? 'Click Models here.'
+    : needsConnection ? 'Add or select a connection first.' : step.dialogue;
   const missing = role && step.expects !== 'place' && step.expects !== 'delete' && !cards.some(card => card.id === s.session?.refs[role]);
-  return <div className={`onboarding-layer ${welcome ? 'is-welcome' : 'is-tutorial'}`}>
+  return createPortal(<div className={`onboarding-layer ${welcome ? 'is-welcome' : 'is-tutorial'} ${settingsStep ? 'is-settings-guide' : ''}`}>
+    <div className="tutorial-spotlight-layer" aria-hidden="true"><div ref={spotlight} className="tutorial-spotlight" hidden /></div>
     <div className={`onboarding-logo-ring ${welcome ? '' : 'has-entered'}`}><OawGuide ringOnly /></div>
     {welcome && <section className="onboarding-welcome" aria-label={t("Welcome to Open Agent World")}>
       <span className="onboarding-eyebrow">{t("A world of possibilities")}</span>
@@ -218,7 +257,7 @@ export function Onboarding() {
       {s.error && <p className="onboarding-error" role="alert">{s.error}</p>}
     </section>}
     {trace && <svg className="tutorial-connection-trace" aria-hidden="true"><path ref={tracePath} d={`M ${trace.a.x},${trace.a.y} C ${trace.a.x + 65},${trace.a.y} ${trace.b.x - 65},${trace.b.y} ${trace.b.x},${trace.b.y}`} pathLength="1" /></svg>}
-    <div ref={guide} className={`tutorial-guide ${welcome ? 'is-logo' : ''} ${compact ? 'is-compact' : ''}`}
+    <div ref={guide} className={`tutorial-guide ${welcome ? 'is-logo' : ''} ${compact ? 'is-compact' : ''} ${(s.target ?? step.target) === 'zoom-controls' ? 'is-zoom-guide' : ''}`}
       style={{ '--guide-x': `${position.x}px`, '--guide-y': `${position.y}px` } as CSSProperties}>
       {!welcome && <div className="tutorial-bubble" role="region" aria-label={t("Tutorial guide")} data-step={step.id}>
         <header><span>{s.view === 'paused' ? t("Your walk is saved") : `${step.chapter + 1} / ${CHAPTERS.length} · ${t(CHAPTERS[step.chapter])}`}</span>
@@ -226,7 +265,7 @@ export function Onboarding() {
           <button className="onboarding-icon-button" aria-label={t("Skip tutorial")} title={t("Skip tutorial and tidy temporary props")} onClick={() => void tutorial.exit('skipped')}><X size={13} /></button>
         </header>
         {!compact && <>
-          <p aria-live="polite" aria-atomic="true">{s.view === 'paused' ? t("Pick up where you left off, or start a new walk. Your own cards stay with you.") : missing ? t("Looks like that card moved away or was removed. I can help you find it or return to placing one.") : t(step.dialogue)}</p>
+          <p aria-live="polite" aria-atomic="true">{s.view === 'paused' ? t("Pick up where you left off, or start a new walk. Your own cards stay with you.") : missing ? t("Looks like that card moved away or was removed. I can help you find it or return to placing one.") : t(dialogue)}</p>
           {s.error ? <p className="onboarding-error" role="alert">{s.error}</p> : sync === 'offline' ? <small role="status">{t("Waiting for the world service to reconnect. Your progress is saved.")}</small> : step.hint && <small>{t(step.hint)}</small>}
           <footer>
             {s.view === 'paused' ? <>
@@ -234,15 +273,15 @@ export function Onboarding() {
               <button className="onboarding-icon-button" disabled={s.busy} onClick={() => void tutorial.replay()} aria-label={t("Restart tutorial")}><RotateCcw size={14} /></button>
               {s.error && <button className="onboarding-text-button" disabled={s.busy} onClick={() => void tutorial.exit('skipped')}>{t("Retry cleanup")}</button>}
             </> : <>
-              {step.button && <button className="tutorial-next" disabled={s.busy || sync === 'offline'} onClick={() => void tutorial.continue()}>{s.busy ? t("One moment…") : t(step.button)}<ArrowRight size={13} /></button>}
+              {step.button && <button className="tutorial-next" disabled={s.busy || sync === 'offline' || waitingForTarget} onClick={() => void tutorial.continue()}>{s.busy ? t("One moment…") : t(step.button)}<ArrowRight size={13} /></button>}
               {!step.button && <span className="tutorial-waiting"><i />{s.busy ? t("One moment…") : s.ready ? t("Settings saved") : t("Your turn")}</span>}
-              {(step.expects || s.error) && <button className="onboarding-icon-button" aria-label={t("Recover this step")} title={t("Find the card, or recover a missing card")} disabled={s.busy} onClick={() => void tutorial.recover()}><Compass size={15} /></button>}
+              {((step.expects && !settingsStep && step.id !== 'model-settings') || s.error) && <button className="onboarding-icon-button" aria-label={t("Recover this step")} title={t("Find the card, or recover a missing card")} disabled={s.busy} onClick={() => void tutorial.recover()}><Compass size={15} /></button>}
             </>}
           </footer>
-          {active && step.optional && <button className="onboarding-text-button tutorial-optional" disabled={s.busy || sync === 'syncing' || (step.id === 'configure' && !['inspector', 'workspace'].includes(surfaces[s.session?.refs.agent ?? ''] ?? ''))} onClick={() => void tutorial.continue()}>{s.ready ? t("Continue with these settings") : t(step.optional)}</button>}
+          {active && step.optional && <button className="onboarding-text-button tutorial-optional" disabled={s.busy || sync === 'syncing' || (step.id === 'model-connection' && (waitingForTarget || !hasConnection)) || (step.id === 'configure' && !['inspector', 'workspace'].includes(surfaces[s.session?.refs.agent ?? ''] ?? ''))} onClick={() => void tutorial.continue()}>{s.ready ? t("Continue with these settings") : t(step.optional)}</button>}
         </>}
       </div>}
       <div className="tutorial-mascot"><OawGuide motion={motion} inLogo={welcome} movementTarget={guide} celebration={s.celebration} /></div>
     </div>
-  </div>;
+  </div>, document.body);
 }

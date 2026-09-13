@@ -46,7 +46,7 @@ export function TopBar() {
 
       <div className="top-actions">
         <button type="button" className="top-icon-button" onClick={useCardLibrary.getState().show} aria-label={t("Open Pack and Card Library")} title={t("Packs, Cards and Decks")}><LibraryBig size={16} /></button>
-        <button type="button" className="top-icon-button" onClick={toggleSettings} aria-label={t("Open settings")} title={t("Settings")}>
+        <button type="button" className="top-icon-button" onClick={toggleSettings} data-tutorial="settings" aria-label={t("Open settings")} title={t("Settings")}>
           <Settings2 size={16} />
         </button>
         <button

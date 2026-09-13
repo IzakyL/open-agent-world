@@ -1,3 +1,4 @@
+import { reportInteraction } from "../state/interactions";
 import { t, useLocale } from "../i18n";
 import { Plus, Server, Star, Trash2 } from "lucide-react";
 import { useState } from "react";
@@ -37,6 +38,7 @@ export function ModelConnectionsEditor({ value, onChange, saved, busy }: {
       adapter: preset === "compatible" || preset === "local" ? "openai" : preset,
       auth_mode: p.auth_mode, enabled: true, api_key_configured: false, models: [] };
     onChange({ ...value, connections: [...value.connections, added] }); setSelected(id); setQuery("");
+    reportInteraction({ type: "model-connection-selected" });
   };
   return <fieldset className="model-editor" disabled={busy}>
     <div className="settings-page-heading"><h3>{t("Models & connections")}</h3><p>{t("Connect your accounts, then choose the models your agents can use.")}</p></div>
@@ -46,7 +48,7 @@ export function ModelConnectionsEditor({ value, onChange, saved, busy }: {
         {availableModels(value).map(m => <option key={m.value} value={m.value}>{m.connection} / {m.label}</option>)}
       </select>
     </label>
-    <div className="connection-add">
+    <div className="connection-add" data-tutorial="model-connection">
       <select aria-label={t("New connection type")} value={preset} onChange={e => setPreset(e.target.value as keyof typeof presets)}>
         <option value="compatible">{t("OpenAI-compatible service")}</option><option value="openai">{t("OpenAI")}</option>
         <option value="anthropic">{t("Anthropic")}</option><option value="gemini">{t("Google Gemini")}</option><option value="local">{t("Local service")}</option>
@@ -57,7 +59,7 @@ export function ModelConnectionsEditor({ value, onChange, saved, busy }: {
       <div className="connection-list" aria-label={t("Connections")}>
         <input aria-label={t("Search connections")} placeholder={t("Search connections…")} value={query} onChange={e => setQuery(e.target.value)} />
         {value.connections.filter(c => c.name.toLowerCase().includes(query.toLowerCase())).map(c => <button type="button" key={c.id}
-          className="connection-item" aria-pressed={connection?.id === c.id} onClick={() => setSelected(c.id)}>
+          className="connection-item" aria-pressed={connection?.id === c.id} onClick={() => { setSelected(c.id); reportInteraction({ type: "model-connection-selected" }); }}>
           <Server size={14} /><span><strong>{c.name || t("Untitled connection")}</strong><small>{c.enabled ? t("{v0} models", { v0: String(c.models.filter(m => m.enabled).length) }) : t("Disabled")}</small></span>
         </button>)}
         {!value.connections.length && <p className="settings-description">{t("Add a connection to get started.")}</p>}
@@ -71,7 +73,7 @@ export function ModelConnectionsEditor({ value, onChange, saved, busy }: {
             onChange(next);
           }}><Trash2 size={14} /></button>}
         </div>
-        <div className="connection-fields">
+        <div className="connection-fields" data-tutorial="model-credentials">
         <label className="field-label"><span>{t("Connection name")}</span><input value={connection.name} maxLength={120} required onChange={e => update({ name: e.target.value })} placeholder={t("Company account")} /></label>
         <label className="field-label"><span>{t("API format")}</span><select disabled={connection.id === "legacy"} value={connection.adapter} onChange={e => update({ adapter: e.target.value as ModelConnection["adapter"] })}>
           <option value="openai">{t("OpenAI-compatible Chat Completions")}</option><option value="anthropic">{t("Anthropic Messages")}</option><option value="gemini">{t("Google Gemini")}</option>
@@ -110,7 +112,7 @@ export function ModelConnectionsEditor({ value, onChange, saved, busy }: {
             </label>}
           </div>}
         </div>
-        <div className="connection-model-heading"><h4>{t("Models")}</h4><button type="button" className="secondary-button" disabled={connection.models.length >= 100} onClick={() => update({ models: [...connection.models, { id: crypto.randomUUID(), name: "", model_id: "", enabled: true }] })}><Plus size={13} /> {t("Add model")}</button></div>
+        <div className="connection-model-heading" data-tutorial="model-list"><h4>{t("Models")}</h4><button type="button" className="secondary-button" disabled={connection.models.length >= 100} onClick={() => update({ models: [...connection.models, { id: crypto.randomUUID(), name: "", model_id: "", enabled: true }] })}><Plus size={13} /> {t("Add model")}</button></div>
         {!connection.models.length && <p className="settings-description">{t("Add a model using the model ID supplied by your service.")}</p>}
         {connection.models.map((model, index) => <div className="connection-model-row" key={model.id}>
           <label className="field-label"><span>{t("Display name")}{value.default_model === modelRef(model.id) && <Star className="model-default-icon" size={12} role="img" aria-label={t("Default for new agents")}><title>{t("Default for new agents")}</title></Star>}</span><input aria-label={t("Model {v0} display name", { v0: String(index + 1) })} required maxLength={120} value={model.name}

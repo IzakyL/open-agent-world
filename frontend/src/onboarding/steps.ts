@@ -4,7 +4,7 @@ import type { GlueBond } from '../state/glue';
 import type { WorldInteraction } from '../state/interactions';
 
 export type Role = 'demo' | 'practice' | 'agent' | 'conversation' | 'sandbox' | 'glueA' | 'glueB' | 'minister';
-export type Target = Role | 'center' | 'terrain' | 'deck' | 'tools';
+export type Target = Role | 'center' | 'terrain' | 'deck' | 'tools' | 'zoom-controls' | 'settings' | 'model-connection' | 'model-credentials' | 'model-list' | 'model-save';
 export type Demonstration = 'deck' | 'place' | 'connect' | 'glue' | 'unglue' | 'minister';
 export interface TutorialStep {
   id: string;
@@ -14,7 +14,7 @@ export interface TutorialStep {
   target: Target;
   action?: Demonstration;
   button?: string;
-  expects?: 'pan' | 'zoom' | 'place' | 'move' | 'select' | 'open' | 'close' | 'focus' | 'delete' | 'configure' | 'workspace' | 'message' | 'connect' | 'glue' | 'presence';
+  expects?: 'settings-open' | 'model-connection' | 'models-saved' | 'pan' | 'zoom' | 'place' | 'move' | 'select' | 'open' | 'close' | 'focus' | 'delete' | 'configure' | 'workspace' | 'message' | 'connect' | 'glue' | 'presence';
   role?: Role;
   optional?: string;
   review?: boolean;
@@ -24,7 +24,7 @@ export const CHAPTERS = ['Find your bearings', 'Make it tangible', 'Build a work
 export const STEPS: readonly TutorialStep[] = [
   { id: 'enter', chapter: 0, dialogue: 'Oh, hello! There’s a whole world beyond this little ring. Come explore with me.', target: 'center', button: 'Let’s go' },
   { id: 'pan', chapter: 0, dialogue: 'Follow me over here. Drag an empty patch of canvas to move around.', hint: 'Drag the background, away from cards.', target: 'terrain', expects: 'pan' },
-  { id: 'zoom', chapter: 0, dialogue: 'A little closer… or a little further. Scroll to zoom. The + and − buttons work too.', target: 'tools', expects: 'zoom' },
+  { id: 'zoom', chapter: 0, dialogue: 'A little closer… or a little further. Scroll to zoom. The + and − buttons work too.', target: 'zoom-controls', expects: 'zoom' },
   { id: 'deck', chapter: 1, dialogue: 'Cards come from packs, then live in your deck. Let’s collect the essentials and add them to your active deck.', target: 'deck', action: 'deck', button: 'Prepare my deck' },
   { id: 'place-demo', chapter: 1, dialogue: 'Watch this Text card travel from the deck into the world. This one is my temporary prop.', target: 'deck', action: 'place', button: 'Show me' },
   { id: 'place', chapter: 1, dialogue: 'Your turn! Drag a Text card from the deck onto a clear patch. Clicking the deck card also places it.', target: 'deck', expects: 'place', role: 'practice' },
@@ -35,12 +35,17 @@ export const STEPS: readonly TutorialStep[] = [
   { id: 'focus', chapter: 1, dialogue: 'Lost your place? Select your card, then press F to focus it. The fit-view button can show the whole world.', hint: 'Shift-click your card, then press F outside a text field.', target: 'practice', expects: 'focus', role: 'practice' },
   { id: 'delete', chapter: 1, dialogue: 'Let’s remove your practice card. Select it and press Delete. Ctrl / ⌘ Z can bring it back.', hint: 'The normal Remove button inside the inspector works too.', target: 'practice', expects: 'delete', role: 'practice' },
   { id: 'workflow', chapter: 2, dialogue: 'Now for something useful: an Agent to think, a Conversation to talk in, and a Sandbox to work in. These cards will be yours to keep.', target: 'center', button: 'Build my first workflow' },
-  { id: 'agent', chapter: 2, dialogue: 'Place an Agent from your deck. Leave some room beside it for its Conversation.', target: 'deck', expects: 'place', role: 'agent' },
-  { id: 'configure', chapter: 2, dialogue: 'Open your Agent. Give it a short system instruction, like “Help me plan a small garden.” Pick a model here, or use Manage models.', hint: 'Edits save when you leave the field. Continue when your settings are ready.', target: 'agent', expects: 'configure', role: 'agent', optional: 'Keep these settings', review: true },
+  { id: 'agent', chapter: 2, dialogue: 'Place an Agent. Then follow me to set up its model.', target: 'deck', expects: 'place', role: 'agent' },
+  { id: 'model-settings', chapter: 2, dialogue: 'First, click this settings button to connect a model.', target: 'settings', expects: 'settings-open' },
+  { id: 'model-connection', chapter: 2, dialogue: 'Choose a provider and click Add connection, or select an existing connection.', target: 'model-connection', expects: 'model-connection', optional: 'Use this connection' },
+  { id: 'model-credentials', chapter: 2, dialogue: 'Enter your API key here and check the Base URL. Local services may not need a key.', target: 'model-credentials', button: 'Next' },
+  { id: 'model-list', chapter: 2, dialogue: 'Click Add model and enter the model ID from your provider.', target: 'model-list', button: 'Next' },
+  { id: 'model-save', chapter: 2, dialogue: 'Click Save settings to keep this connection.', target: 'model-save', expects: 'models-saved', optional: 'Set up later' },
+  { id: 'configure', chapter: 2, dialogue: 'Back to your Agent: choose the model you saved and write a short system instruction.', target: 'agent', expects: 'configure', role: 'agent', optional: 'Keep these settings', review: true },
   { id: 'conversation', chapter: 2, dialogue: 'Place a Conversation beside your Agent. It holds durable messages and sessions.', target: 'deck', expects: 'place', role: 'conversation' },
   { id: 'connect-demo', chapter: 2, dialogue: 'I’ll connect these with Participate. A connection grants a real capability: this Agent can now join the Conversation.', target: 'agent', action: 'connect', button: 'Show the connection' },
   { id: 'conversation-open', chapter: 2, dialogue: 'Click the Conversation, then its Open workspace button. That’s where your sessions and messages live.', target: 'conversation', expects: 'workspace', role: 'conversation' },
-  { id: 'message', chapter: 2, dialogue: 'Try “Help me plan a small garden.” Choose the Agent in the session or @mention it, then send. A configured model is needed for its reply.', hint: 'Your message stays in the Conversation even when a model is unavailable.', target: 'conversation', expects: 'message', role: 'conversation', optional: 'Try the model later' },
+  { id: 'message', chapter: 2, dialogue: 'Try “Help me plan a small garden.” Choose the Agent in the session or @mention it, then send. A configured model is needed for its reply.', hint: 'If the reply fails, check the API key, Base URL and model ID in Settings > Models. You can set them up later; your message stays here.', target: 'conversation', expects: 'message', role: 'conversation', optional: 'Try the model later' },
   { id: 'reply', chapter: 2, dialogue: 'The Agent’s replies and tool activity appear in this session. Take a look around; your conversation stays here when you close the card.', target: 'conversation', button: 'On to Sandbox' },
   { id: 'sandbox', chapter: 2, dialogue: 'Now place a Sandbox. It gives an Agent a workspace and the ability to execute commands.', target: 'deck', expects: 'place', role: 'sandbox' },
   { id: 'sandbox-connect', chapter: 2, dialogue: 'Your turn to connect! Drag from an edge port of the Agent to the Sandbox. Choose Execute, or Execute + Start/Stop, then grant it.', hint: 'If a port is covered, move a card aside. Execute needs a running Sandbox; Start/Stop also lets the Agent manage it.', target: 'sandbox', expects: 'connect', role: 'sandbox' },
@@ -66,6 +71,7 @@ export interface Observation {
   bonds: GlueBond[];
   viewport: FlowViewportState;
   settled: boolean;
+  settingsOpen?: boolean;
   deleted: string[];
 }
 export interface Baseline { position?: { x: number; y: number }; viewport: FlowViewportState; config?: string }
@@ -75,6 +81,9 @@ export function stepComplete(step: TutorialStep, refs: Partial<Record<Role, stri
   const card = state.cards.find(item => item.id === id);
   const level = id ? state.surfaces[id] ?? 'preview' : 'node';
   switch (step.expects) {
+    case 'settings-open': return Boolean(state.settingsOpen);
+    case 'model-connection': return event?.type === 'model-connection-selected';
+    case 'models-saved': return event?.type === 'models-saved';
     case 'pan': return event?.type === 'viewport' && Math.hypot(event.x - baseline.viewport.x, event.y - baseline.viewport.y) > 45;
     case 'zoom': return event?.type === 'viewport' && Math.abs(event.zoom - baseline.viewport.zoom) > .07;
     case 'place': return Boolean(card);

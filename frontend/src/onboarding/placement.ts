@@ -18,9 +18,9 @@ export function vacantPosition(desired: GuideRect, obstacles: GuideRect[], clear
   return best;
 }
 
-/** Keep the interactive bubble off cards and controls; the character is transparent to input. */
+/** Keep both the bubble and character clear of the highlighted subject and controls. */
 export function placeGuide(desired: { x: number; y: number }, subject: GuideRect | undefined,
-  bubble: { width: number; height: number }, viewport: { width: number; height: number }, obstacles: GuideRect[]) {
+  bubble: { width: number; height: number }, viewport: { width: number; height: number }, obstacles: GuideRect[], mascotOffset = 0) {
   const { width, height } = viewport;
   const maxX = Math.max(12, width - bubble.width - 12);
   const minY = bubble.height + 28;
@@ -28,6 +28,7 @@ export function placeGuide(desired: { x: number; y: number }, subject: GuideRect
   const clamp = (point: { x: number; y: number }) => ({ x: Math.max(12, Math.min(maxX, point.x)), y: Math.max(minY, Math.min(maxY, point.y)) });
   const candidates = [desired,
     ...(subject ? [
+      { x: subject.x + subject.width / 2 - mascotOffset - 46, y: subject.y - 108 },
       { x: subject.x - bubble.width - 20, y: desired.y },
       { x: subject.x + subject.width + 20, y: desired.y },
       { x: subject.x + subject.width / 2 - bubble.width / 2, y: subject.y - 16 },
@@ -37,7 +38,11 @@ export function placeGuide(desired: { x: number; y: number }, subject: GuideRect
   ].map(clamp);
   const score = (point: { x: number; y: number }) => {
     const rect = { x: point.x - 8, y: point.y - bubble.height - 17, width: bubble.width + 16, height: bubble.height + 16 };
-    return obstacles.reduce((sum, obstacle) => sum + overlap(rect, obstacle) * 10, 0) + Math.hypot(point.x - desired.x, point.y - desired.y);
+    // The control being taught must remain readable and clickable, even when
+    // a narrow settings dialog leaves little room around other fields.
+    const mascot = { x: point.x + mascotOffset, y: point.y, width: 92, height: 92 };
+    return (subject ? (overlap(rect, subject) + overlap(mascot, subject)) * 1000 : 0)
+      + obstacles.reduce((sum, obstacle) => sum + (overlap(rect, obstacle) + overlap(mascot, obstacle)) * 10, 0) + Math.hypot(point.x - desired.x, point.y - desired.y);
   };
   return candidates.reduce((best, point) => score(point) < score(best) ? point : best);
 }

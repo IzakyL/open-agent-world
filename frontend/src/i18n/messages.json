@@ -1,4 +1,47 @@
 {
+  "Click settings to continue setting up your model.": ["Click settings to continue setting up your model.", "点开设置，继续配置模型。"],
+  "Click Models here.": ["Click Models here.", "点击这里的“模型”。"],
+  "Add or select a connection first.": ["Add or select a connection first.", "先添加或选择一个连接。"],
+  "Place an Agent. Then follow me to set up its model.": [
+    "Place an Agent. Then follow me to set up its model.",
+    "放置一张智能体卡，再跟我去设置模型。"
+  ],
+  "First, click this settings button to connect a model.": [
+    "First, click this settings button to connect a model.",
+    "先点这里的设置按钮，连接一个模型。"
+  ],
+  "Choose a provider and click Add connection, or select an existing connection.": [
+    "Choose a provider and click Add connection, or select an existing connection.",
+    "选择服务商，点击“添加连接”，也可以选择已有连接。"
+  ],
+  "Enter your API key here and check the Base URL. Local services may not need a key.": [
+    "Enter your API key here and check the Base URL. Local services may not need a key.",
+    "在这里填写 API Key，并确认 Base URL。本地服务可能不需要密钥。"
+  ],
+  "Click Add model and enter the model ID from your provider.": [
+    "Click Add model and enter the model ID from your provider.",
+    "点击“添加模型”，填写服务商提供的模型 ID。"
+  ],
+  "Click Save settings to keep this connection.": [
+    "Click Save settings to keep this connection.",
+    "点击“保存设置”，保存这个连接。"
+  ],
+  "Back to your Agent: choose the model you saved and write a short system instruction.": [
+    "Back to your Agent: choose the model you saved and write a short system instruction.",
+    "回到智能体：选择刚保存的模型，再写一句系统指令。"
+  ],
+  "Use this connection": [
+    "Use this connection",
+    "使用这个连接"
+  ],
+  "Set up later": [
+    "Set up later",
+    "稍后设置"
+  ],
+  "If the reply fails, check the API key, Base URL and model ID in Settings > Models. You can set them up later; your message stays here.": [
+    "If the reply fails, check the API key, Base URL and model ID in Settings > Models. You can set them up later; your message stays here.",
+    "如果回复失败，请到“设置 → 模型”检查 API Key、Base URL 和模型 ID。也可以稍后配置，你的消息会保留在这里。"
+  ],
   "A clear place to start.": [
     "A clear place to start.",
     "从这里开始。"

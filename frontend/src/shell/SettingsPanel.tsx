@@ -1,3 +1,4 @@
+import { reportInteraction } from "../state/interactions";
 import { t, useLocale } from "../i18n";
 import { Box, Cpu, HardDrive, Settings2, X } from "lucide-react";
 import { useEffect, useState } from "react";
@@ -105,6 +106,7 @@ export function SettingsPanel() {
         setDraft(saved);
         setSavedCatalog(saved);
         setOpen();
+        reportInteraction({ type: 'models-saved' });
       }
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : t("Could not save settings."));
@@ -130,7 +132,7 @@ export function SettingsPanel() {
         <div className="settings-layout">
         <nav className="settings-sections" aria-label={t("Settings sections")}>
           <label className="field-label"><span>{t('Language')}</span><select aria-label={t('Language')} value={locale} onChange={event => setLocale(event.target.value === 'zh-CN' ? 'zh-CN' : 'en')}><option value="zh-CN">简体中文</option><option value="en">English</option></select></label>
-          <button type="button" className="secondary-button" aria-pressed={section === "model"} disabled={busy} onClick={() => { setSection("model"); setError(""); }}><Cpu size={16} /> {t("Models")}</button>
+          <button type="button" className="secondary-button" data-tutorial="models-tab" aria-pressed={section === "model"} disabled={busy} onClick={() => { setSection("model"); setError(""); }}><Cpu size={16} /> {t("Models")}</button>
           <button type="button" className="secondary-button" aria-pressed={section === "sandbox"} disabled={busy} onClick={() => { setSection("sandbox"); setError(""); }}><Box size={16} /> {t("Sandbox")}</button>
           <button type="button" className="secondary-button" aria-pressed={section === "storage"} disabled={busy} onClick={() => { setSection("storage"); setError(""); }}><HardDrive size={16} /> {t("Storage")}</button>
           <button type="button" className="secondary-button" aria-pressed={section === "deepl"} disabled={busy} onClick={() => { setSection("deepl"); setError(""); }}>{t("DeepL")}</button>
@@ -193,7 +195,7 @@ export function SettingsPanel() {
         </div>
         <footer>
           <button type="button" className="secondary-button" onClick={setOpen} disabled={busy}>{t("Cancel")}</button>
-          {section !== "deepl" && <button type="submit" className="primary-button" disabled={busy || (section === "storage" && (!storage?.editable || !storagePath.trim() || storagePath.trim() === storage.pending_path)) || (section === "sandbox" && !loaded) || (section === "model" && !modelLoaded)}>{saving ? t("Saving…") : t("Save settings")}</button>}
+          {section !== "deepl" && <button data-tutorial={section === "model" ? "model-save" : undefined} type="submit" className="primary-button" disabled={busy || (section === "storage" && (!storage?.editable || !storagePath.trim() || storagePath.trim() === storage.pending_path)) || (section === "sandbox" && !loaded) || (section === "model" && !modelLoaded)}>{saving ? t("Saving…") : t("Save settings")}</button>}
         </footer>
       </form>
     </div>
