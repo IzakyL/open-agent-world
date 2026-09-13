@@ -126,6 +126,7 @@ export function normalizeCard(input: unknown): WorldCard {
   }
   return {
     id: String(source.id),
+    revision: typeof source.revision === "number" ? source.revision : undefined,
     equipment: source.equipment as WorldCard["equipment"] ?? null,
     parent_id: typeof source.parent_id === "string" ? source.parent_id : null,
     type,
@@ -150,6 +151,7 @@ export function normalizeEdge(input: unknown): WorldEdge {
   const source = asRecord(input);
   return {
     id: String(source.id),
+    revision: typeof source.revision === "number" ? source.revision : undefined,
     source: String(source.source ?? source.source_id),
     target: String(source.target ?? source.target_id),
     relationship: normalizeRelationship(source.relationship ?? source.permission),
@@ -250,6 +252,25 @@ function unwrap<T>(input: unknown, key: string): T {
 }
 
 export const worldApi = {
+  getGlue(): Promise<import("../state/glue").SharedGlue> { return request('/canvas/glue'); },
+  saveGlue(patch: { revision: number; boxes?: Record<string, import("../state/glue").GlueBox>; bonds?: import("../state/glue").GlueBond[]; detach?: string[] }): Promise<import("../state/glue").SharedGlue> {
+    // Snap candidates and older browser caches can carry gesture-only dx/dy.
+    const bonds = patch.bonds?.map(({ a, b, side }) => ({ a, b, side }));
+    return request('/canvas/glue', { method: 'PATCH', body: JSON.stringify({ ...patch, bonds }) });
+  },
+  getMinisterProposals(id: string): Promise<import("../types/minister").MinisterProposal[]> {
+    return request(`/ministers/${encodeURIComponent(id)}/proposals`);
+  },
+  decideMinisterProposal(id: string, proposalId: string, approve: boolean): Promise<{ status: string }> {
+    return request(`/ministers/${encodeURIComponent(id)}/proposals/${encodeURIComponent(proposalId)}`, { method: 'POST', body: JSON.stringify({ approve }) });
+  },
+  getMinisterWorld(id: string, query = "", offset = 0): Promise<import("../types/minister").MinisterWorldView> {
+    return request(`/ministers/${encodeURIComponent(id)}/world?${new URLSearchParams({ query, offset: String(offset) })}`);
+  },
+
+  openMinisterChat(id: string): Promise<import("../types/minister").MinisterChat> {
+    return request(`/ministers/${encodeURIComponent(id)}/chat`, { method: "POST" });
+  },
   readFilePreview(viewerId: string, reference: import("../state/openFiles").FileReference, signal?: AbortSignal): Promise<{ name: string; size_bytes: number; data: string }> {
     return request(`/nodes/${encodeURIComponent(viewerId)}/file-preview`, { method: "POST", body: JSON.stringify(reference), signal });
   },
@@ -432,7 +453,7 @@ export const worldApi = {
 
   async updateNode(
     id: string,
-    patch: Partial<Omit<WorldCard, "id" | "type">>,
+    patch: Partial<Omit<WorldCard, "id" | "type" | "revision">> & { expected_revision?: number },
   ): Promise<WorldCard> {
     const body = await request<unknown>(`/nodes/${encodeURIComponent(id)}`, {
       method: "PATCH",
@@ -443,7 +464,7 @@ export const worldApi = {
 
   async batchUpdateNodes(updates: Array<{
     node_id: string;
-    patch: Partial<Omit<WorldCard, "id" | "type">>;
+    patch: Partial<Omit<WorldCard, "id" | "type" | "revision">> & { expected_revision?: number };
   }>): Promise<WorldCard[]> {
     const body = await request<unknown>("/nodes/batch-update", {
       method: "POST",
@@ -452,8 +473,8 @@ export const worldApi = {
     return (Array.isArray(body) ? body : []).map(normalizeCard);
   },
 
-  deleteNode(id: string): Promise<void> {
-    return request<void>(`/nodes/${encodeURIComponent(id)}`, { method: "DELETE" });
+  deleteNode(id: string, expectedRevision?: number): Promise<void> {
+    return request<void>(`/nodes/${encodeURIComponent(id)}${expectedRevision === undefined ? "" : `?expected_revision=${expectedRevision}`}`, { method: "DELETE" });
   },
 
   async deleteNodes(ids: string[]): Promise<WorldCard[]> {
@@ -500,7 +521,7 @@ export const worldApi = {
 
   async updateEdge(
     id: string,
-    patch: { relationship?: Relationship; direction?: EdgeDirection },
+    patch: { relationship?: Relationship; direction?: EdgeDirection; expected_revision?: number },
   ): Promise<WorldEdge> {
     const body = await request<unknown>(`/edges/${encodeURIComponent(id)}`, {
       method: "PATCH",
@@ -509,8 +530,8 @@ export const worldApi = {
     return normalizeEdge(unwrap(body, "edge"));
   },
 
-  deleteEdge(id: string): Promise<void> {
-    return request<void>(`/edges/${encodeURIComponent(id)}`, { method: "DELETE" });
+  deleteEdge(id: string, expectedRevision?: number): Promise<void> {
+    return request<void>(`/edges/${encodeURIComponent(id)}${expectedRevision === undefined ? "" : `?expected_revision=${expectedRevision}`}`, { method: "DELETE" });
   },
 
   async getText(nodeId: string): Promise<{ content: string; revision?: number; history?: unknown[] }> {
@@ -788,6 +809,8 @@ export function normalizeRuntimeEvent(input: unknown): RuntimeEvent {
   return {
     id: String(source.id ?? `${timestamp}-${Math.random().toString(36).slice(2, 8)}`),
     type: String(source.type ?? "runtime_event"),
+    stream_id: typeof source.stream_id === "string" ? source.stream_id : undefined,
+    sequence: typeof source.sequence === "number" ? source.sequence : undefined,
     node_id: typeof source.node_id === "string" ? source.node_id : undefined,
     agent_id: typeof source.agent_id === "string" ? source.agent_id : undefined,
     sandbox_id: typeof source.sandbox_id === "string" ? source.sandbox_id : undefined,

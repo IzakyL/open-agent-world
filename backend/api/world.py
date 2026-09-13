@@ -22,6 +22,19 @@ from backend.world.models import (
 
 
 router = APIRouter(tags=["world"])
+from backend.canvas_glue import GluePatch, read_glue, patch_glue
+
+
+@router.get("/canvas/glue")
+async def get_glue(services: ApplicationServices = Depends(get_services)):
+    async with services._node_mutation(read_only=True):
+        return read_glue(services)
+
+
+@router.patch("/canvas/glue")
+async def update_glue(request: GluePatch, services: ApplicationServices = Depends(get_services)):
+    async with services._node_mutation():
+        return patch_glue(services, request)
 _CHUNK = re.compile(r"^(-?\d+):(-?\d+)$")
 
 
@@ -136,9 +149,10 @@ async def update_cards(
 @router.delete("/nodes/{card_id}", response_model=Card)
 @router.delete("/cards/{card_id}", response_model=Card, include_in_schema=False)
 async def delete_card(
-    card_id: str, services: ApplicationServices = Depends(get_services)
+    card_id: str, services: ApplicationServices = Depends(get_services),
+    expected_revision: Annotated[int | None, Query(ge=1)] = None,
 ) -> Card:
-    return await services.delete_card(card_id)
+    return await services.delete_card(card_id, expected_revision=expected_revision)
 
 
 @router.post("/nodes/batch-delete", response_model=list[Card])
@@ -146,7 +160,7 @@ async def delete_cards(
     request: CardsDelete,
     services: ApplicationServices = Depends(get_services),
 ) -> list[Card]:
-    return await services.delete_cards(request.node_ids)
+    return await services.delete_cards(request.node_ids, expected_revisions=request.expected_revisions)
 
 
 @router.get("/edges", response_model=list[Edge])
@@ -182,6 +196,7 @@ async def update_edge(
 
 @router.delete("/edges/{edge_id}", response_model=Edge)
 async def delete_edge(
-    edge_id: str, services: ApplicationServices = Depends(get_services)
+    edge_id: str, services: ApplicationServices = Depends(get_services),
+    expected_revision: Annotated[int | None, Query(ge=1)] = None,
 ) -> Edge:
-    return await services.delete_edge(edge_id)
+    return await services.delete_edge(edge_id, expected_revision=expected_revision)

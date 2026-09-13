@@ -1,0 +1,452 @@
+import { t, useLocale } from "../i18n";
+import { createPortal } from 'react-dom';
+import { getNodesBounds, getViewportForBounds, useReactFlow } from '@xyflow/react';
+import { ArrowRight, ChevronDown, Compass, RotateCcw, X } from 'lucide-react';
+import { useCallback, useEffect, useLayoutEffect, useRef, useState, type CSSProperties } from 'react';
+import { useCardLibrary } from '../state/cardLibrary';
+import { useWorldStore } from '../state/worldStore';
+import { useNodeSurfaceStore } from '../state/nodeSurfaces';
+import { beginGlueEdit, glueGroup, persistGlue, useGlueStore } from '../state/glue';
+import { nodePositionFromSurfacePosition } from '../canvas/nodeDisplacement';
+import { OawGuide, type GuideMotion } from './OawGuide';
+import { CHAPTERS, STEPS, starterPack, type Role, type Target } from './steps';
+import { tutorial, useTutorialStore, type GuideVisuals } from './controller';
+import './onboarding.css';
+import { Spotlight, type SpotlightHandle } from './Spotlight';
+import { relationshipPath } from '../edges/geometry';
+import { nodeCornerRadius } from '../edges/nodeGeometry';
+import type { CanvasNode } from '../cards/types';
+import { advanceGuide, placeGuide, vacantPosition } from './placement';
+
+function nodeElement(id: string) { return document.querySelector<HTMLElement>(`.world-canvas > .react-flow .react-flow__node[data-id="${CSS.escape(id)}"]`); }
+/** Only illuminate the part of a target visible inside its scroll containers. */
+function visibleBounds(element: HTMLElement) {
+  const rect = element.getBoundingClientRect();
+  let left = Math.max(0, rect.left), top = Math.max(0, rect.top);
+  let right = Math.min(innerWidth, rect.right), bottom = Math.min(innerHeight, rect.bottom);
+  for (let parent = element.parentElement; parent; parent = parent.parentElement) {
+    const style = getComputedStyle(parent), bounds = parent.getBoundingClientRect();
+    if (/(auto|scroll|hidden|clip)/.test(style.overflowX)) { left = Math.max(left, bounds.left); right = Math.min(right, bounds.right); }
+    if (/(auto|scroll|hidden|clip)/.test(style.overflowY)) { top = Math.max(top, bounds.top); bottom = Math.min(bottom, bounds.bottom); }
+  }
+  return new DOMRect(left, top, Math.max(0, right - left), Math.max(0, bottom - top));
+}
+const reducedMotion = () => window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+async function frameElement(id: string, signal: AbortSignal) {
+  const deadline = performance.now() + 6000;
+  while (performance.now() < deadline) {
+    signal.throwIfAborted();
+    const element = nodeElement(id);
+    if (element && element.getBoundingClientRect().width > 0) return element;
+    await new Promise<void>(resolve => requestAnimationFrame(() => resolve()));
+  }
+  throw new Error(t("The card is outside the visible canvas. Use Recover this step and retry."));
+}
+async function animate(element: Element, keyframes: Keyframe[], signal: AbortSignal, duration = 850) {
+  signal.throwIfAborted();
+  if (reducedMotion()) return;
+  const animation = element.animate(keyframes, { duration, easing: 'cubic-bezier(.35,0,.25,1)', fill: 'both' });
+  const cancel = () => animation.cancel();
+  signal.addEventListener('abort', cancel, { once: true });
+  try { await animation.finished; }
+  finally { signal.removeEventListener('abort', cancel); animation.cancel(); }
+  signal.throwIfAborted();
+}
+
+export function Onboarding() {
+  useLocale();
+  const s = useTutorialStore();
+  const libraryOpen = useCardLibrary(w => w.open);
+  const sync = useWorldStore(w => w.syncState);
+  const cards = useWorldStore(w => w.cards);
+  const surfaces = useNodeSurfaceStore(w => w.surfaceLevels);
+  const flow = useReactFlow<CanvasNode>();
+  const [compact, setCompact] = useState(false);
+  const [rightGuide, setRightGuide] = useState(false);
+  const [position, setPosition] = useState({ x: window.innerWidth / 2 - 80, y: window.innerHeight * (window.innerHeight <= 650 ? .32 : .38) - 112 });
+  const [trace, setTrace] = useState<{ source: string; target: string }>();
+  const tracePath = useRef<SVGPathElement>(null);
+  const guide = useRef<HTMLDivElement>(null);
+  const spotlight = useRef<SpotlightHandle>(null);
+  const flightLayer = useRef<HTMLDivElement>(null);
+  const focusSequence = useRef(0);
+  const welcome = s.view === 'welcome';
+  const active = s.view === 'active';
+  const step = STEPS.find(item => item.id === s.session?.step) ?? STEPS[0];
+  const reviewing = s.session?.completedDemo === step.id;
+  const target = s.target ?? (reviewing ? step.result?.target : undefined) ?? step.target;
+  const currentPosition = useRef(position);
+  const anchor = useRef<{ key: string; x: number; y: number } | undefined>(undefined);
+  const guideArrived = useRef(false);
+  const origin = useRef(flow.screenToFlowPosition({ x: window.innerWidth * .72, y: window.innerHeight * .42 }));
+
+  const focusSubjects = useCallback(async (ids: string[]) => {
+    const sequence = ++focusSequence.current;
+    const deadline = performance.now() + 6000;
+    let previous = '', stableFrames = 0;
+    while (performance.now() < deadline && sequence === focusSequence.current) {
+      await new Promise<void>(resolve => requestAnimationFrame(() => resolve()));
+      const nodes = ids.flatMap(id => { const node = flow.getNode(id); return node ? [node] : []; });
+      const levels = useNodeSurfaceStore.getState().surfaceLevels;
+      if (nodes.length !== ids.length || nodes.some(node => node.type !== 'minister' && node.data.surfaceLevel !== (levels[node.id] ?? 'preview'))) continue;
+      const signature = JSON.stringify(nodes.map(node => [node.position, node.style?.width, node.style?.height]));
+      stableFrames = signature === previous ? stableFrames + 1 : 0;
+      previous = signature;
+      if (stableFrames < 2) continue;
+      if (!nodes.length) return;
+      // ResizeObserver's measured size can still describe the closed card.
+      // Use the canvas's current surface sizes and wait for its layout to settle.
+      const bounds = getNodesBounds(nodes.map(node => ({ ...node, measured: {
+        width: Number(node.style?.width ?? node.width), height: Number(node.style?.height ?? node.height),
+      } })));
+      const { width, height } = useWorldStore.getState().viewport;
+      const gutter = width >= 900 ? 290 : 0;
+      const viewport = getViewportForBounds(bounds, width - gutter - 20, Math.max(280, height - 150), .3, .85, .25);
+      await flow.setViewport({ ...viewport, x: viewport.x + gutter, y: viewport.y + 28 }, { duration: reducedMotion() ? 0 : 650 });
+      return;
+    }
+  }, [flow]);
+
+  const connectionGeometry = useCallback((source: string, target: string) => {
+    const a = flow.getInternalNode(source), b = flow.getInternalNode(target);
+    if (!a || !b) return;
+    const rect = (node: typeof a) => ({ ...node.internals.positionAbsolute,
+      width: node.measured?.width ?? Number(node.style?.width ?? 96),
+      height: node.measured?.height ?? Number(node.style?.height ?? 96),
+    });
+    const v = flow.getViewport();
+    return { ...relationshipPath(rect(a), rect(b), nodeCornerRadius(a), nodeCornerRadius(b)),
+      transform: `translate(${v.x} ${v.y}) scale(${v.zoom})` };
+  }, [flow]);
+
+  const waitForGuide = useCallback(async (signal: AbortSignal) => {
+    // Let the new target render before checking arrival. Demonstrations begin
+    // only after the guide has walked over and the new spotlight has appeared.
+    const started = performance.now();
+    while (performance.now() - started < 5000) {
+      signal.throwIfAborted();
+      await new Promise<void>(resolve => requestAnimationFrame(() => resolve()));
+      if (performance.now() - started > 520 && guideArrived.current) return;
+    }
+  }, []);
+
+  useEffect(() => {
+    let revealPlacement: (() => void) | undefined;
+    const bridge: GuideVisuals = {
+      focus: focusSubjects,
+      preparePlace(existingId) {
+        // Subscribe before creation so the rule exists before React paints the
+        // new node, including while its name is saved and the camera settles.
+        const existing = new Set(useWorldStore.getState().cards.map(card => card.id));
+        const style = document.createElement('style');
+        document.head.append(style);
+        let staged = existingId;
+        const hide = (id: string) => {
+          style.textContent = `.world-canvas .react-flow__node[data-id="${CSS.escape(id)}"] { visibility: hidden !important; opacity: 0 !important; }`;
+        };
+        if (staged) hide(staged);
+        const unsubscribe = useWorldStore.subscribe(state => {
+          if (staged) return;
+          const card = state.cards.find(card => card.type === 'text' && !existing.has(card.id));
+          if (card) { staged = card.id; hide(card.id); }
+        });
+        revealPlacement = () => { unsubscribe(); style.remove(); };
+        return revealPlacement;
+      },
+      findSpace(preferred, size) {
+        const offset = { x: (96 - size.width) / 2, y: (96 - size.height) / 2 };
+        const obstacles = flow.getNodes().filter(node => !node.hidden).map(node => ({
+          ...(flow.getInternalNode(node.id)?.internals.positionAbsolute ?? node.position),
+          width: Number(node.style?.width ?? node.measured?.width ?? 96), height: Number(node.style?.height ?? node.measured?.height ?? 96),
+        }));
+        const point = vacantPosition({ x: preferred.x + offset.x, y: preferred.y + offset.y, ...size }, obstacles);
+        return { x: point.x - offset.x, y: point.y - offset.y };
+      },
+      async place(id, signal) {
+        const element = await frameElement(id, signal);
+        await waitForGuide(signal);
+        if (reducedMotion()) { revealPlacement?.(); return; }
+        // Animate an inert screen-space copy. The real node stays at its final
+        // bounds, so guide placement and the spotlight never chase the flight.
+        const box = element.getBoundingClientRect();
+        const source = document.querySelector('[data-palette-card="text"] [data-deck-visual]')?.getBoundingClientRect();
+        const deck = document.querySelector('[data-tutorial="deck"]')?.getBoundingClientRect();
+        const x = (source && source.width ? source.left : (deck?.left ?? 30) + (deck?.width ?? 160) / 2) - box.left;
+        const y = (source && source.width ? source.top : deck?.top ?? window.innerHeight - 100) - box.top;
+        const flight = document.createElement('div');
+        flight.className = 'tutorial-placement-flight';
+        Object.assign(flight.style, { left: `${box.left}px`, top: `${box.top}px`, width: `${box.width}px`, height: `${box.height}px` });
+        const copy = element.cloneNode(true) as HTMLElement;
+        for (const child of [copy, ...copy.querySelectorAll<HTMLElement>('*')]) {
+          for (const attribute of [...child.attributes]) if (attribute.name === 'id' || attribute.name.startsWith('data-') || attribute.name.startsWith('aria-')) child.removeAttribute(attribute.name);
+        }
+        copy.classList.remove('react-flow__node', 'selected');
+        Object.assign(copy.style, { position: 'absolute', left: '0', top: '0', visibility: 'visible', transform: `scale(${flow.getZoom()})`, transformOrigin: 'top left', transition: 'none' });
+        copy.inert = true;
+        flight.append(copy); flightLayer.current?.append(flight);
+        try {
+          await animate(flight, [
+            { translate: `${x}px ${y}px`, scale: '.55', opacity: .75 },
+            { translate: '0 0', scale: '1', opacity: 1 },
+          ], signal, 1000);
+          // Reveal and remove the identical copy in one turn: no reset frame.
+          revealPlacement?.();
+        } finally { flight.remove(); }
+      },
+      async connect(source, target, signal) {
+        await frameElement(source, signal); await frameElement(target, signal);
+        await waitForGuide(signal);
+        setTrace({ source, target });
+        try {
+          await new Promise<void>(resolve => requestAnimationFrame(() => resolve()));
+          if (tracePath.current) await animate(tracePath.current, [{ strokeDashoffset: 1 }, { strokeDashoffset: 0 }], signal, 1500);
+          // Keep the completed trace until the real relationship has been saved.
+          return () => setTrace(undefined);
+        } catch (error) { setTrace(undefined); throw error; }
+      },
+      async move(id, position, signal) {
+        await frameElement(id, signal);
+        await waitForGuide(signal);
+        const card = useWorldStore.getState().cards.find(item => item.id === id)!;
+        const dx = position.x - card.position.x, dy = position.y - card.position.y;
+        const glue = useGlueStore.getState();
+        const group = glueGroup(id, glue.bonds);
+        const starts = new Map([...group].flatMap(key => {
+          const node = flow.getNode(key); return node ? [[key, { ...node.position }] as const] : [];
+        }));
+        // Move React Flow's live coordinates, as a drag does. CSS translation
+        // multiplied zoom twice and snapped back before the saved position arrived.
+        const started = performance.now();
+        let progress = 0;
+        try {
+          do {
+            signal.throwIfAborted();
+            progress = reducedMotion() ? 1 : Math.min(1, (performance.now() - started) / 1200);
+            const eased = progress * progress * (3 - 2 * progress);
+            flow.setNodes(nodes => nodes.map(node => {
+              const start = starts.get(node.id);
+              return start ? { ...node, position: { x: start.x + dx * eased, y: start.y + dy * eased } } : node;
+            }));
+            await new Promise<void>(resolve => requestAnimationFrame(() => resolve()));
+          } while (progress < 1);
+        } catch (error) {
+          flow.setNodes(nodes => nodes.map(node => starts.has(node.id) ? { ...node, position: starts.get(node.id)! } : node));
+          throw error;
+        }
+        signal.throwIfAborted();
+        if (group.size > 1) {
+          const end = beginGlueEdit();
+          try {
+            const boxes = Object.fromEntries([...group].filter(key => glue.boxes[key]).map(key => [key, { ...glue.boxes[key], x: glue.boxes[key].x + dx, y: glue.boxes[key].y + dy }]));
+            useGlueStore.getState().setLayout(boxes);
+            await useWorldStore.getState().updateCardPositions(Object.entries(boxes).map(([key, box]) => ({ id: key, position: nodePositionFromSurfacePosition(box, box.level) })));
+            await persistGlue();
+          } finally { end(); }
+        } else await useWorldStore.getState().updateCardPositions([{ id, position }]);
+      },
+    };
+    return tutorial.attach(bridge);
+  }, [flow, focusSubjects, waitForGuide]);
+
+  useLayoutEffect(() => {
+    if (!trace) return;
+    let frame = 0;
+    const update = () => {
+      const geometry = connectionGeometry(trace.source, trace.target);
+      if (geometry && tracePath.current) {
+        tracePath.current.setAttribute('d', geometry.path);
+        tracePath.current.setAttribute('transform', geometry.transform);
+      }
+      frame = requestAnimationFrame(update);
+    };
+    update(); return () => cancelAnimationFrame(frame);
+  }, [trace, connectionGeometry]);
+
+  useEffect(() => { void tutorial.checkWelcome(); }, [sync]);
+  useEffect(() => { setCompact(false); }, [step.id]);
+  useEffect(() => {
+    if (step.id === 'pan') origin.current = flow.screenToFlowPosition({ x: window.innerWidth * .73, y: window.innerHeight * .43 });
+  }, [step.id, flow]);
+
+  const targetElement = useCallback((target: Target) => {
+    if (target === 'library' || target.startsWith('library-')) {
+      const library = useCardLibrary.getState();
+      if (!library.open || target === 'library') return document.querySelector<HTMLElement>('[data-tutorial="library"]');
+      if (target === 'library-pack') {
+        if (library.tab !== 'packs') return document.querySelector<HTMLElement>('[data-tutorial="library-tab-packs"]');
+        const pack = starterPack(library.snapshot);
+        return pack ? document.querySelector<HTMLElement>(`[data-pack-id="${CSS.escape(pack.definition.id)}"]`) : null;
+      }
+      return document.querySelector<HTMLElement>('[data-tutorial="library-decks"]') ?? document.querySelector<HTMLElement>('[data-tutorial="library-tab-cards"]');
+    }
+    if (target === 'zoom-controls') return document.querySelector<HTMLElement>('.world-canvas .world-controls');
+    if (target === 'deck' || target === 'tools' || target === 'settings' || target.startsWith('model-')) {
+      if (target.startsWith('model-') && !useWorldStore.getState().settingsOpen) return document.querySelector<HTMLElement>('[data-tutorial="settings"]');
+      return document.querySelector<HTMLElement>(`[data-tutorial="${target}"]`)
+        ?? document.querySelector<HTMLElement>('[data-tutorial="model-connection"]')
+        ?? document.querySelector<HTMLElement>('[data-tutorial="models-tab"]');
+    }
+    const id = useTutorialStore.getState().session?.refs[target as Role];
+    return id ? nodeElement(id) : null;
+  }, []);
+
+  const [resolvedTarget, setResolvedTarget] = useState<string>();
+  const [hasConnection, setHasConnection] = useState(false);
+
+  useEffect(() => {
+    if (!active || s.busy || useNodeSurfaceStore.getState().dragging) return;
+    const ids = step.id === 'sandbox-connect' ? [s.session?.refs.agent, s.session?.refs.sandbox]
+      : step.role && ['inspector', 'workspace'].includes(surfaces[s.session?.refs[step.role] ?? ''] ?? '') ? [s.session?.refs[step.role]] : [];
+    if (!ids.length) return;
+    void focusSubjects(ids.filter((id): id is string => Boolean(id)));
+    return () => { focusSequence.current++; };
+  }, [active, step.id, surfaces, focusSubjects]);
+
+  useLayoutEffect(() => {
+    if (s.view === 'hidden') return;
+    let frame = 0;
+    let highlighted: HTMLElement[] = [];
+    let lastTime = performance.now();
+    function place() {
+      const element = targetElement(target);
+      const participants = (step.participants ?? []).flatMap(role => {
+        const element = targetElement(role); return element ? [{ id: role, element }] : [];
+      });
+      const subjects = [...participants, ...(element && !participants.some(item => item.element === element) ? [{ id: target, element }] : [])];
+      const chooser = participants.length ? document.querySelector<HTMLElement>('.connection-dialog') : null;
+      const regions = [...subjects, ...(chooser ? [{ id: 'capability-chooser', element: chooser }] : [])];
+      const elements = regions.map(item => item.element);
+      for (const old of highlighted) if (!elements.includes(old)) old.removeAttribute('data-tutorial-highlight');
+      for (const next of elements) if (!highlighted.includes(next)) {
+        if (s.view === 'active') next.setAttribute('data-tutorial-highlight', 'true');
+        if (target.startsWith('model-') || target.startsWith('library-')) next.scrollIntoView({ block: 'nearest', inline: 'nearest' });
+      }
+      highlighted = elements;
+      const visible = regions.map(item => ({ id: item.id, glow: !chooser || item.id === 'capability-chooser', ...(() => {
+        const box = visibleBounds(item.element); return { x: box.x, y: box.y, width: box.width, height: box.height };
+      })() })).filter(box => box.width > 0 && box.height > 0);
+      const pair = step.participants?.map(role => useTutorialStore.getState().session?.refs[role]);
+      let route = pair?.[0] && pair[1] ? connectionGeometry(pair[0], pair[1]) : undefined;
+      if (route && step.participants?.[0] === 'glueA' && participants.length === 2) {
+        const [a, b] = participants.map(item => item.element.getBoundingClientRect());
+        // Physical sticking has no capability curve. A simple corridor stays
+        // inside the pair, even when their boundaries touch or overlap.
+        route = { ...route, path: `M ${a.x + a.width / 2},${a.y + a.height / 2} L ${b.x + b.width / 2},${b.y + b.height / 2}`, transform: '' };
+      }
+      spotlight.current?.update(s.view === 'active' ? visible : [], s.view === 'active' && route ? {
+        id: `route-${pair!.join('-')}`, path: route.path, transform: route.transform,
+      } : undefined);
+      // The character stays beside the interacting cards, even when an extra
+      // tool is also illuminated. Including that distant toolbar in the bounds
+      // would push the guide to an unrelated corner of the viewport.
+      const nearby = chooser ? [visibleBounds(chooser)] : participants.length
+        ? participants.map(item => visibleBounds(item.element)).filter(box => box.width && box.height)
+        : element ? [visibleBounds(element)] : [];
+      const left = Math.min(...nearby.map(box => box.left)), top = Math.min(...nearby.map(box => box.top));
+      const bounds = nearby.length ? new DOMRect(left, top, Math.max(...nearby.map(box => box.right)) - left, Math.max(...nearby.map(box => box.bottom)) - top) : undefined;
+      setResolvedTarget(element?.dataset.tutorial);
+      setHasConnection(Boolean(document.querySelector('[data-tutorial="model-credentials"]')));
+      const width = window.innerWidth, height = window.innerHeight;
+      let x = width / 2 - 80, y = height * (height <= 650 ? .32 : .38) - 112;
+      if (!welcome) {
+        const rect = bounds && bounds.width > 0 && bounds.height > 0 ? bounds : undefined;
+        const bubbleWidth = Math.min(256, width - 32);
+        if (rect) {
+          // Prefer space beside the subject. Large workspaces leave a readable
+          // margin at their top; never put the bubble on their composer.
+          x = rect.left > bubbleWidth + 35 ? rect.left - bubbleWidth - 20 : rect.right + 18;
+          y = rect.top + 60;
+          if (x + bubbleWidth > width - 16) { x = Math.max(18, rect.left); y = rect.top - 80; }
+        } else if (target === 'terrain') {
+          const screen = flow.flowToScreenPosition(origin.current);
+          x = screen.x; y = screen.y;
+        } else { x = width * .57; y = height * .43; }
+        if (target === 'deck') { x = Math.min(width - bubbleWidth - 20, (rect?.right ?? 260) + 24); y = height - 185; }
+        if (target === 'tools' && !participants.length) { x = width - bubbleWidth - 78; y = height - 205; }
+        const mascotOffset = (target === 'zoom-controls' || target === 'library-decks' || (rect && x + bubbleWidth <= rect.left)) ? bubbleWidth - 92 : 0;
+        setRightGuide(mascotOffset > 0);
+        if (target === 'zoom-controls' && rect) { x = rect.left + rect.width / 2 - mascotOffset - 46; y = rect.top - 108; }
+        if (target === 'library-decks' && rect) { x = rect.left - bubbleWidth - 18; y = rect.top - 16; }
+        x = Math.max(16, Math.min(width - bubbleWidth - 16, x));
+        const bubbleHeight = guide.current?.querySelector<HTMLElement>('.tutorial-bubble')?.offsetHeight ?? 180;
+        const obstacles = [...document.querySelectorAll<HTMLElement>(target.startsWith('model-')
+          ? '.settings-dialog input, .settings-dialog select, .settings-dialog button, .settings-dialog .field-label'
+          : libraryOpen ? '.library-tabs button, .pack-touch-area, .library-card-inspect, .library-card-add, .library-deck-rail' : '.world-canvas .react-flow__node, .top-bar, .component-palette, .map-tools, .world-controls, .react-flow__minimap, .minister-presence:not([hidden]), .minister-panel, .toast-stack, .edge-inspector, .connection-dialog')]
+          .map(element => element.getBoundingClientRect()).filter(box => box.width > 0 && box.height > 0);
+        const key = chooser ? 'capability-chooser' : participants.length ? participants.map(item => item.id).join(':') : target;
+        const placed = placeGuide({ x, y }, rect, { width: bubbleWidth, height: bubbleHeight }, { width, height }, obstacles, mascotOffset, anchor.current?.key === key ? anchor.current : undefined);
+        anchor.current = { ...placed, key };
+        x = placed.x; y = placed.y;
+      }
+      setPosition(previous => Math.abs(previous.x - x) + Math.abs(previous.y - y) > 1 ? { x, y } : previous);
+      const now = performance.now();
+      currentPosition.current = welcome || reducedMotion() ? { x, y } : advanceGuide(currentPosition.current, { x, y }, now - lastTime);
+      lastTime = now;
+      guideArrived.current = Math.hypot(currentPosition.current.x - x, currentPosition.current.y - y) < .5;
+      if (guide.current) {
+        guide.current.style.transform = `translate(${currentPosition.current.x}px, ${currentPosition.current.y}px)`;
+        guide.current.dataset.moving = String(!guideArrived.current);
+      }
+      frame = requestAnimationFrame(place);
+    }
+    place();
+    return () => { cancelAnimationFrame(frame); highlighted.forEach(element => element.removeAttribute('data-tutorial-highlight')); };
+  }, [welcome, libraryOpen, s.view, target, step.participants, targetElement, flow, connectionGeometry, cards.length]);
+
+  if (s.view === 'hidden') return null;
+  const motion: GuideMotion = welcome || s.view === 'paused' ? 'idle' : s.busy ? 'think' : step.id === 'enter' ? 'enter' : step.expects ? 'indicate' : 'speak';
+  const role = step.role;
+  const settingsStep = step.target.startsWith('model-');
+  const needsSettings = settingsStep && resolvedTarget === 'settings';
+  const needsModelsTab = settingsStep && resolvedTarget === 'models-tab';
+  const needsConnection = settingsStep && step.target !== 'model-connection' && resolvedTarget === 'model-connection';
+  const waitingForTarget = settingsStep && (needsSettings || needsModelsTab || needsConnection);
+  const libraryStep = step.target === 'library' || step.target.startsWith('library-');
+  const dialogue = libraryStep && !libraryOpen && step.id !== 'deck' ? 'Open the Library again to continue preparing your deck.' : needsSettings ? 'Click settings to continue setting up your model.'
+    : needsModelsTab ? 'Click Models here.'
+    : needsConnection ? 'Add or select a connection first.' : reviewing ? step.result!.dialogue : step.dialogue;
+  const missing = role && step.expects !== 'place' && step.expects !== 'delete' && !cards.some(card => card.id === s.session?.refs[role]);
+  return createPortal(<div className={`onboarding-layer ${welcome ? 'is-welcome' : 'is-tutorial'} ${settingsStep ? 'is-settings-guide' : ''} ${libraryOpen ? 'is-library-guide' : ''} ${step.participants ? 'is-interaction-guide' : ''}`}>
+    <Spotlight ref={spotlight} />
+    <div className={`onboarding-logo-ring ${welcome ? '' : 'has-entered'}`}><OawGuide ringOnly /></div>
+    {welcome && <section className="onboarding-welcome" aria-label={t("Welcome to Open Agent World")}>
+      <span className="onboarding-eyebrow">{t("A world of possibilities")}</span>
+      <h1>{t("Open Agent World")}</h1>
+      <p>{t("A little space. A few cards. Something entirely yours.")}</p>
+      <div className="onboarding-actions">
+        <button className="primary-button onboarding-start" disabled={s.busy || sync === 'offline'} onClick={() => void tutorial.start()}><span>{t("Start Tutorial")}<small>{t("A guided walk through your first world")}</small></span><ArrowRight size={19} /></button>
+        <button className="secondary-button" disabled={s.busy || sync === 'offline'} onClick={() => void tutorial.minister()}>{t("Place Minister Card")}</button>
+        <button className="onboarding-text-button" disabled={s.busy} onClick={() => void tutorial.directly()}>{t("Start Directly")}</button>
+      </div>
+      {s.error && <p className="onboarding-error" role="alert">{s.error}</p>}
+    </section>}
+    <div ref={flightLayer} className="tutorial-flight-layer" aria-hidden="true" />
+    {trace && <svg className="tutorial-connection-trace" aria-hidden="true"><path ref={tracePath} pathLength="1" vectorEffect="non-scaling-stroke" /></svg>}
+    <div ref={guide} className={`tutorial-guide ${welcome ? 'is-logo' : ''} ${compact ? 'is-compact' : ''} ${rightGuide ? 'is-right-guide' : ''}`}
+      style={{ '--guide-x': `${position.x}px`, '--guide-y': `${position.y}px` } as CSSProperties}>
+      {!welcome && <div className="tutorial-bubble" role="region" aria-label={t("Tutorial guide")} data-step={step.id} data-reviewing={reviewing}>
+        <header><span>{s.view === 'paused' ? t("Your walk is saved") : `${step.chapter + 1} / ${CHAPTERS.length} · ${t(CHAPTERS[step.chapter])}`}</span>
+          <button className="onboarding-icon-button" aria-label={compact ? t("Show tutorial hint") : t("Minimize tutorial hint")} onClick={() => setCompact(value => !value)}><ChevronDown size={13} /></button>
+          <button className="onboarding-icon-button" aria-label={t("Skip tutorial")} title={t("Skip tutorial and tidy temporary props")} onClick={() => void tutorial.exit('skipped')}><X size={13} /></button>
+        </header>
+        {!compact && <>
+          <p key={`${step.id}-${reviewing}`} className="tutorial-dialogue" aria-live="polite" aria-atomic="true">{s.view === 'paused' ? t("Pick up where you left off, or start a new walk. Your own cards stay with you.") : missing ? t("Looks like that card moved away or was removed. I can help you find it or return to placing one.") : t(dialogue)}</p>
+          {s.error ? <p className="onboarding-error" role="alert">{s.error}</p> : sync === 'offline' ? <small role="status">{t("Waiting for the world service to reconnect. Your progress is saved.")}</small> : step.hint && <small>{t(step.hint)}</small>}
+          <footer>
+            {s.view === 'paused' ? <>
+              <button className="tutorial-next" disabled={s.busy} onClick={() => tutorial.resume()}>{t("Resume")}</button>
+              <button className="onboarding-icon-button" disabled={s.busy} onClick={() => void tutorial.replay()} aria-label={t("Restart tutorial")}><RotateCcw size={14} /></button>
+              {s.error && <button className="onboarding-text-button" disabled={s.busy} onClick={() => void tutorial.exit('skipped')}>{t("Retry cleanup")}</button>}
+            </> : <>
+              {step.button && <button className="tutorial-next" disabled={s.busy || sync === 'offline' || waitingForTarget || (step.id === 'deck-build' && !s.ready)} onClick={() => void tutorial.continue()}>{s.busy ? t("One moment…") : t(reviewing ? "Continue" : step.button)}<ArrowRight size={13} /></button>}
+              {!step.button && <span className="tutorial-waiting"><i />{s.busy ? t("One moment…") : s.ready ? t("Settings saved") : t("Your turn")}</span>}
+              {((step.expects && !settingsStep && step.id !== 'model-settings') || s.error) && <button className="onboarding-icon-button" aria-label={t("Recover this step")} title={t("Find the card, or recover a missing card")} disabled={s.busy} onClick={() => void tutorial.recover()}><Compass size={15} /></button>}
+            </>}
+          </footer>
+          {active && step.optional && <button className="onboarding-text-button tutorial-optional" disabled={s.busy || sync === 'syncing' || (step.id === 'model-connection' && (waitingForTarget || !hasConnection)) || (step.id === 'configure' && !['inspector', 'workspace'].includes(surfaces[s.session?.refs.agent ?? ''] ?? ''))} onClick={() => void tutorial.continue()}>{s.ready ? t("Continue with these settings") : t(step.optional)}</button>}
+        </>}
+      </div>}
+      <div className="tutorial-mascot"><OawGuide motion={motion} inLogo={welcome} movementTarget={guide} celebration={s.celebration} /></div>
+    </div>
+  </div>, libraryOpen ? document.querySelector('.card-library-modal') ?? document.body : document.body);
+}

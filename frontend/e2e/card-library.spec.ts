@@ -7,7 +7,7 @@ test("packs, collection and active decks persist and recover from plugin disable
   page.on("pageerror", error => errors.push(error.message));
   await page.goto("/");
   const controls = page.getByRole("complementary", { name: "World status and controls" });
-  await expect(controls.locator(".top-actions button")).toHaveCount(4);
+  await expect(controls.getByRole("button", { name: "Open Pack and Card Library" })).toBeVisible();
   expect(await controls.evaluate(panel => {
     const box = panel.getBoundingClientRect();
     return [...panel.querySelectorAll("button")].every(button => { const rect = button.getBoundingClientRect(); return rect.left >= box.left && rect.right <= box.right && rect.top >= box.top && rect.bottom <= box.bottom; });
@@ -56,6 +56,7 @@ test("packs, collection and active decks persist and recover from plugin disable
   await page.screenshot({ path: "../.tmp/library-paper-cards.png" });
   await expect(library.getByRole("complementary", { name: "Card details" })).toContainText("Core essentials");
   await library.getByRole("button", { name: "Add Text file to deck" }).click();
+  await library.locator(".library-deck-destination.is-selected > button").click();
   await expect(library.getByRole("button", { name: "Remove Text file from deck" })).toBeVisible();
   await library.getByRole("button", { name: "Close Library" }).click();
   await tray.hover();
@@ -91,6 +92,7 @@ test("packs, collection and active decks persist and recover from plugin disable
   await taskPack.getByRole("button", { name: "View cards in Task Board", exact: true }).click();
   await library.getByLabel("Search cards", { exact: true }).fill("Task Board");
   await library.getByRole("button", { name: "Add Task Board to deck" }).click();
+  await library.locator(".library-deck-destination.is-selected > button").click();
   const sourceControls = library.getByLabel("Source pack controls");
   await sourceControls.getByRole("button", { name: "Disable plugin" }).click();
   await expect(sourceControls).toContainText("Plugin disabled");
@@ -197,6 +199,7 @@ test("source packs organize the collection and scoped Skills lead to their usabl
   await detail.getByRole("button", { name: `Inspect ${owner.label}`, exact: true }).click();
   await expect(detail.getByRole("heading", { name: owner.label, exact: true })).toBeVisible();
   await detail.getByRole("button", { name: "Add inspected card to deck" }).click();
+  await library.locator(".library-deck-destination.is-selected > button").click();
   await expect(detail.getByRole("button", { name: "Remove inspected card from deck" })).toBeEnabled();
   await page.setViewportSize({ width: 640, height: 780 });
   await library.locator(".library-body").evaluate(element => { element.scrollTop = 0; });

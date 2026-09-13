@@ -10,6 +10,7 @@ from pydantic import BaseModel, ConfigDict, Field
 
 class EventType(StrEnum):
     CARD_LIBRARY_UPDATED = "card_library_updated"
+    MINISTER_REVIEW = "minister_review"
     CONNECTION_READY = "connection_ready"
     CARD_CREATED = "card_created"
     NODES_GENERATED = "nodes_generated"
@@ -57,6 +58,8 @@ class RuntimeEvent(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     id: str = Field(default_factory=lambda: str(uuid4()))
+    stream_id: str | None = None
+    sequence: int | None = None
     type: EventType
     timestamp: datetime = Field(default_factory=lambda: datetime.now(UTC))
     node_id: str | None = None

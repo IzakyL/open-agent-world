@@ -1,7 +1,10 @@
+import { t, useLocale } from "../i18n";
+import { GlueLayer } from "./GlueLayer";
+import { reportInteraction } from "../state/interactions";
+import { findGlue, glueGroup, reflowGlueSurfaces, refreshGlue, beginGlueEdit, cancelGlueRefresh, persistGlue, useGlueStore, type GlueBox, type GlueCandidate } from "../state/glue";
 import { MapAtlas } from "./MapAtlas";
+import { WorldBackground } from './WorldBackground';
 import {
-  Background,
-  BackgroundVariant,
   ConnectionMode,
   Controls,
   MarkerType,
@@ -18,7 +21,7 @@ import {
   type Viewport,
 } from "@xyflow/react";
 import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
-import { worldApi } from "../api/client";
+import { apiErrorMessage, worldApi } from "../api/client";
 import { transformationOptions } from "./documentTransformations";
 import { importPdf, type PdfImportProgress } from "./importPdf";
 import { PdfImportIndicator } from "./PdfImportIndicator";
@@ -31,6 +34,7 @@ import { canEquip, equipmentOwner, useEquipmentDrag, useEquipmentPanel } from ".
 import { ContainerCardNode } from "../cards/ContainerCard";
 import { ancestors, containerDefinition, containerDisplayOwners, containerShowsWorkspace, containerSizes, dropContainer, isContainer, memberSurfacePosition, parentFirst, resizeContainerLayout } from "../state/containers";
 import { WorldCardNode } from "../cards/CardFrame";
+import { MinisterNode, MINISTER_TYPE } from "../cards/Minister";
 import type { CanvasNode, CanvasNodeData } from "../cards/types";
 import { EdgeInspector } from "../edges/EdgeInspector";
 import { RelationshipConnectionLine } from "../edges/RelationshipConnectionLine";
@@ -52,7 +56,7 @@ import {
   type SurfaceObstacle,
 } from "./nodeDisplacement";
 
-const nodeTypes = { worldCard: WorldCardNode, container: ContainerCardNode, equipment: EquipmentCardNode, equipmentPanel: EquipmentPanelNode };
+const nodeTypes = { worldCard: WorldCardNode, minister: MinisterNode, container: ContainerCardNode, equipment: EquipmentCardNode, equipmentPanel: EquipmentPanelNode };
 const edgeTypes = { semantic: SemanticEdge };
 
 function isScrollableArea(target: EventTarget | null, boundary: HTMLElement): boolean {
@@ -74,12 +78,13 @@ function nodeFromCard(
   position: ReturnType<typeof useWorldStore.getState>["cards"][number]["position"],
   windowSize?: SurfaceSize,
 ): CanvasNode {
-  const size = windowSize ?? NODE_SURFACE_SIZE[surfaceLevel];
+  const size = windowSize ?? (surfaceLevel === 'node' ? card.size : NODE_SURFACE_SIZE[surfaceLevel]);
   return {
     id: card.id,
     type: "worldCard",
     position: positionSurfaceAtNodeCenter(position, surfaceLevel),
     data: { card, surfaceLevel, displaced },
+    width: size.width, height: size.height, className: undefined,
     style: { width: size.width, height: size.height },
     parentId: undefined,
     extent: undefined,
@@ -95,11 +100,22 @@ function nodeFromCard(
 }
 
 export function WorldCanvas() {
+  useLocale();
   const [pinToolActive, setPinToolActive] = useState(false);
+  const [glueActive, setGlueActive] = useState(false);
+  const [gluePreview, setGluePreview] = useState<GlueCandidate>();
+  const storedGlueBoxes = useGlueStore(s => s.boxes);
+  const glueBonds = useGlueStore(s => s.bonds);
+  const glueEvent = useWorldStore(s => s.events.find(event => event.type.startsWith('state_') || event.type.startsWith('card_'))?.id);
+  const activeGlueEdits = useGlueStore(s => s.activeEdits);
+  const glueSocket = useWorldStore(s => s.socketState);
+  const glueDrag = useRef<{ origin: { x: number; y: number }; boxes: Record<string, GlueBox>; latest: Record<string, GlueBox>; candidate?: GlueCandidate }>();
   const [importStatus,setImportStatus]=useState("");
   const [importProgress,setImportProgress]=useState<PdfImportProgress>();
   const importingPdf=useRef(false);
   const wrapper = useRef<HTMLDivElement>(null);
+  const clipboardTask = useRef<Promise<unknown>>(Promise.resolve());
+  const clipboardPending = useRef(false);
   const cards = useWorldStore((state) => state.cards);
   const catalog = useWorldStore((state) => state.catalog);
   const stressCards = useWorldStore((state) => state.stressCards);
@@ -115,6 +131,12 @@ export function WorldCanvas() {
   const connectingNodeId = useNodeSurfaceStore((state) => state.connectingNodeId);
   const dragging = useNodeSurfaceStore((state) => state.dragging);
   const setDragging = useNodeSurfaceStore((state) => state.setDragging);
+  useEffect(() => {
+    if (dragging || activeGlueEdits) return;
+    const timer = window.setTimeout(() => void refreshGlue(true).catch(reason =>
+      useWorldStore.getState().pushToast({ tone: 'error', title: t("Glue could not synchronize"), detail: apiErrorMessage(reason) })), 120);
+    return () => window.clearTimeout(timer);
+  }, [glueEvent, glueSocket, dragging, activeGlueEdits]);
   const closeInspector = useNodeSurfaceStore((state) => state.closeInspector);
   const closeWorkspace = useNodeSurfaceStore((state) => state.closeWorkspace);
   const dismissSurface = useNodeSurfaceStore((state) => state.dismiss);
@@ -145,8 +167,18 @@ export function WorldCanvas() {
   );
   const surfaceLevels = useMemo(() => new Map(renderCards.map((card) => [
     card.id,
-    surfaceLevelForNode(card.id, surfaceLevelsByNodeId),
+    card.type === MINISTER_TYPE ? "node" : surfaceLevelForNode(card.id, surfaceLevelsByNodeId),
   ])), [renderCards, surfaceLevelsByNodeId]);
+  const glueBoxes = useMemo(() => reflowGlueSurfaces(storedGlueBoxes, glueBonds, surfaceLevels, workspaceSizes),
+    [storedGlueBoxes, glueBonds, surfaceLevels, workspaceSizes]);
+  useEffect(() => {
+    if (glueBoxes === storedGlueBoxes) return;
+    const endEdit = beginGlueEdit();
+    useGlueStore.getState().setLayout(glueBoxes);
+    void updateCardPositions(Object.entries(glueBoxes).filter(([id, box]) => box !== storedGlueBoxes[id]).map(([id, box]) => ({
+      id, position: nodePositionFromSurfacePosition(box, box.level),
+    }))).then(() => persistGlue()).catch(reason => useWorldStore.getState().pushToast({ tone: 'error', title: t("Glue layout needs a retry"), detail: apiErrorMessage(reason) })).finally(endEdit);
+  }, [glueBoxes, storedGlueBoxes, updateCardPositions]);
   const surfaceObstacles = useMemo<SurfaceObstacle[]>(() => renderCards.flatMap<SurfaceObstacle>((card) => {
     if (isContainer(card, catalog) || card.parent_id || card.equipment) return [];
     const level = surfaceLevels.get(card.id);
@@ -166,6 +198,13 @@ export function WorldCanvas() {
       const folded=foldedAncestor(card,renderCards);
       const displaced = displacedById.get(card.id);
       let node = nodeFromCard(card, level, displaced?.displaced ?? false, displaced?.position ?? card.position, level === "workspace" ? workspaceSizes[card.id] : undefined);
+      if (card.type === MINISTER_TYPE) {
+        // The chat opens beside the orb; its world position and radius never shift.
+        node = { ...node, type: "minister", position: card.position, data: { ...node.data, displaced: false },
+          width: card.size.width, height: card.size.height, style: { width: card.size.width, height: card.size.height },
+          dragHandle: ".minister-drag-region", connectable: false,
+          zIndex: ["inspector", "workspace"].includes(surfaceLevelsByNodeId[card.id]) ? 28 : 2 };
+      }
       if (isContainer(card, catalog)) {
         const { width, height } = frameSizes.get(card.id)!;
         node = { ...node, type: "container", position: card.position, width, height, style: { width, height }, zIndex: 0,
@@ -190,7 +229,10 @@ export function WorldCanvas() {
         const owner = equipmentAgent;
         const ownerLevel = surfaceLevels.get(owner.id) ?? "preview";
         const index = renderCards.filter((c) => equipmentOwner(c, cards)?.id === owner.id).findIndex((c) => c.id === card.id);
-        return equipmentSurfaceNodes(node, owner.id, ownerLevel, index, equipmentPanels.includes(owner.id), equipmentPositions[card.id]);
+        const ownerHeight = frameSizes.get(owner.id)?.height
+          ?? (ownerLevel === "workspace" ? workspaceSizes[owner.id]?.height : undefined)
+          ?? (ownerLevel === "node" ? owner.size.height : NODE_SURFACE_SIZE[ownerLevel].height);
+        return equipmentSurfaceNodes(node, owner.id, ownerLevel, index, equipmentPanels.includes(owner.id), equipmentPositions[card.id], ownerHeight);
       }
       if (card.parent_id && byId.has(card.parent_id)) {
         const parent = byId.get(card.parent_id)!;
@@ -198,6 +240,9 @@ export function WorldCanvas() {
         const position = isContainer(card, catalog) ? node.position : memberSurfacePosition(card, parent, level, catalog);
         return { ...node, parentId: parent.id, position: { x: position.x - origin.x, y: position.y - origin.y } };
       }
+      const glued = glueBoxes[card.id];
+      if (glued && node.type === 'worldCard' && !node.parentId) node = { ...node, position: { x: glued.x, y: glued.y },
+        width: glued.width, height: glued.height, style: { width: glued.width, height: glued.height }, className: 'is-glued', data: { ...node.data, displaced: false } };
       return node;
     }).flatMap((node): CanvasNode[] => {
       if (node.type === "equipment" || node.data.equipmentDetail || !catalog.node_types.find((type) => type.id === node.data.card.type)?.traits.includes("core.agent")) return [node];
@@ -207,7 +252,7 @@ export function WorldCanvas() {
         style: { width: 320, height: 46 + Math.max(2, count + 1) * 48 },
         hidden: !equipmentPanels.includes(node.id), draggable: false, selectable: false, connectable: false, zIndex: 24 }];
     });
-  }, [displacedById, renderCards, surfaceLevels, catalog, cards, equipmentPanels, equipmentPositions, workspaceSizes]);
+  }, [displacedById, renderCards, surfaceLevels, surfaceLevelsByNodeId, catalog, cards, equipmentPanels, equipmentPositions, workspaceSizes, glueBoxes]);
   const [nodes, setNodes] = useNodesState<CanvasNode>(mappedNodes);
   const onNodesChange = useCallback((changes: NodeChange<CanvasNode>[]) => {
     setNodes(current => {
@@ -296,8 +341,10 @@ export function WorldCanvas() {
             };
           }
           if (live?.resizing) return { ...node, ...live };
-          // End with the canonical layout, not a synthetic animation frame.
-          if (eased === 1) return node;
+          // Commit canonical geometry without discarding React Flow's live
+          // selection. Updates can arrive mid-marquee; its membership cache
+          // will not reselect nodes whose selected flag we accidentally erase.
+          if (eased === 1) return { ...node, selected: live?.selected };
           const start = starts.get(node.id) ?? node.position;
           const previous=currentById.get(node.id);
           const outline=node.data.shadowOutline as {x:number;y:number}[]|undefined;
@@ -319,7 +366,7 @@ export function WorldCanvas() {
     };
 
     const moving = mappedNodes.some((node) => {
-      if (activeDragIds.current.has(node.id)) return false;
+      if (activeDragIds.current.has(node.id) || glueBoxes[node.id]) return false;
       const start = starts.get(node.id) ?? node.position;
       if(isShadow(node.data.card)&&currentById.has(node.id)) {
         const old=currentById.get(node.id)!;
@@ -352,7 +399,7 @@ export function WorldCanvas() {
     };
     positionAnimation.current = requestAnimationFrame(tick);
     return cancelPositionAnimation;
-  }, [cancelPositionAnimation, connectingNodeId, dragging, mappedNodes, setNodes]);
+  }, [cancelPositionAnimation, connectingNodeId, dragging, mappedNodes, setNodes, glueBoxes]);
 
   useEffect(() => {
     if (appliedSelectionRevision.current === selectionRevision) return;
@@ -374,6 +421,7 @@ export function WorldCanvas() {
   }, [cards, nodes, displayOwners]);
   const flowEdges = useMemo<CanvasEdge[]>(
     () => edges
+      .filter(edge => !glueBonds.some(b => glueBoxes[b.a] && glueBoxes[b.b] && (b.a === edge.source && b.b === edge.target || b.b === edge.source && b.a === edge.target)))
       .filter((edge) => visibleNodeIds.has(displayEndpoint(edge.source)) && visibleNodeIds.has(displayEndpoint(edge.target)))
       .filter((edge) => !hiddenCollectionEdge(edge.source, edge.target, cards))
       .map<CanvasEdge>((edge) => ({
@@ -397,7 +445,7 @@ export function WorldCanvas() {
         } : undefined,
         interactionWidth: 24,
       })).filter((edge) => edge.source !== edge.target),
-    [edges, cards, selectedEdgeId, visibleNodeIds, displayEndpoint],
+      [edges, cards, selectedEdgeId, visibleNodeIds, displayEndpoint, glueBonds, glueBoxes],
   );
 
   const dimensions = useCallback(() => ({
@@ -410,7 +458,10 @@ export function WorldCanvas() {
     setViewportState({ ...next, ...size });
   }, [dimensions, setViewportState]);
 
-  const onMoveEnd: OnMove = useCallback((_event, next) => commitViewport(next), [commitViewport]);
+  const onMoveEnd: OnMove = useCallback((event, next) => {
+    commitViewport(next);
+    if (event || document.activeElement?.closest('.world-controls')) reportInteraction({ type: 'viewport', ...next });
+  }, [commitViewport]);
   const onInit: OnInit<CanvasNode, CanvasEdge> = useCallback((instance) => {
     commitViewport(instance.getViewport());
   }, [commitViewport]);
@@ -427,6 +478,24 @@ export function WorldCanvas() {
       // Modal workspaces and embedded readers own their keyboard shortcuts.
       if (event.defaultPrevented || document.querySelector("dialog:modal") || target?.closest(".library-reader, input, textarea, select, [contenteditable='true']")) return;
       const modifier = event.ctrlKey || event.metaKey;
+      const key = event.key.toLowerCase();
+      if (modifier && !event.altKey && !event.shiftKey && ["c", "x", "v"].includes(key)) {
+        if (event.isComposing || target?.isContentEditable || target?.closest("[contenteditable], [role='textbox'], .xterm")
+          || window.getSelection()?.toString() || useNodeSurfaceStore.getState().dragging) return;
+        const state = useWorldStore.getState();
+        if (key === "v" ? !state.clipboard && !clipboardPending.current : !state.selectedCardIds.length) return;
+        event.preventDefault();
+        if (event.repeat) return;
+        if (key === "v") clipboardTask.current = clipboardTask.current.then(() => state.pasteSelection());
+        else {
+          const ids = [...state.selectedCardIds];
+          clipboardPending.current = true;
+          clipboardTask.current = state.copySelection().then(async copied => {
+            if (copied && key === "x") await state.deleteCards(ids);
+          }).finally(() => { clipboardPending.current = false; });
+        }
+        return;
+      }
       if (!modifier && !event.altKey && event.key.toLowerCase() === "f") {
         if (event.defaultPrevented || event.isComposing || event.repeat
           || target?.isContentEditable
@@ -442,7 +511,7 @@ export function WorldCanvas() {
           minZoom: 0.12,
           maxZoom: 2.2,
           duration: window.matchMedia("(prefers-reduced-motion: reduce)").matches ? 0 : 300,
-        });
+        }).then(() => reportInteraction({ type: 'focus', ids: focusNodes.map(node => node.id) }));
         return;
       }
       if (modifier && event.key.toLowerCase() === "z") {
@@ -481,12 +550,24 @@ export function WorldCanvas() {
   const onNodeDragStart: OnNodeDrag<CanvasNode> = useCallback((_event, node, draggedNodes) => {
     cancelledDrag.current=false;
     cancelPositionAnimation();
-    useEquipmentDrag.getState().set(!node.data.equipmentDetail && draggedNodes.length <= 1 ? node.data.card : undefined);
+    if ((glueActive || glueBoxes[node.id]) && node.type === 'worldCard' && !node.parentId && !node.data.card.ephemeral && !node.data.equipmentDetail) {
+      cancelGlueRefresh();
+      const ids = glueGroup(node.id, glueBonds);
+      draggedNodes.forEach(n => glueGroup(n.id, glueBonds).forEach(id => ids.add(id)));
+      const boxes = Object.fromEntries(nodesRef.current.filter(n => ids.has(n.id) && n.type === 'worldCard' && !n.parentId).map(n => [n.id,
+        { x: n.position.x, y: n.position.y, width: Number(n.style?.width), height: Number(n.style?.height), level: n.data.surfaceLevel }]));
+      glueDrag.current = { origin: { x: boxes[node.id].x, y: boxes[node.id].y }, boxes, latest: boxes };
+      useEquipmentDrag.getState().set();
+      setDragging(true);
+      activeDragIds.current = ids;
+      return;
+    }
+    useEquipmentDrag.getState().set(node.data.card.type !== MINISTER_TYPE && !node.data.equipmentDetail && draggedNodes.length <= 1 ? node.data.card : undefined);
     setDragging(true);
     activeDragIds.current.clear();
     activeDragIds.current.add(node.id);
     draggedNodes.forEach((draggedNode) => activeDragIds.current.add(draggedNode.id));
-  }, [cancelPositionAnimation, setDragging]);
+  }, [cancelPositionAnimation, setDragging, glueActive, glueBoxes, glueBonds]);
 
   const equipmentDropOwner = useCallback((resource: CanvasNodeData["card"], x: number, y: number) => {
     return cards.find((candidate) => {
@@ -540,10 +621,22 @@ export function WorldCanvas() {
     if(isShadow(node.data.card))return;
     clearContainerDropHint();
     clearTransformationHints();
+    const gluing = glueDrag.current;
+    if (gluing) {
+      const dx = node.position.x - gluing.origin.x, dy = node.position.y - gluing.origin.y;
+      const moved = Object.fromEntries(Object.entries(gluing.boxes).map(([id, b]) => [id, { ...b, x: b.x + dx, y: b.y + dy }]));
+      const targets = Object.fromEntries(nodesRef.current.filter(n => !gluing.boxes[n.id] && n.type === 'worldCard' && !n.parentId && !n.hidden && !n.data.card.ephemeral && !n.data.equipmentDetail).map(n => [n.id,
+        { x: n.position.x, y: n.position.y, width: Number(n.style?.width), height: Number(n.style?.height), level: n.data.surfaceLevel }]));
+      gluing.latest = moved;
+      gluing.candidate = glueActive ? findGlue(moved, targets, 16 / getViewport().zoom) : undefined;
+      setGluePreview(gluing.candidate);
+      setNodes(current => current.map(n => moved[n.id] ? { ...n, position: { x: moved[n.id].x, y: moved[n.id].y } } : n));
+      return;
+    }
     const transformation = transformationTarget(event, node);
     transformation?.element?.setAttribute("data-transformation-hint", `${transformation.option[1].label}: ${node.data.card.name}`);
     const member = node.data.card;
-    if (!node.data.equipmentDetail && !member.ephemeral) {
+    if (!node.data.equipmentDetail && !member.ephemeral && member.type !== MINISTER_TYPE) {
       const parent = cards.find((c) => c.id === node.parentId);
       const origin=parent&&(isShadow(parent)?shadowLayout(parent,cards,surfaceLevels,catalog):parent.position);
       const surface = origin ? { x: node.position.x + origin.x, y: node.position.y + origin.y } : node.position;
@@ -569,13 +662,30 @@ export function WorldCanvas() {
     const resource = useEquipmentDrag.getState().resource;
     if (resource?.id !== node.id || !("clientX" in event)) return;
     useEquipmentDrag.getState().set(resource, equipmentDropOwner(resource, event.clientX, event.clientY)?.id);
-  }, [equipmentDropOwner, clearContainerDropHint, cards, catalog, transformationTarget]);
+  }, [equipmentDropOwner, clearContainerDropHint, cards, catalog, transformationTarget, glueActive, getViewport, setNodes]);
 
   const onNodeDragStop: OnNodeDrag<CanvasNode> = useCallback((_event, node, draggedNodes) => {
     if(cancelledDrag.current){activeDragIds.current.clear();setDragging(false);setNodes(mappedNodes);return;}
     clearContainerDropHint();
     cancelPositionAnimation();
     clearTransformationHints();
+    const gluing = glueDrag.current;
+    if (gluing) {
+      const candidate = gluing.candidate;
+      const layout = Object.fromEntries(Object.entries(gluing.latest).map(([id, b]) => [id, { ...b, x: b.x + (candidate?.dx ?? 0), y: b.y + (candidate?.dy ?? 0) }]));
+      if (candidate) {
+        const target = nodesRef.current.find(n => n.id === candidate.b)!;
+        layout[target.id] = { x: target.position.x, y: target.position.y, width: Number(target.style?.width), height: Number(target.style?.height), level: target.data.surfaceLevel };
+      }
+      if (candidate || Object.keys(layout).some(id => glueBoxes[id])) useGlueStore.getState().setLayout(layout, candidate);
+      glueDrag.current = undefined;
+      setGluePreview(undefined);
+      void updateCardPositions(Object.entries(layout).map(([id, b]) => ({ id, position: nodePositionFromSurfacePosition(b, b.level) })))
+        .then(() => persistGlue()).catch(reason => useWorldStore.getState().pushToast({ tone: 'error', title: t("Glue layout needs a retry"), detail: apiErrorMessage(reason) })).finally(() => {
+        activeDragIds.current.clear(); setDragging(false);
+      });
+      return;
+    }
     const transformation = draggedNodes.length <= 1 ? transformationTarget(_event, node) : undefined;
     if (transformation) {
       useEquipmentDrag.getState().set();
@@ -625,7 +735,7 @@ export function WorldCanvas() {
     const sizes = new Map(nodesRef.current.map((item) => [item.id, { width: Number(item.style?.width), height: Number(item.style?.height) }]));
     void updateCardPositions(updates.map((update) => {
       const member = cards.find((card) => card.id === update.id)!;
-      if (member.ephemeral || containerDefinition(member, catalog)?.parentable === false) return update;
+      if (member.ephemeral || member.type === MINISTER_TYPE || containerDefinition(member, catalog)?.parentable === false) return update;
       const owner=cards.find(c=>c.id===member.parent_id);
       if(owner&&isShadow(owner)) {
         const release=canReleaseMember(Boolean(useCollectionRelease.getState().active[owner.id]),{x:update.position.x+48,y:update.position.y+48},shadowLayout(owner,cards,surfaceLevels,catalog));
@@ -640,7 +750,7 @@ export function WorldCanvas() {
       activeDragIds.current.clear();
       setDragging(false);
     });
-  }, [cancelPositionAnimation, cards, setDragging, updateCardPositions, updateCard, catalog, clearContainerDropHint, transformationTarget]);
+  }, [cancelPositionAnimation, cards, setDragging, updateCardPositions, updateCard, catalog, clearContainerDropHint, transformationTarget, glueBoxes]);
 
   const onConnect = useCallback((connection: Connection) => {
     requestConnection(connection.source, connection.target);
@@ -670,7 +780,7 @@ export function WorldCanvas() {
     if(event.dataTransfer.files.length){
       const files=Array.from(event.dataTransfer.files).filter(f=>/\.pdf$/i.test(f.name));
       if(!files.length||importingPdf.current)return;
-      if(!getNodeType(catalog,"library.paper")){setImportStatus("请先启用 Library 插件");return;}
+      if(!getNodeType(catalog,"library.paper")){setImportStatus(t("请先启用 Library 插件"));return;}
       const position=screenToFlowPosition({x:event.clientX,y:event.clientY});
       const parent=dropContainer(cards,{id:"",type:"library.paper"} as typeof cards[number],position,catalog);
       importingPdf.current=true;
@@ -683,8 +793,8 @@ export function WorldCanvas() {
             useWorldStore.getState().acceptImportedCard(card);
             completed++;
           }
-          setImportStatus(`已导入 ${completed} 篇 PDF`);
-        } catch(e) { setImportStatus(`已导入 ${completed} 篇；${String(e)}`); }
+          setImportStatus(t("已导入 {v0} 篇 PDF", { v0: String(completed) }));
+        } catch(e) { setImportStatus(t("已导入 {v0} 篇；{v1}", { v0: String(completed), v1: String(String(e)) })); }
         finally { importingPdf.current=false;setImportProgress(undefined); }
       })();
       return;
@@ -704,7 +814,7 @@ export function WorldCanvas() {
             const target = await worldApi.getNodeDocument(transformation.target.id);
             const request = { source_type: payload.type, expected_revision: target.revision };
             const preview = await worldApi.transformDocument(transformation.target.id, transformation.option[0], request);
-            if (window.confirm(`${String(preview.label)} "${definition.label}" into "${transformation.target.name}"?`)) {
+            if (window.confirm(t("{v0} \"{v1}\" into \"{v2}\"?", { v0: String(String(preview.label)), v1: String(definition.label), v2: String(transformation.target.name) }))) {
               await worldApi.transformDocument(transformation.target.id, transformation.option[0], { ...request, confirm: true });
               await useWorldStore.getState().refreshWorld();
             }
@@ -754,7 +864,7 @@ export function WorldCanvas() {
       }}
       onDrop={onDrop}
       onDragOver={(event) => {
-        if (!hasPaletteDrag(event.dataTransfer)&&!event.dataTransfer.types.includes("Files")) return;
+        if (!hasPaletteDrag(event.dataTransfer)&&!event.dataTransfer.types.includes(t("Files"))) return;
         event.preventDefault();
         event.dataTransfer.dropEffect = "copy";
         const resource = useEquipmentDrag.getState().resource;
@@ -769,6 +879,7 @@ export function WorldCanvas() {
       {importStatus&&<PdfImportIndicator status={importStatus} progress={importProgress} onDismiss={()=>setImportStatus("")} />}
       <ReactFlow<CanvasNode, CanvasEdge>
         id="oaw-world-map"
+        ariaLabelConfig={{ 'controls.zoomIn.ariaLabel': t('Zoom in'), 'controls.zoomOut.ariaLabel': t('Zoom out'), 'controls.fitView.ariaLabel': t('Fit view'), 'minimap.ariaLabel': t('Nearby canvas · drag to pan') }}
         nodes={nodes}
         edges={flowEdges}
         nodeTypes={nodeTypes}
@@ -789,10 +900,17 @@ export function WorldCanvas() {
         onMoveEnd={onMoveEnd}
         onEdgeClick={(_event, edge) => selectEdge(edge.id)}
         onSelectionChange={onSelectionChange}
+        onSelectionStart={(event) => {
+          // The previous selection overlay disappears on the first movement.
+          // Keep capture on the pane so that removal (or crossing a control)
+          // cannot swallow subsequent movement and the final pointerup.
+          const pointer = event as React.PointerEvent<HTMLDivElement>;
+          pointer.currentTarget.setPointerCapture(pointer.pointerId);
+        }}
         onPaneClick={(event) => {
           if (pinToolActive) {
             const point = screenToFlowPosition({ x: event.clientX, y: event.clientY });
-            useWorldStore.setState(state => ({ mapPins: [...state.mapPins, { id: crypto.randomUUID(), name: `图钉 ${state.mapPins.length + 1}`, ...point, zoom: getViewport().zoom }] }));
+            useWorldStore.setState(state => ({ mapPins: [...state.mapPins, { id: crypto.randomUUID(), name: t("图钉 {v0}", { v0: String(state.mapPins.length + 1) }), ...point, zoom: getViewport().zoom }] }));
             return;
           }
           selectEdge(undefined);
@@ -811,25 +929,21 @@ export function WorldCanvas() {
         edgesFocusable
         elevateNodesOnSelect={false}
         proOptions={{ hideAttribution: true }}
-        aria-label="Open Agent World spatial canvas"
+        aria-label={t("Open Agent World spatial canvas")}
       >
         <ContourLayer />
+        <GlueLayer nodes={nodes} preview={gluePreview} />
         <GenerationLayer />
         {nodes.filter((node) => node.data.equipmentDetail && !node.hidden).map((node) =>
           <SurfaceBridge key={node.id} sourceId={equipmentOriginId(node.id)} targetId={node.id} />)}
-        <Background
-          variant={BackgroundVariant.Dots}
-          gap={24}
-          size={1.15}
-          color="var(--grid-dot)"
-        />
+        <WorldBackground />
         <LocalMiniMap />
-        <MapAtlas active={pinToolActive} onActiveChange={setPinToolActive} />
+        <MapAtlas active={pinToolActive} onActiveChange={active => { setPinToolActive(active); if (active) setGlueActive(false); }} glueActive={glueActive} onGlueChange={active => { setGlueActive(active); if (active) setPinToolActive(false); }} />
         <Controls
           className="world-controls"
           position="bottom-right"
           showInteractive={false}
-          aria-label="Canvas zoom controls"
+          aria-label={t("Canvas zoom controls")}
         />
       </ReactFlow>
       <EdgeInspector />

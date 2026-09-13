@@ -5,7 +5,7 @@ import base64
 import json
 import logging
 import math
-from collections.abc import Coroutine, Mapping
+from collections.abc import Callable, Coroutine, Mapping
 from contextlib import asynccontextmanager, suppress
 from contextvars import ContextVar
 from dataclasses import dataclass, field, replace
@@ -16,6 +16,7 @@ from uuid import uuid4
 
 if TYPE_CHECKING:
     from backend.skill_runtime import RunSkillScript
+    from backend.canvas_control import CanvasControl, CanvasScope
 
 from backend.agents import (
     AgentEvent,
@@ -534,6 +535,9 @@ class ApplicationServices:
     card_library: CardLibraryStore
     _sandbox_commands: dict[str, dict] = field(default_factory=dict, init=False, repr=False)
     _sandbox_stopping: set[str] = field(default_factory=set, init=False, repr=False)
+    # Short-lived desktop review requests. Restart expires them; approval never
+    # becomes a durable grant or an Agent tool argument.
+    _minister_proposals: dict[str, dict] = field(default_factory=dict, init=False, repr=False)
     _execution_secrets: ContextVar[tuple[str, ...]] = field(
         default_factory=lambda: ContextVar("execution_secrets", default=()), init=False, repr=False)
     run_manager: RunManager | None = None
@@ -572,6 +576,11 @@ class ApplicationServices:
     def execution_credentials(self):
         from backend.security.execution_credentials import ExecutionCredentialStore
         return ExecutionCredentialStore(self.llm_settings, self.world)
+
+    def canvas_control(self, actor_id: str, authorize: Callable[[str], CanvasScope | None], *, review=None) -> CanvasControl:
+        """Bind a host-owned, live scope resolver to an automated caller."""
+        from backend.canvas_control import CanvasControl
+        return CanvasControl(self, actor_id, authorize, review=review)
 
     @asynccontextmanager
     async def _node_mutation(self, *, read_only: bool = False):
@@ -880,7 +889,9 @@ class ApplicationServices:
             if request.config is not None:
                 self.resources.artifacts.assert_source_idle(card_id)
             current = self.world.get_card(card_id)
-            if self.world.is_container(current) and request.position is not None:
+            from backend.canvas_glue import read_glue
+            if ((self.world.is_container(current) and request.position is not None)
+                    or (request.position is not None or request.size is not None) and card_id in read_glue(self)['boxes']):
                 return (await self.update_cards([CardBatchPatch(node_id=card_id, patch=request)]))[0]
             updated = self.world.preview_update_card(card_id, request)
             self._validate_membership_change(current, updated)
@@ -913,20 +924,26 @@ class ApplicationServices:
                 touch_parent(self, card.parent_id)
         return card
 
+    def expand_card_updates(self, updates: list[CardBatchPatch]) -> list[CardBatchPatch]:
+        """Resolve implicit descendant movement before validation or persistence."""
+        from backend.canvas_glue import expand_glued_updates
+        updates = expand_glued_updates(self, updates)
+        explicit = {item.node_id: item.patch.position for item in updates if item.patch.position is not None}
+        requested = {item.node_id for item in updates}
+        for member in self.world.list_cards():
+            if member.id in requested:
+                continue
+            parent = next((node for node in self.world.ancestors(member) if node.id in explicit), None)
+            if parent is not None:
+                target = explicit[parent.id]
+                updates.append(CardBatchPatch(node_id=member.id, patch=CardPatch(position={
+                    "x": member.position.x + target.x - parent.position.x,
+                    "y": member.position.y + target.y - parent.position.y})))
+        return updates
+
     async def update_cards(self, updates: list[CardBatchPatch]) -> list[Card]:
         async with self._node_mutation():
-            updates = list(updates)
-            explicit = {item.node_id: item.patch.position for item in updates if item.patch.position is not None}
-            requested = {item.node_id for item in updates}
-            for member in self.world.list_cards():
-                if member.id in requested:
-                    continue
-                parent = next((node for node in self.world.ancestors(member) if node.id in explicit), None)
-                if parent is not None:
-                    target = explicit[parent.id]
-                    updates.append(CardBatchPatch(node_id=member.id, patch=CardPatch(position={
-                        "x": member.position.x + target.x - parent.position.x,
-                        "y": member.position.y + target.y - parent.position.y})))
+            updates = self.expand_card_updates(updates)
             context = self._node_lifecycle_context()
             previous_parents = {item.node_id: self.world.get_card(item.node_id).parent_id for item in updates}
             prepared: list[tuple[CardBatchPatch, NodeLifecycleTransaction]] = []
@@ -978,14 +995,19 @@ class ApplicationServices:
                     touch_parent(self, card.parent_id)
         return cards
 
-    async def delete_card(self, card_id: str) -> Card:
-        return (await self.delete_cards([card_id]))[0]
+    async def delete_card(self, card_id: str, *, expected_revision: int | None = None) -> Card:
+        return (await self.delete_cards([card_id], expected_revisions={card_id: expected_revision} if expected_revision is not None else None))[0]
 
-    async def delete_cards(self, card_ids: list[str]) -> list[Card]:
+    def expand_card_deletions(self, card_ids: list[str]) -> list[str]:
+        return list(dict.fromkeys([*card_ids, *[n.id for key in card_ids for item in self.world.equipment_for(key) for n in [item, *self.world.owned_descendants(item.id)]]]))
+
+    async def delete_cards(self, card_ids: list[str], *, expected_revisions: dict[str, int] | None = None) -> list[Card]:
         finish_committed_delete: Coroutine[Any, Any, None]
         async with self._node_mutation():
-            ids = list(dict.fromkeys([*card_ids, *[n.id for key in card_ids for item in self.world.equipment_for(key) for n in [item, *self.world.owned_descendants(item.id)]]]))
+            ids = self.expand_card_deletions(card_ids)
             cards = [self.world.get_card(card_id) for card_id in ids]
+            for card in cards:
+                self.world.check_revision(card, (expected_revisions or {}).get(card.id))
             for card in cards:
                 self.resources.artifacts.assert_source_idle(card.id)
             for card in cards:
@@ -1033,6 +1055,8 @@ class ApplicationServices:
                     self._set_pending_node_deletion_state(
                         transaction_card.id, "committed"
                     )
+                for card in cards:
+                    self.world.check_revision(self.world.get_card(card.id), (expected_revisions or {}).get(card.id))
                 deleted = (
                     [self.world.delete_card(ids[0])]
                     if len(ids) == 1
@@ -1561,27 +1585,32 @@ class ApplicationServices:
 
     async def form_legion_group(self, name: str, node_ids: list[str]) -> list[Card]:
         async with self._node_mutation():
+            request = self.preview_legion_group(name, node_ids)
             cards = [self.world.get_card(node_id) for node_id in dict.fromkeys(node_ids)]
-            if not cards or any(c.type == "legion" or c.parent_id for c in cards):
-                raise GraphValidationError("Select ungrouped member cards to form a Legion")
-            x = min(c.position.x for c in cards) - 480
-            y = min(c.position.y for c in cards) - 90
-            width = max(1100, max(c.position.x + c.size.width for c in cards) - x + 60)
-            height = max(700, max(c.position.y + c.size.height for c in cards) - y + 60)
-            if width > 4096 or height > 4096:
-                raise GraphValidationError("Move the selected cards closer together before grouping")
-            group_id = str(uuid4())
             for card in cards:
-                self._validate_membership_change(card, card.model_copy(update={"parent_id": group_id}))
+                self._validate_membership_change(card, card.model_copy(update={"parent_id": request.id}))
             with self.world.database.transaction(immediate=True) as connection:
-                group = self.world.create_card(CardCreate(id=group_id, type="legion", name=name,
-                    position={"x": x, "y": y}, size={"width": width, "height": height}), _connection=connection)
+                group = self.world.create_card(request, _connection=connection)
                 members = self.world.update_cards([CardBatchPatch(node_id=c.id, patch=CardPatch(parent_id=group.id)) for c in cards], _connection=connection)
             self._publish_card_created_nowait(group)
             for member in members:
                 await self.events.publish(EventType.CARD_UPDATED, node_id=member.id,
                                           payload={"node": self.enrich_card(member).model_dump(mode="json")})
             return [group, *[self.enrich_card(m) for m in members]]
+
+    def preview_legion_group(self, name: str, node_ids: list[str]) -> CardCreate:
+        """Use the same existing group geometry for review and commit."""
+        cards = [self.world.get_card(node_id) for node_id in dict.fromkeys(node_ids)]
+        if not cards or any(c.type == "legion" or c.parent_id for c in cards):
+            raise GraphValidationError("Select ungrouped member cards to form a Legion")
+        x = min(c.position.x for c in cards) - 480
+        y = min(c.position.y for c in cards) - 90
+        width = max(1100, max(c.position.x + c.size.width for c in cards) - x + 60)
+        height = max(700, max(c.position.y + c.size.height for c in cards) - y + 60)
+        if width > 4096 or height > 4096:
+            raise GraphValidationError("Move the selected cards closer together before grouping")
+        return CardCreate(id=str(uuid4()), type="legion", name=name,
+            position={"x": x, "y": y}, size={"width": width, "height": height})
 
     async def capture_legion(self, request: LegionCapture) -> LegionSummary:
         # Commands may mutate read-write hard links before their resource
@@ -2260,6 +2289,7 @@ class ApplicationServices:
 
     async def _update_edge_locked(self, edge_id: str, request: EdgePatch) -> Edge:
         old = self.world.get_edge(edge_id)
+        self.world.check_revision(old, request.expected_revision)
         if (self.plugins.relationship(old.relationship).generated
                 or self.plugins.relationship(request.relationship or old.relationship).generated):
             raise GraphValidationError("Generated connections cannot change relationship")
@@ -2293,15 +2323,16 @@ class ApplicationServices:
         return edge
 
     async def delete_edge(
-        self, edge_id: str, *, _publish_event: bool = True
+        self, edge_id: str, *, _publish_event: bool = True, expected_revision: int | None = None
     ) -> Edge:
         async with self._node_mutation():
+            self.world.check_revision(self.world.get_edge(edge_id), expected_revision)
             return await self._delete_edge_locked(
-                edge_id, _publish_event=_publish_event
+                edge_id, _publish_event=_publish_event, expected_revision=expected_revision
             )
 
     async def _delete_edge_locked(
-        self, edge_id: str, *, _publish_event: bool = True
+        self, edge_id: str, *, _publish_event: bool = True, expected_revision: int | None = None
     ) -> Edge:
         edge = self.world.get_edge(edge_id)
         affected = self._affected_agents(edge)
@@ -2311,6 +2342,7 @@ class ApplicationServices:
         if self._is_mount(source.type, target.type, edge.relationship):
             detached = await self._detach_mount(edge, ignore_missing=True)
         try:
+            self.world.check_revision(self.world.get_edge(edge_id), expected_revision)
             edge = self.world.delete_edge(edge_id)
         except BaseException:
             if detached:

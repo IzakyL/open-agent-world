@@ -32,8 +32,8 @@
   --danger: #b14f45;
   --danger-soft: rgba(177, 79, 69, 0.12);
   --warning: #a87440;
-  --grid-dot: rgba(73, 69, 61, 0.24);
-  --contour: rgba(79, 75, 66, 0.11);
+  --grid-dot: rgba(73, 69, 61, 0.17);
+  --contour: rgba(166, 112, 57, 0.20);
   --edge: #817c72;
   --edge-arrow: #817c72;
   --minimap-mask: rgba(218, 215, 207, 0.72);
@@ -75,8 +75,8 @@
   --danger: #e27c71;
   --danger-soft: rgba(226, 124, 113, 0.13);
   --warning: #c99558;
-  --grid-dot: rgba(231, 226, 214, 0.18);
-  --contour: rgba(231, 226, 214, 0.08);
+  --grid-dot: rgba(231, 226, 214, 0.14);
+  --contour: rgba(194, 114, 79, 0.21);
   --edge: #a09b90;
   --edge-arrow: #a09b90;
   --minimap-mask: rgba(25, 24, 22, 0.76);
@@ -189,11 +189,10 @@ button:disabled { cursor: not-allowed; opacity: 0.48; }
   stroke: var(--contour);
   stroke-linecap: round;
   stroke-linejoin: round;
-  vector-effect: non-scaling-stroke;
 }
 
-.contour-minor { stroke-width: 1.05; opacity: 0.58; }
-.contour-major { stroke-width: 1.45; opacity: 0.96; }
+.contour-minor { stroke-width: calc(1.15px * var(--contour-stroke-scale, 1)); opacity: 0.72; }
+.contour-major { stroke-width: calc(1.65px * var(--contour-stroke-scale, 1)); opacity: 1; }
 
 /* Global controls */
 .icon-button,
@@ -1092,6 +1091,11 @@ button:disabled { cursor: not-allowed; opacity: 0.48; }
 .world-card.node-surface.is-inspector { border-radius: 24px; cursor: default; box-shadow: 0 22px 45px var(--shadow-deep), 0 5px 12px var(--shadow), inset 0 1px 0 var(--highlight); }
 .world-card.node-surface.is-workspace { border-radius: 20px; cursor: grab; box-shadow: 24px 30px 80px rgba(30, 28, 24, 0.3), inset 0 1px 0 var(--highlight); }
 .world-card.node-surface.is-workspace:active { cursor: grabbing; }
+.world-card.node-surface.is-selected {
+  /* Surface shadows vary by level; selection must remain visible independently. */
+  outline: 2px solid var(--accent);
+  outline-offset: 3px;
+}
 .world-card.node-surface.is-ephemeral { min-height: 0; }
 
 .node-surface-header {
@@ -1436,7 +1440,7 @@ button:disabled { cursor: not-allowed; opacity: 0.48; }
 }
 
 .top-bar .connection-status:hover { background: var(--chrome-raised); }
-.top-bar .top-actions { width: 100%; min-width: 0; display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 5px; }
+.top-bar .top-actions { width: 100%; min-width: 0; display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 5px; }
 .top-bar .top-icon-button { width: 100%; min-width: 0; height: 32px; border-radius: 9px; }
 .top-bar .world-status { justify-content: space-between; gap: 4px; }
 .top-bar .topology-summary > span { white-space: nowrap; }
@@ -1450,8 +1454,8 @@ button:disabled { cursor: not-allowed; opacity: 0.48; }
   --deck-tab-width: 64px;
   --deck-tab-step: 68px;
   --deck-tab-chrome: 54px;
-  --deck-preferred-width: max(320px, calc(var(--deck-tab-count, 1) * var(--deck-tab-step) + var(--deck-tab-chrome)));
-  width: min(var(--deck-preferred-width), 760px, calc(100vw - 530px));
+  --deck-preferred-width: max(520px, calc(var(--deck-tab-count, 1) * var(--deck-tab-step) + var(--deck-tab-chrome)), calc(200px + min(var(--deck-hand-count, 0), 8) * 76px));
+  width: min(var(--deck-preferred-width), 760px, calc(100vw - 360px));
   min-width: 0;
   padding: 7px;
   border-radius: 20px;
@@ -1569,7 +1573,9 @@ button:disabled { cursor: not-allowed; opacity: 0.48; }
 }
 
 .component-palette:hover .deck-stage,
-.component-palette:focus-within .deck-stage {
+.component-palette:focus-within .deck-stage,
+.component-palette[data-tutorial-highlight] .deck-stage,
+body:has(.tutorial-bubble[data-step="place-demo"]) .component-palette .deck-stage {
   min-height: var(--deck-open-height);
   max-height: var(--deck-open-height);
   margin-top: 5px;
@@ -2187,6 +2193,24 @@ button:disabled { cursor: not-allowed; opacity: 0.48; }
   border: 0;
   background: transparent;
   cursor: grab;
+}
+/* Keep hit areas stationary while cards lift and fan out. The upper strip
+   allows horizontal browsing across raised cards; outer slots include the
+   exposed ends of the hand. Pseudo-elements belong to the draggable button. */
+.component-palette .deck-hover-button::before {
+  content: "";
+  position: absolute;
+  top: -26px;
+  bottom: -10px;
+  left: 0;
+  right: 0;
+}
+.component-palette .deck-hover-slot:first-child .deck-hover-button::before { left: min(0px, calc(50% - 70px)); }
+.component-palette .deck-hover-slot:last-child .deck-hover-button::before { right: min(0px, calc(50% - 70px)); }
+.component-palette .palette-items,
+.component-palette .palette-items * {
+  -webkit-user-select: none;
+  user-select: none;
 }
 .component-palette .deck-hover-button:active { cursor: grabbing; }
 .component-palette .deck-hover-button:disabled { cursor: default; }

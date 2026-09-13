@@ -7,10 +7,12 @@ Use these guides to look up a feature or understand how it works. Start with set
 | I want to... | Read |
 | --- | --- |
 | Install, launch, or contribute | [Getting started](getting-started.md) |
+| Install the desktop app or use F3 development resets | [Desktop installation and development](desktop.md) |
 | Understand cards, connections, agents, and capabilities | [Core concepts](concepts.md) |
 | Configure models, credentials, or application storage | [Configuration](configuration.md) |
 | Collect cards and organize the bottom tray | [Packs, Card Library, and Decks](card-library.md) |
 | Organize and reuse a team | [Legion team spaces](legions.md) |
+| Inspect and tidy a local area of the canvas | [Minister](minister.md) |
 | Use or develop an extension | [Plugins](plugins.md) |
 | Work with files and run commands | [Sandbox workspace](sandbox-workspace.md) |
 | Configure command variables, secrets, and targets | [Execution configuration](execution-configuration.md) |
@@ -20,13 +22,14 @@ Use these guides to look up a feature or understand how it works. Start with set
 ## Technical reference
 
 - [Architecture](architecture.md): authority, persistence, interaction flows, and canvas scaling.
+- [Scoped canvas automation](canvas-control.md): host-issued control scopes, field policy, revisions, and synchronization.
 - [Runs and runtime providers](runs.md), [runtime state](state.md), and [execution lifecycle and durable outputs](lifecycle-artifacts.md).
 - [Plugin work-source execution](execution.md), [node effects](node-effects.md), and [canvas placement](layout.md).
 - [Security and isolation contract](security.md): trust zones and platform boundaries.
 
 ## Scope and future learning
 
-The interactive tutorial is planned, not implemented. It will introduce basic operations and guide a small working example, linking here for deeper explanations.
+The [interactive tutorial](tutorial.md) starts on an empty canvas and guides a small working example. Replay it with the compass button in the world controls; use these docs for deeper explanations.
 
 This repository documents OAW, core functionality, bundled plugins, and plugin development. Plugin-specific guides can live with their packages; see the [plugin guide directory](plugins.md#bundled-plugin-guides). In-app viewing of plugin documentation and tutorials is a future direction, with no documentation delivery API promised here.
 
