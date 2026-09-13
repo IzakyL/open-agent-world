@@ -6,16 +6,36 @@ for (const type of ["agent", "conversation", "text", "sandbox", "environment", "
     expect(response.ok()).toBe(true);
     const { id } = await response.json();
     try {
-      await page.addInitScript(nodeId => {
-        localStorage.setItem("oaw-node-surfaces-v1", JSON.stringify({ state: {
-          surfaceLevels: { [nodeId]: "inspector" }, baseLevels: {}, maximizedWorkspaces: {},
-        }, version: 3 }));
-      }, id);
       await page.goto("/");
       const card = page.locator(`[data-card-id="${id}"]`);
+      await card.getByRole("heading", { name: "Drag and copy", exact: true }).click();
       await expect(card).toHaveAttribute("data-surface-level", "inspector");
       await page.waitForTimeout(500);
       const body = card.locator(".node-inspector-content");
+      // Real browser selection exercises the native React Flow drag listener;
+      // synthetic React events alone do not reproduce its ordering.
+      if (type === "agent" || type === "text") {
+        const editors = body.locator("textarea");
+        await expect(editors.first()).toBeEnabled();
+        expect(await editors.count()).toBeGreaterThanOrEqual(type === "agent" ? 2 : 1);
+        for (const editor of await editors.all()) {
+          await editor.fill("Select these words without moving the card");
+          await editor.scrollIntoViewIfNeeded();
+          const box = (await editor.boundingBox())!;
+          const start = (await card.boundingBox())!;
+          await page.mouse.move(box.x + 12, box.y + 14);
+          await page.mouse.down();
+          await page.mouse.move(box.x + 130, box.y + 14, { steps: 10 });
+          await page.mouse.up();
+          expect(await editor.evaluate(element => element.selectionEnd - element.selectionStart)).toBeGreaterThan(0);
+          const end = (await card.boundingBox())!;
+          expect(Math.abs(end.x - start.x)).toBeLessThan(2);
+          expect(Math.abs(end.y - start.y)).toBeLessThan(2);
+          await expect(editor).toBeFocused();
+          await page.keyboard.insertText("replacement");
+          await expect(editor).toHaveValue(/replacement/);
+        }
+      }
       let text!: { x: number; y: number; width: number };
       await expect(async () => { text = await body.evaluate(element => {
         const walker = document.createTreeWalker(element, NodeFilter.SHOW_TEXT);

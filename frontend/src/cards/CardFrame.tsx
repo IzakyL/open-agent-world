@@ -29,7 +29,7 @@ import { CatalogIcon } from "../components/CatalogIcon";
 import { useCollectionHover } from "../state/shadowCollection";
 
 const DRAG_THRESHOLD_PX = 5;
-const NON_DRAG_SELECTOR = "button, input, textarea, select, label, a, summary, [role='button'], [role='separator'], [contenteditable='true'], .react-flow__handle";
+const NON_DRAG_SELECTOR = "button, input, textarea, select, label, a, summary, [role='button'], [role='separator'], [contenteditable]:not([contenteditable='false']), .nodrag, .react-flow__handle";
 
 // Element boxes include padding and empty line space. Only rendered text should
 // take a mouse gesture away from dragging the surrounding inspector.
@@ -161,17 +161,20 @@ function WorldCardNodeComponent({ data, selected, dragging }: NodeProps<CanvasNo
       }}
       onMouseDownCapture={event => {
         const target = event.target as Element;
-        if (visualLevel === "inspector" && target.closest(".node-inspector-content, .node-inspector-footer")
-          && !target.closest(NON_DRAG_SELECTOR)) {
-          if (hitsText(target, event.clientX, event.clientY)) event.stopPropagation();
-          else {
-            event.preventDefault();
-            window.getSelection()?.removeAllRanges();
-          }
+        // React Flow's native drag listener runs before React's bubble handlers.
+        // Classify the gesture during capture so its nodrag filter can reject it,
+        // while still delivering the event to child controls and React handlers.
+        const boundary = event.currentTarget;
+        boundary.classList.remove("nodrag");
+        const control = Boolean(target.closest(NON_DRAG_SELECTOR));
+        const inspectorContent = visualLevel === "inspector"
+          && Boolean(target.closest(".node-inspector-content, .node-inspector-footer"));
+        const selectingText = !control && inspectorContent && hitsText(target, event.clientX, event.clientY);
+        boundary.classList.toggle("nodrag", control || selectingText);
+        if (!control && inspectorContent && !selectingText) {
+          event.preventDefault();
+          window.getSelection()?.removeAllRanges();
         }
-      }}
-      onMouseDown={event => {
-        if ((event.target as Element).closest(NON_DRAG_SELECTOR)) event.stopPropagation();
       }}
       onClick={(event) => {
         const start = pointerStart.current;
