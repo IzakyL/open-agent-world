@@ -20,13 +20,13 @@ export function vacantPosition(desired: GuideRect, obstacles: GuideRect[], clear
 
 /** Keep both the bubble and character clear of the highlighted subject and controls. */
 export function placeGuide(desired: { x: number; y: number }, subject: GuideRect | undefined,
-  bubble: { width: number; height: number }, viewport: { width: number; height: number }, obstacles: GuideRect[], mascotOffset = 0) {
+  bubble: { width: number; height: number }, viewport: { width: number; height: number }, obstacles: GuideRect[], mascotOffset = 0, previous?: { x: number; y: number }) {
   const { width, height } = viewport;
   const maxX = Math.max(12, width - bubble.width - 12);
   const minY = bubble.height + 28;
   const maxY = Math.max(minY, height - 115);
   const clamp = (point: { x: number; y: number }) => ({ x: Math.max(12, Math.min(maxX, point.x)), y: Math.max(minY, Math.min(maxY, point.y)) });
-  const candidates = [desired,
+  const candidates = [desired, ...(previous ? [previous] : []),
     ...(subject ? [
       { x: subject.x + subject.width / 2 - mascotOffset - 46, y: subject.y - 108 },
       { x: subject.x - bubble.width - 20, y: desired.y },
@@ -41,8 +41,24 @@ export function placeGuide(desired: { x: number; y: number }, subject: GuideRect
     // The control being taught must remain readable and clickable, even when
     // a narrow settings dialog leaves little room around other fields.
     const mascot = { x: point.x + mascotOffset, y: point.y, width: 92, height: 92 };
-    return (subject ? (overlap(rect, subject) + overlap(mascot, subject)) * 1000 : 0)
+    const distance = subject ? Math.hypot(
+      Math.max(subject.x - (mascot.x + 46), 0, mascot.x + 46 - subject.x - subject.width),
+      Math.max(subject.y - (mascot.y + 46), 0, mascot.y + 46 - subject.y - subject.height),
+    ) : 0;
+    return distance * 5 + (subject ? (overlap(rect, subject) + overlap(mascot, subject)) * 1000 : 0)
       + obstacles.reduce((sum, obstacle) => sum + (overlap(rect, obstacle) + overlap(mascot, obstacle)) * 10, 0) + Math.hypot(point.x - desired.x, point.y - desired.y);
   };
-  return candidates.reduce((best, point) => score(point) < score(best) ? point : best);
+  const best = candidates.reduce((best, point) => score(point) < score(best) ? point : best);
+  // Small layout/measurement changes must not flip the guide to the other side.
+  if (previous && score(clamp(previous)) <= score(best) + 500) return clamp(previous);
+  return best;
+}
+
+/** Frame-rate independent easing with a screen-space speed limit. */
+export function advanceGuide(current: { x: number; y: number }, target: { x: number; y: number }, elapsed: number) {
+  const dx = target.x - current.x, dy = target.y - current.y, distance = Math.hypot(dx, dy);
+  if (distance < .5) return target;
+  const dt = Math.min(40, Math.max(0, elapsed));
+  const fraction = Math.min(1 - Math.exp(-dt / 170), 460 * dt / 1000 / distance);
+  return { x: current.x + dx * fraction, y: current.y + dy * fraction };
 }

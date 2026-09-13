@@ -1,7 +1,9 @@
+import { resetTutorialProfile } from './tutorial-profile';
 import { prepareTutorialDeck } from './tutorial-deck';
 import { expect, test } from '@playwright/test';
 
 test('placement stays hidden until its single flight starts', async ({ page, request }) => {
+  await resetTutorialProfile(request);
   const initialIds: string[] = (await (await request.get('/api/nodes')).json()).map((card: { id: string }) => card.id);
   await page.emulateMedia({ reducedMotion: 'no-preference' });
   await page.goto('/');
@@ -42,6 +44,10 @@ test('placement stays hidden until its single flight starts', async ({ page, req
   await page.getByRole('button', { name: 'Show me', exact: true }).click();
   await page.waitForSelector('.tutorial-placement-flight');
   await page.screenshot({ path: 'test-results/tutorial-placement-flight.png' });
+  await expect(page.locator('.tutorial-bubble')).toHaveAttribute('data-reviewing', 'true');
+  await expect(page.locator('.tutorial-next')).toBeEnabled();
+  await expect(page.locator('.tutorial-bubble')).toHaveAttribute('data-step', 'place-demo');
+  await page.locator('.tutorial-next').click();
   await expect(page.locator('.tutorial-bubble')).toHaveAttribute('data-step', 'place');
   const result = await page.evaluate(() => (window as unknown as { placementResult: { flights: number; hidden: number; premature: number; flying: number; anchors: string[]; positions: number[] } }).placementResult);
   expect(result.flights).toBe(1);

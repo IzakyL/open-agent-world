@@ -204,7 +204,16 @@ describe('first-run persistence and ownership', () => {
     finish();
     await action; await repeated;
     expect(order).toEqual(['hide', 'focus', 'flight', 'reveal']);
+    expect(useTutorialStore.getState().session).toMatchObject({ step: 'place-demo', completedDemo: 'place-demo' });
+    expect(useTutorialStore.getState().busy).toBe(false);
+    const saved = JSON.parse(localStorage.getItem('oaw-onboarding-v1')!).state;
+    useTutorialStore.setState({ ...saved, view: 'paused', target: undefined });
+    tutorial.resume();
+    await tutorial.perform('place');
+    expect(order).toEqual(['hide', 'focus', 'flight', 'reveal']);
+    await tutorial.continue();
     expect(useTutorialStore.getState().session?.step).toBe('place');
+    expect(useTutorialStore.getState().session?.completedDemo).toBeUndefined();
   });
 
   it('waits for in-flight creation before cleaning up a skipped demonstration', async () => {

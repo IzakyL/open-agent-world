@@ -1,4 +1,10 @@
 {
+  "Continue": ["Continue", "继续"],
+  "The Text card is here. Take a moment to look; when you are ready, we will place yours.": ["The Text card is here. Take a moment to look; when you are ready, we will place yours.", "文本卡已经放好了。先看一看，准备好后点继续，再来放置你的卡片。"],
+  "Both cards are now connected with Participate. Follow the line from the Agent to the Conversation, then continue when you are ready.": ["Both cards are now connected with Participate. Follow the line from the Agent to the Conversation, then continue when you are ready.", "两张卡已通过“参与”连接。沿着连线看看智能体与对话的关系，准备好了再继续。"],
+  "The two cards now share a seam and move together. Take a look before we separate them for your turn.": ["The two cards now share a seam and move together. Take a look before we separate them for your turn.", "两张卡已经贴合，可以一起移动了。先看看接缝，再点继续，我会把它们分开让你试试。"],
+  "The cards are separate again. When you are ready, we will switch on Glue and bring their edges together.": ["The cards are separate again. When you are ready, we will switch on Glue and bring their edges together.", "卡片已经重新分开。准备好了再继续，我们会打开万能胶，把两张卡的边缘贴在一起。"],
+  "The Minister is here. Notice its circle; continue when you are ready to explore it.": ["The Minister is here. Notice its circle; continue when you are ready to explore it.", "大臣已经放好了。先看看它的圆形范围，准备好了再继续探索。"],
   "Click settings to continue setting up your model.": ["Click settings to continue setting up your model.", "点开设置，继续配置模型。"],
   "Click Models here.": ["Click Models here.", "点击这里的“模型”。"],
   "Add or select a connection first.": ["Add or select a connection first.", "先添加或选择一个连接。"],

@@ -1,3 +1,4 @@
+import { resetTutorialProfile } from './tutorial-profile';
 import { prepareTutorialDeck } from './tutorial-deck';
 import { expect, test, type Page } from '@playwright/test';
 
@@ -5,6 +6,7 @@ test.describe('canvas onboarding', () => {
   test.use({ actionTimeout: 10_000 });
   let originalIds: Set<string>;
   test.beforeEach(async ({ page, request }) => {
+    await resetTutorialProfile(request);
     originalIds = new Set((await (await request.get('/api/nodes')).json()).map((node: { id: string }) => node.id));
     await page.emulateMedia({ reducedMotion: 'reduce' });
   });
@@ -24,7 +26,7 @@ test.describe('canvas onboarding', () => {
     await page.mouse.up();
   };
 
-  test('welcome choices persist and use the real Minister', async ({ page }) => {
+  test('welcome choices persist and use the real Minister', async ({ page, request }) => {
     await page.goto('/');
     await expect(page.getByRole('heading', { name: 'Open Agent World' })).toBeVisible();
     await page.screenshot({ path: 'test-results/onboarding-welcome-light.png' });
@@ -37,8 +39,9 @@ test.describe('canvas onboarding', () => {
     await page.getByRole('button', { name: 'Replay Tutorial', exact: true }).click();
     await at(page, 'enter');
     await page.getByRole('button', { name: 'Skip tutorial', exact: true }).click();
-    await page.evaluate(() => localStorage.removeItem('oaw-onboarding-v1'));
-    await page.reload();
+    await page.goto('about:blank');
+    await resetTutorialProfile(request);
+    await page.goto('/');
     await page.getByRole('button', { name: 'Place Minister Card', exact: true }).click();
     await expect(page.getByRole('button', { name: 'Close Minister', exact: true })).toBeVisible();
     await expect(page.locator('.minister-node')).toHaveCount(1);
@@ -59,7 +62,7 @@ test.describe('canvas onboarding', () => {
     const original = await art.boundingBox();
     await page.getByRole('button', { name: /^Start Tutorial/ }).click();
     await at(page, 'enter');
-    await expect.poll(async () => page.locator('.tutorial-guide').evaluate(element => element.getAnimations().some(animation => animation.playState === 'running'))).toBe(false);
+    await expect(page.locator('.tutorial-guide')).toHaveAttribute('data-moving', 'false');
     const arrived = await art.boundingBox();
     expect(Math.hypot(arrived!.x - original!.x, arrived!.y - original!.y)).toBeGreaterThan(60);
     await page.screenshot({ path: 'test-results/onboarding-entrance-small.png' });
@@ -79,7 +82,7 @@ test.describe('canvas onboarding', () => {
   });
 
   for (const motion of ['reduce', 'no-preference'] as const) test(`walks through real navigation, cards, capabilities, glue and Minister (${motion})`, async ({ page, request }) => {
-    test.setTimeout(100_000);
+    test.setTimeout(150_000);
     await page.emulateMedia({ reducedMotion: motion });
     const errors: string[] = [];
     page.on('pageerror', error => errors.push(error.message));
@@ -95,6 +98,7 @@ test.describe('canvas onboarding', () => {
     await prepareTutorialDeck(page);
     await at(page, 'place-demo');
     await page.getByRole('button', { name: 'Show me', exact: true }).click();
+    await page.locator('.tutorial-next').filter({ hasText: 'Continue' }).click();
     await at(page, 'place');
     // A reload resumes rather than restarting or losing ownership of the demo.
     await page.reload();
@@ -171,6 +175,7 @@ test.describe('canvas onboarding', () => {
     const conversationId = await idOf('conversation'), conversation = node(conversationId);
     await at(page, 'connect-demo');
     await page.getByRole('button', { name: 'Show the connection', exact: true }).click();
+    await page.locator('.tutorial-next').filter({ hasText: 'Continue' }).click();
     await at(page, 'conversation-open');
     await conversation.locator('.card-kind-icon').click();
     await conversation.getByRole('button', { name: 'Open workspace', exact: true }).click();
@@ -192,6 +197,10 @@ test.describe('canvas onboarding', () => {
     expect(await page.evaluate(point => document.elementFromPoint(point.x, point.y)?.closest('.tutorial-bubble') !== null, sourcePoint)).toBe(false);
     await page.mouse.move(sourcePoint.x, sourcePoint.y); await page.mouse.down();
     await page.mouse.move(targetPort.x + targetPort.width / 2, targetPort.y + targetPort.height / 2, { steps: 15 }); await page.mouse.up();
+    await expect(page.locator('mask rect[data-spotlight-target="agent"]')).toHaveAttribute('opacity', '1');
+    await expect(page.locator('mask rect[data-spotlight-target="sandbox"]')).toHaveAttribute('opacity', '1');
+    await expect(page.locator('mask rect[data-spotlight-target="capability-chooser"]')).toHaveAttribute('opacity', '1');
+    await page.screenshot({ path: `test-results/tutorial-capability-chooser-${motion}.png` });
     await page.locator('input[name="relationship"][value="execute"]').check();
     await page.getByRole('button', { name: 'Grant capability', exact: true }).click();
     await at(page, 'sandbox-open');
@@ -199,15 +208,39 @@ test.describe('canvas onboarding', () => {
     await at(page, 'sandbox-ready');
     await page.getByRole('button', { name: 'Try sticking cards', exact: true }).click();
     await at(page, 'glue-demo');
+    await page.evaluate(() => {
+      const samples: { x: number; y: number; viewport: string; glued: boolean }[] = [];
+      Object.assign(window, { glueSamples: samples });
+      const sample = () => {
+        const card = [...document.querySelectorAll<HTMLElement>('.react-flow__node')].find(el => el.textContent?.includes('Tutorial \u00b7 stick with me'));
+        if (card) {
+          const box = card.getBoundingClientRect();
+          samples.push({ x: box.x, y: box.y, glued: card.classList.contains('is-glued'), viewport: document.querySelector<HTMLElement>('.world-canvas .react-flow__viewport')!.style.transform });
+        }
+        if (document.querySelector('.tutorial-bubble')?.getAttribute('data-step') === 'glue-demo') requestAnimationFrame(sample);
+      };
+      requestAnimationFrame(sample);
+    });
     await page.getByRole('button', { name: 'Show me sticking', exact: true }).click();
+    await page.locator('.tutorial-next').filter({ hasText: 'Continue' }).click();
     await at(page, 'glue-reset');
+    const samples = await page.evaluate(() => (window as unknown as { glueSamples: { x: number; y: number; viewport: string; glued: boolean }[] }).glueSamples);
+    // During the approach, the second card must keep moving left until contact.
+    // Compare only frames with the same camera and before the pair starts moving together.
+    const approach = samples.filter(sample => !sample.glued && sample.viewport === samples.at(-1)?.viewport);
+    if (motion === 'no-preference') {
+      expect(approach.length).toBeGreaterThan(10);
+      expect(approach[0].x - approach.at(-1)!.x).toBeGreaterThan(50);
+      for (let i = 1; i < approach.length; i++) expect(approach[i].x - approach[i - 1].x).toBeLessThan(2);
+    }
     const first = page.locator('.react-flow__node').filter({ has: page.getByText('Tutorial · stick me', { exact: true }) });
     const second = page.locator('.react-flow__node').filter({ has: page.getByText('Tutorial · stick with me', { exact: true }) });
     await expect(first).toHaveClass(/is-glued/);
     await page.screenshot({ path: 'test-results/onboarding-glue.png' });
     await page.getByRole('button', { name: 'My turn', exact: true }).click();
+    await page.locator('.tutorial-next').filter({ hasText: 'Continue' }).click();
     await at(page, 'glue');
-    await page.getByRole('button', { name: '万能胶', exact: true }).click();
+    await page.getByRole('button', { name: 'Glue', exact: true }).click();
     const a = (await first.boundingBox())!, b = (await second.boundingBox())!;
     await move(page, second, a.x + a.width - b.x, a.y - b.y);
     await at(page, 'glue-move');
@@ -215,6 +248,7 @@ test.describe('canvas onboarding', () => {
     await at(page, 'minister');
     await page.keyboard.press('Escape');
     await page.getByRole('button', { name: 'Place Minister Card', exact: true }).click();
+    await page.locator('.tutorial-next').filter({ hasText: 'Continue' }).click();
     await at(page, 'minister-presence');
     await page.getByRole('button', { name: 'Open Minister Minister', exact: true }).hover();
     await at(page, 'minister-message');

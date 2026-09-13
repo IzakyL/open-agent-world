@@ -17,6 +17,7 @@ export interface DemoRecord { id: string; name: string; created_at?: string; con
 export interface TutorialSession {
   id: string;
   step: string;
+  completedDemo?: string;
   initialIds: string[];
   refs: Partial<Record<Role, string>>;
   demos: DemoRecord[];
@@ -51,7 +52,7 @@ export interface GuideVisuals {
   preparePlace?: (existingId?: string) => () => void;
   findSpace?: (preferred: WorldPosition, size: { width: number; height: number }) => WorldPosition;
   place: (id: string, signal: AbortSignal) => Promise<void>;
-  connect: (source: string, target: string, signal: AbortSignal) => Promise<void>;
+  connect: (source: string, target: string, signal: AbortSignal) => Promise<void | (() => void)>;
   move: (id: string, position: WorldPosition, signal: AbortSignal) => Promise<void>;
   focus: (ids: string[]) => Promise<void>;
 }
@@ -68,7 +69,7 @@ const currentStep = () => STEPS.find(step => step.id === state().session?.step) 
 const cardFor = (role: Role) => world().cards.find(card => card.id === state().session?.refs[role]);
 function saveSession(patch: Partial<TutorialSession>) {
   const session = state().session;
-  if (session) useTutorialStore.setState({ session: { ...session, ...patch } });
+  if (session) useTutorialStore.setState({ session: { ...session, ...(patch.step && patch.step !== session.step ? { completedDemo: undefined } : {}), ...patch } });
 }
 function observation(): Observation {
   const w = world(), surfaces = useNodeSurfaceStore.getState();
@@ -96,7 +97,7 @@ function goNext() {
     }
     if (step.expects === 'connect') world().selectEdge(undefined);
     if (next.id === 'configure' && step.id === 'model-save') useWorldStore.setState({ settingsOpen: false });
-    saveSession({ step: next.id });
+    saveSession({ step: next.id, completedDemo: undefined });
     useTutorialStore.setState(s => ({ error: undefined, target: undefined, ready: false, celebration: s.celebration + (step.expects ? 1 : 0) }));
     rebase();
     if (next.expects === 'select' && next.role) {
@@ -216,13 +217,16 @@ async function demonstrate(action: Demonstration, signal: AbortSignal) {
       if (world().edges.some(edge => edge.source === agent.id && edge.target === conversation.id && edge.relationship === 'participate')) break;
       const option = getConnectionOptions(world().catalog, agent.type, conversation.type).find(item => item.value === 'participate');
       if (!option) throw new Error('This catalog does not provide Participate for these cards. Check their plugins in the Library.');
-      await visuals?.connect(agent.id, conversation.id, signal);
-      ensureActive(signal);
-      if (world().pendingConnection) throw new Error('Finish or close your current capability chooser, then retry this demonstration.');
-      world().requestConnection(agent.id, conversation.id);
-      await world().createConnection(option.value);
-      if (!world().edges.some(edge => edge.source === agent.id && edge.target === conversation.id && edge.relationship === option.value)) throw new Error('The relationship was not saved. Retry after checking the capability chooser.');
-      world().selectEdge(undefined);
+      const clearTrace = await visuals?.connect(agent.id, conversation.id, signal);
+      try {
+        ensureActive(signal);
+        if (world().pendingConnection) throw new Error('Finish or close your current capability chooser, then retry this demonstration.');
+        world().requestConnection(agent.id, conversation.id);
+        await world().createConnection(option.value);
+        if (!world().edges.some(edge => edge.source === agent.id && edge.target === conversation.id && edge.relationship === option.value)) throw new Error('The relationship was not saved. Retry after checking the capability chooser.');
+        world().selectEdge(undefined);
+        await new Promise<void>(resolve => requestAnimationFrame(() => resolve()));
+      } finally { clearTrace?.(); }
       break;
     }
     case 'glue': {
@@ -301,6 +305,21 @@ async function cleanup() {
   if (retained.length) world().pushToast({ tone: 'neutral', title: 'Kept your changed tutorial cards', detail: 'Props you edited, connected, or attached to your own cards belong to your world now.' });
 }
 
+/** Persist the result before waiting, so reload/resume never replays a finished gesture. */
+async function finishDemonstration(signal: AbortSignal) {
+  ensureActive(signal);
+  const step = currentStep();
+  if (!step.result) { goNext(); return; }
+  saveSession({ completedDemo: step.id });
+  useTutorialStore.setState({ target: step.result.target });
+  await new Promise<void>((resolve, reject) => {
+    const cancel = () => { clearTimeout(timer); reject(signal.reason); };
+    const timer = setTimeout(() => { signal.removeEventListener('abort', cancel); resolve(); }, 700);
+    signal.addEventListener('abort', cancel, { once: true });
+  });
+  ensureActive(signal);
+}
+
 function runTask(work: (signal: AbortSignal) => Promise<void>) {
   if (state().busy || stopping) return task;
   abort = new AbortController();
@@ -363,6 +382,7 @@ export const tutorial = {
   async continue() {
     if (state().busy || stopping) return;
     const step = currentStep();
+    if (state().session?.completedDemo === step.id) { goNext(); return; }
     if (step.id === 'deck-build') {
       if (!baseline || !stepComplete(step, state().session!.refs, baseline, observation())) return;
       return runTask(async signal => {
@@ -378,7 +398,8 @@ export const tutorial = {
     if (!step.expects || step.optional) goNext();
   },
   perform(action: Demonstration) {
-    return runTask(async signal => { await demonstrate(action, signal); ensureActive(signal); goNext(); });
+    if (state().session?.completedDemo === currentStep().id) return;
+    return runTask(async signal => { await demonstrate(action, signal); await finishDemonstration(signal); });
   },
   async exit(status: 'skipped' | 'completed') {
     if (stopping) return;
@@ -412,7 +433,12 @@ export const tutorial = {
         useTutorialStore.setState({ error: undefined });
         rebase(); return;
       }
-      if (step.action) { await demonstrate(step.action, signal); ensureActive(signal); goNext(); return; }
+      if (step.action && state().session?.completedDemo !== step.id) { await demonstrate(step.action, signal); await finishDemonstration(signal); return; }
+      if (step.result && state().session?.completedDemo === step.id) {
+        const roles = step.participants ?? [step.result.target as Role];
+        await visuals?.focus(roles.flatMap(role => cardFor(role) ? [cardFor(role)!.id] : []));
+        return;
+      }
       if (role && !cardFor(role)) {
         // Return to the actual placement step; never manufacture user completion.
         const placement = STEPS.find(item => item.expects === 'place' && item.role === role);

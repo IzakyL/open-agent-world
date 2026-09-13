@@ -1,9 +1,31 @@
 import { describe, expect, it } from 'vitest';
-import { placeGuide, vacantPosition, type GuideRect } from './placement';
+import { advanceGuide, placeGuide, vacantPosition, type GuideRect } from './placement';
 
 const intersects = (a: GuideRect, b: GuideRect) => a.x < b.x + b.width && a.x + a.width > b.x && a.y < b.y + b.height && a.y + a.height > b.y;
 
 describe('guide placement', () => {
+  it('keeps a nearby safe anchor when measurements change slightly', () => {
+    const subject = { x: 490, y: 320, width: 300, height: 160 };
+    const bubble = { width: 256, height: 155 }, viewport = { width: 1280, height: 800 };
+    const previous = placeGuide({ x: 214, y: 380 }, subject, bubble, viewport, [subject], 164);
+    const shifted = { ...subject, x: subject.x + 2, y: subject.y - 1 };
+    expect(placeGuide({ x: 216, y: 379 }, shifted, bubble, viewport, [shifted], 164, previous)).toEqual(previous);
+  });
+
+  it('limits travel speed even after a delayed frame and settles without overshooting', () => {
+    const target = { x: 1000, y: 600 };
+    let point = { x: 20, y: 200 };
+    for (let frame = 0; frame < 600; frame++) {
+      const dt = frame === 30 ? 700 : 16.67;
+      const next = advanceGuide(point, target, dt);
+      expect(Math.hypot(next.x - point.x, next.y - point.y)).toBeLessThanOrEqual(460 * Math.min(40, dt) / 1000 + .5);
+      expect(next.x).toBeLessThanOrEqual(target.x);
+      expect(next.y).toBeLessThanOrEqual(target.y);
+      point = next;
+    }
+    expect(point).toEqual(target);
+  });
+
   it('places the zoom mascot above its controls without covering nearby tools or the minimap', () => {
     const subject = { x: 1100, y: 700, width: 34, height: 99 };
     const obstacles = [subject, { x: 860, y: 755, width: 76, height: 44 }, { x: 950, y: 720, width: 136, height: 79 }];
