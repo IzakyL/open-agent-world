@@ -1573,6 +1573,7 @@ class ApplicationServices:
                 edges=edges,
                 chunks=loaded_chunks,
                 chunk_size=self.world.chunk_size,
+                terrain_seed=self.world.terrain_seed,
             )
 
     def _validate_membership_change(self, current: Card, updated: Card) -> None:
@@ -3578,9 +3579,10 @@ def create_services(
     settings.data_root.mkdir(parents=True, exist_ok=True)
     for directory in ("projects", "assets", "sandboxes", "database", "logs"):
         (settings.data_root / directory).mkdir(parents=True, exist_ok=True)
+    new_world = not settings.database_path.exists()
     database = Database(settings.database_path)
     plugin_registry = plugins or load_plugin_registry(plugin_directories=settings.plugin_directories)
-    world = WorldStore(database, plugin_registry, chunk_size=settings.chunk_size)
+    world = WorldStore(database, plugin_registry, chunk_size=settings.chunk_size, new_world=new_world)
     try:
         card_library = CardLibraryStore(database, plugin_registry)
         from backend.migrations.barracks import check_legacy

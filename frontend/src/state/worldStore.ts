@@ -285,6 +285,7 @@ interface WorldState {
   loadedChunkKeys: string[];
   loadingChunkKeys: string[];
   viewport: FlowViewportState;
+  terrainSeed: number | null;
   mapPins: MapPinLocation[];
   syncState: SyncState;
   syncError?: string;
@@ -428,6 +429,7 @@ export const useWorldStore = create<WorldState>()(persist((set, get) => ({
   loadedChunkKeys: [],
   loadingChunkKeys: [],
   viewport: INITIAL_VIEWPORT,
+  terrainSeed: null,
   mapPins: [],
   syncState: "loading",
   socketState: "connecting",
@@ -470,6 +472,7 @@ export const useWorldStore = create<WorldState>()(persist((set, get) => ({
       await modelsLoaded;
       set({
         catalog,
+        terrainSeed: snapshot.terrain_seed ?? 0x5eeda11,
         ...(mutationEpoch === worldMutationEpoch ? { cards: snapshot.nodes, edges: snapshot.edges } : {}),
         legions: library.ok ? library.legions : [],
         legionError,
@@ -524,6 +527,7 @@ export const useWorldStore = create<WorldState>()(persist((set, get) => ({
         const legionError = library.ok ? undefined : apiErrorMessage(library.error);
         set((state) => ({
           cards: reconcileSnapshotCards(state.cards, snapshot.nodes, refreshedChunkKeys, state.catalog, state.cardTombstones),
+          terrainSeed: snapshot.terrain_seed ?? 0x5eeda11,
           edges: snapshot.edges,
           ...(library.ok ? { legions: library.legions, legionError: undefined } : { legionError }),
           loadedChunkKeys: [

@@ -297,3 +297,4 @@ class WorldSnapshot(BaseModel):
     edges: list[Edge]
     chunks: list[tuple[int, int]]
     chunk_size: int
+    terrain_seed: int = Field(ge=0, le=0xFFFFFFFF)

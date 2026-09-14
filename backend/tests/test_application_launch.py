@@ -13,6 +13,35 @@ from backend.config import Settings
 from backend.development import DevelopmentControl, ResetRequest, prepare_profile, reset_profile
 from backend.main import create_app
 from backend.services import create_services
+from backend.world.terrain import LEGACY_TERRAIN_SEED, TERRAIN_KEY
+
+
+@pytest.mark.parametrize("scope", ["workspace", "all", "interface", "tutorial", "models"])
+def test_canvas_seed_survives_restart_and_only_changes_with_workspace_reset(dev_settings, scope):
+    with TestClient(create_app(dev_settings)) as client:
+        seed = client.get("/api/world").json()["terrain_seed"]
+        profile = client.get("/api/application").json()
+        assert 0 <= seed <= 0xFFFFFFFF
+        assert client.get("/api/world?chunks=-1:0,0:0").json()["terrain_seed"] == seed
+    with TestClient(create_app(dev_settings)) as client:
+        assert client.get("/api/world").json()["terrain_seed"] == seed
+    reset_profile(dev_settings, ResetRequest(scopes=[scope], profile_id=profile["profile_id"], generation=profile["generation"]))
+    with TestClient(create_app(dev_settings)) as client:
+        current = client.get("/api/world").json()["terrain_seed"]
+        assert (current != seed) == (scope in {"workspace", "all"})
+    with TestClient(create_app(dev_settings)) as client:
+        assert client.get("/api/world").json()["terrain_seed"] == current
+
+
+def test_existing_canvas_without_seed_preserves_legacy_terrain(dev_settings):
+    services = create_services(dev_settings)
+    services.close()
+    with closing(sqlite3.connect(dev_settings.database_path)) as db:
+        db.execute("DELETE FROM application_settings WHERE key=?", (TERRAIN_KEY,))
+        db.commit()
+    for _ in range(2):
+        with TestClient(create_app(dev_settings)) as client:
+            assert client.get("/api/world").json()["terrain_seed"] == LEGACY_TERRAIN_SEED
 
 
 @pytest.fixture

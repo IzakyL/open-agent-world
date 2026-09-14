@@ -33,7 +33,8 @@
   --danger-soft: rgba(177, 79, 69, 0.12);
   --warning: #a87440;
   --grid-dot: rgba(73, 69, 61, 0.17);
-  --contour: rgba(166, 112, 57, 0.20);
+  --contour: rgba(166, 112, 57, 0.15);
+  --contour-fill: rgba(166, 112, 57, 0.006);
   --edge: #817c72;
   --edge-arrow: #817c72;
   --minimap-mask: rgba(218, 215, 207, 0.72);
@@ -76,7 +77,8 @@
   --danger-soft: rgba(226, 124, 113, 0.13);
   --warning: #c99558;
   --grid-dot: rgba(231, 226, 214, 0.14);
-  --contour: rgba(194, 114, 79, 0.21);
+  --contour: rgba(194, 114, 79, 0.16);
+  --contour-fill: rgba(194, 114, 79, 0.006);
   --edge: #a09b90;
   --edge-arrow: #a09b90;
   --minimap-mask: rgba(25, 24, 22, 0.76);
@@ -190,6 +192,9 @@ button:disabled { cursor: not-allowed; opacity: 0.48; }
   stroke-linecap: round;
   stroke-linejoin: round;
 }
+
+/* Even all 13 elevation layers together remain lighter than a minor line. */
+.contour-fill { fill: var(--contour-fill); stroke: none; }
 
 .contour-minor { stroke-width: calc(1.15px * var(--contour-stroke-scale, 1)); opacity: 0.72; }
 .contour-major { stroke-width: calc(1.65px * var(--contour-stroke-scale, 1)); opacity: 1; }

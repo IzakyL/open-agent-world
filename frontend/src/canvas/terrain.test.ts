@@ -9,6 +9,19 @@ import {
 } from "./terrain";
 
 describe("procedural contour terrain", () => {
+  it("keeps seed-specific terrain deterministic and isolates cached geometry", () => {
+    const first = getTerrainChunk(-1, 0, 32, 123);
+    const second = getTerrainChunk(-1, 0, 32, 456);
+    expect(first).toBe(getTerrainChunk(-1, 0, 32, 123));
+    expect(first.key).not.toBe(second.key);
+    expect(first.minorPath).not.toBe(second.minorPath);
+    expect(first.fillPaths).not.toEqual(second.fillPaths);
+    const left = sampleTerrainChunk(-1, 0, 32, 456);
+    const right = sampleTerrainChunk(0, 0, 32, 456);
+    for (let row = 0; row <= 32; row += 1) {
+      expect(left.values[row * 33 + 32]).toBe(right.values[row * 33]);
+    }
+  });
   it("is deterministic across positive and negative world coordinates", () => {
     const points = [[0, 0], [812.5, -2940], [-18_400, 37_200]] as const;
     for (const [x, y] of points) {
@@ -42,5 +55,18 @@ describe("procedural contour terrain", () => {
     expect(parseChunkKey("-12:7")).toEqual({ x: -12, y: 7 });
     expect(parseChunkKey("12.5:7")).toBeUndefined();
     expect(parseChunkKey("bad:key")).toBeUndefined();
+  });
+
+  it("closes elevation fills at chunk boundaries at every LOD", () => {
+    for (const resolution of [32, 56, 80]) {
+      for (const [x, y] of [[-1, -1], [0, -1], [-1, 0], [0, 0]]) {
+        const chunk = getTerrainChunk(x, y, resolution);
+        expect(chunk.fillPaths.some(Boolean)).toBe(true);
+        for (const path of chunk.fillPaths.filter(Boolean)) {
+          expect(path).not.toMatch(/NaN|Infinity/);
+          expect((path.match(/M/g) ?? []).length).toBe((path.match(/Z/g) ?? []).length);
+        }
+      }
+    }
   });
 });

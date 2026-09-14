@@ -228,6 +228,9 @@ def reset_profile(settings: Settings, request: ResetRequest) -> Path:
                     elif "workspace" in scopes:
                         for key in ("oaw-canvas-viewport-v1", "oaw-glue-v1", "oaw-node-surfaces-v1"):
                             old["values"].pop(key, None)
+                if "workspace" in scopes:
+                    from backend.world.terrain import reset_terrain_seed
+                    reset_terrain_seed(db)
                 old["generation"] = str(uuid4())
                 write_setting(db, UI_KEY, old)
                 directories = []
