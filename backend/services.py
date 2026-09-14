@@ -534,7 +534,7 @@ class ApplicationServices:
     llm_settings: LlmSettingsStore
     card_library: CardLibraryStore
     _sandbox_commands: dict[str, dict] = field(default_factory=dict, init=False, repr=False)
-    _sandbox_command_locks: dict[str, asyncio.Lock] = field(default_factory=dict, init=False, repr=False)
+    _sandbox_tasks: dict[str, asyncio.Task] = field(default_factory=dict, init=False, repr=False)
     _sandbox_stopping: set[str] = field(default_factory=set, init=False, repr=False)
     # Short-lived desktop review requests. Restart expires them; approval never
     # becomes a durable grant or an Agent tool argument.
@@ -2814,9 +2814,16 @@ class ApplicationServices:
             return await self._start_sandbox_locked(sandbox_id)
 
     async def _start_sandbox_locked(self, sandbox_id: str) -> Any:
+        from backend.sandbox.models import SandboxState
         self._require_card_type(sandbox_id, CardType.SANDBOX)
         backend = self._require_sandbox_backend()
         await self._ensure_sandbox(sandbox_id)
+        if sandbox_id in self._sandbox_stopping:
+            raise SandboxStateError("Sandbox cleanup is pending; inspect its activity before retrying Start")
+        info = await backend.get(sandbox_id)
+        if info.state in {SandboxState.READY, SandboxState.RUNNING}:
+            # Start means ensure-running, not reconfigure/rebind a shared environment.
+            return info
         for edge in self.world.list_edges_to(sandbox_id):
             if edge.relationship in {
                 Relationship.MOUNT_READ_ONLY,
@@ -2880,11 +2887,12 @@ class ApplicationServices:
                     raise SandboxStateError("No execution shell is available for this Sandbox")
                 argv = [*info.shell, command]
             assert argv is not None
-            command_finished = asyncio.Event()
-
             async def execute_and_refresh() -> CommandResult:
                 secret_token = None
                 receipt = None
+                from backend.sandbox.models import execution_command_id
+                command_id = uuid4().hex
+                command_token = execution_command_id.set(command_id)
                 try:
                     execution_argv = argv
                     options = {}
@@ -2919,24 +2927,26 @@ class ApplicationServices:
                                 raise SandboxValidationError("This Sandbox backend does not support invocation configuration")
                             options["invocation_env"] = injected
                             secret_token = self._execution_secrets.set(secrets)
-                        current = self._sandbox_commands.get(sandbox_id)
                         self.resources.artifacts.assert_source_idle(sandbox_id)
                         self.summoning.assert_admission(sandbox_id)
                         if sandbox_id in self._sandbox_stopping:
                             raise SandboxStateError('Sandbox admission is closed while termination cleanup is pending')
                         self._require_card_type(sandbox_id, CardType.SANDBOX)
-                        if current:
-                            raise SandboxStateError(f"Sandbox busy: {current['caller']} owns command {current['id']}")
                         from backend.sandbox.history import save, key as command_history_key
                         from backend.security.redaction import redact
-                        receipt = {"id": uuid4().hex, "caller": agent_id or "user", "state": "running",
+                        receipt = {"id": command_id, "caller": agent_id or "user", "state": "running",
                             "sandbox_id": sandbox_id,
                             "history_key": command_history_key(self, sandbox_id),
                             "run_id": self.run_manager.current_context.run_id if self.run_manager.current_context else None,
                             "started_at": datetime.now(UTC).isoformat(), "argv": redact(list(execution_argv), secrets),
                             "skill_id": _skill_request.skill_id if _skill_request else None}
-                        self._sandbox_commands[sandbox_id] = receipt
+                        peers = tuple({key: item.get(key) for key in ("id", "caller", "run_id", "argv", "started_at")}
+                            for item in self._sandbox_commands.values() if item["sandbox_id"] == sandbox_id)
+                        self._sandbox_commands[command_id] = receipt
+                        self._sandbox_tasks[command_id] = asyncio.current_task()
                         save(self, sandbox_id, receipt)
+                    await self._emit_sandbox_event(SandboxEvent(sandbox_id, SandboxEventType.COMMAND_STARTED,
+                        {"command_id": command_id, "argv": receipt["argv"], "concurrent_commands": peers}))
                     result = await backend.execute(
                         sandbox_id, execution_argv, timeout_seconds=timeout_seconds or self.world.get_card(sandbox_id).config.get("command_timeout", 600), **options
                     )
@@ -2952,11 +2962,26 @@ class ApplicationServices:
                         stdout=result.stdout[-65536:], stderr=result.stderr[-65536:], exit_code=result.exit_code,
                         duration_seconds=result.duration_seconds, timed_out=result.timed_out, cancelled=result.cancelled,
                         termination_reason="timeout" if result.timed_out else "cancelled" if result.cancelled else "exit")
-                    return result
+                    if receipt.get("cancellation_requested"):
+                        receipt.update(cleanup="complete", termination_confirmed=True)
+                    return replace(result, command_id=command_id, concurrent_commands=peers)
+                except asyncio.CancelledError:
+                    if receipt is not None:
+                        receipt.update(state="cancelled", cancelled=True, timed_out=False, termination_reason="cancelled")
+                        if receipt.get("cancellation_requested"):
+                            receipt.update(cleanup="complete", termination_confirmed=True)
+                            return CommandResult(sandbox_id, tuple(receipt["argv"]), -9,
+                                receipt.get("stdout", ""), receipt.get("stderr", ""),
+                                (datetime.now(UTC) - datetime.fromisoformat(receipt["started_at"])).total_seconds(),
+                                cancelled=True, command_id=command_id, concurrent_commands=peers)
+                    raise
                 except Exception as error:
                     if receipt is not None:
                         from backend.security.redaction import redact
                         receipt.update(state="error", error=redact(str(error), self._execution_secrets.get())[:4096])
+                        if receipt.get("cancellation_requested"):
+                            receipt.update(cleanup="failed", termination_confirmed=False, cleanup_error=receipt["error"])
+                            self._sandbox_stopping.add(sandbox_id)
                     if self._execution_secrets.get():
                         from backend.errors import DomainError
                         from backend.security.redaction import redact
@@ -2972,65 +2997,35 @@ class ApplicationServices:
                             save(self, sandbox_id, receipt)
                     finally:
                         if receipt is not None:
-                            self._sandbox_commands.pop(sandbox_id, None)
-                        if secret_token is not None:
-                            self._execution_secrets.reset(secret_token)
-                        command_finished.set()
-                        await self._refresh_sandbox_write_mounts(
-                            sandbox_id, agent_id=agent_id
-                        )
+                            self._sandbox_commands.pop(command_id, None)
+                            self._sandbox_tasks.pop(command_id, None)
+                        try:
+                            if receipt is not None:
+                                await self._emit_sandbox_event(SandboxEvent(sandbox_id, SandboxEventType.COMMAND_FINISHED,
+                                    {key: receipt.get(key) for key in ("argv", "caller", "run_id", "state", "exit_code", "duration_seconds", "cancelled", "timed_out")}
+                                    | {"command_id": command_id}))
+                        finally:
+                            if secret_token is not None:
+                                self._execution_secrets.reset(secret_token)
+                            execution_command_id.reset(command_token)
+                            await self._refresh_sandbox_write_mounts(sandbox_id, agent_id=agent_id)
 
-            execution_started = False
-
-            async def execute_in_order() -> CommandResult:
-                nonlocal execution_started
-                lock = self._sandbox_command_locks.setdefault(sandbox_id, asyncio.Lock())
-                async with lock:
-                    execution_started = True
-                    return await execute_and_refresh()
-
-            execution_task = asyncio.create_task(execute_in_order())
+            execution_task = asyncio.create_task(execute_and_refresh())
             try:
                 return await asyncio.shield(execution_task)
             except asyncio.CancelledError:
-                async def stop_and_finish() -> None:
-                    if not execution_started and not _keep_on_disconnect:
-                        # A queued caller owns no native process. Cancelling it
-                        # must never terminate another caller's active command.
+                if not _keep_on_disconnect:
+                    for command_id, task in self._sandbox_tasks.items():
+                        if task is execution_task:
+                            receipt = self._sandbox_commands[command_id]
+                            receipt.update(cancellation_requested=True, cancellation_reason="caller_cancelled", cleanup="pending")
+                            from backend.sandbox.history import save
+                            save(self, sandbox_id, receipt)
+                    if not execution_task.cancelling():
                         execution_task.cancel()
-                        try:
-                            await execution_task
-                        except asyncio.CancelledError:
-                            pass
-                        return
-                    if not command_finished.is_set() and not _keep_on_disconnect:
-                        current = self._sandbox_commands.get(sandbox_id)
-                        if current is not None:
-                            current.update(cancellation_requested=True, cancellation_reason="caller_cancelled")
-                        try:
-                            await backend.terminate(sandbox_id)
-                        except BaseException as error:
-                            current = self._sandbox_commands.get(sandbox_id)
-                            if current is not None:
-                                from backend.sandbox.history import save
-                                current.update(cleanup='failed', cancellation_requested=True,
-                                    termination_confirmed=False, cleanup_error=f'{type(error).__name__}: {error}')
-                                save(self, sandbox_id, current)
-                            logger.error(
-                                "failed to terminate cancelled sandbox command %s",
-                                sandbox_id,
-                                exc_info=(type(error), error, error.__traceback__),
-                            )
-                    try:
-                        await asyncio.shield(execution_task)
-                    except BaseException:
-                        # The caller is already being cancelled. The important
-                        # invariant is that native execution and resource
-                        # refresh have both reached a terminal point before the
-                        # portable-state lease is released.
-                        pass
-
-                await self._complete_committed(stop_and_finish())
+                async def finish():
+                    await asyncio.gather(execution_task, return_exceptions=True)
+                await self._complete_committed(finish())
                 raise
 
     async def _refresh_sandbox_write_mounts(
@@ -3082,6 +3077,13 @@ class ApplicationServices:
             raise SandboxValidationError(str(exc)) from exc
 
     async def publish_sandbox_event(self, event: SandboxEvent) -> None:
+        # Service receipts own admission/completion; native events may arrive
+        # before sibling state and cleanup have reached their final state.
+        from backend.sandbox.models import execution_command_id
+        if (event.payload.get("command_id") or execution_command_id.get()) in self._sandbox_commands and event.type in {
+            SandboxEventType.COMMAND_STARTED, SandboxEventType.COMMAND_FINISHED,
+        }:
+            return
         if self._execution_secrets.get() and event.type in {SandboxEventType.STDOUT, SandboxEventType.STDERR}:
             # Suppress raw fragments; the bounded command result is redacted as
             # a whole, so secrets split across streaming chunks cannot escape.
@@ -3100,7 +3102,19 @@ class ApplicationServices:
 
     async def _emit_sandbox_event(self, event: SandboxEvent) -> None:
         from backend.security.redaction import redact
-        current = self._sandbox_commands.get(event.sandbox_id)
+        from backend.sandbox.models import execution_command_id
+        command_id = event.payload.get("command_id") or execution_command_id.get()
+        current = self._sandbox_commands.get(command_id)
+        payload = dict(event.payload)
+        if command_id:
+            payload["command_id"] = command_id
+        if current:
+            payload.update(caller=current["caller"], run_id=current.get("run_id"))
+        active = [dict(item) for item in self._sandbox_commands.values() if item["sandbox_id"] == event.sandbox_id]
+        payload["active_commands"] = [{key: item.get(key) for key in ("id", "caller", "run_id", "argv", "started_at")}
+            for item in active if item["state"] == "running" and not (event.type == SandboxEventType.COMMAND_FINISHED and item["id"] == command_id)]
+        if event.type == SandboxEventType.STATE_CHANGED and payload["active_commands"]:
+            payload["state"] = "running"
         if current is not None and event.type in {SandboxEventType.STDOUT, SandboxEventType.STDERR}:
             label = "stdout" if event.type == SandboxEventType.STDOUT else "stderr"
             text = redact(str(event.payload.get("text", "")), self._execution_secrets.get())
@@ -3114,7 +3128,7 @@ class ApplicationServices:
                 if "resource_id" in event.payload
                 else None
             ),
-            payload=redact(dict(event.payload), self._execution_secrets.get()),
+            payload=redact(payload, self._execution_secrets.get()),
         )
 
     def _emit_sandbox_event_nowait(self, event: SandboxEvent) -> None:

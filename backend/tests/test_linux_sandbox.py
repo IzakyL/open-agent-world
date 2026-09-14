@@ -221,8 +221,8 @@ async def test_linux_failed_cleanup_preserves_scope_until_stop_verified(tmp_path
     with pytest.raises(SandboxSecurityError, match="stop failed"):
         await backend.execute("box", ["/bin/true"])
     assert record.state == SandboxState.ERROR
-    assert record.unit is not None
-    assert json.loads((record.root / "sandbox.json").read_text())["unit"] == record.unit
+    journals = list((record.root / "commands").glob("*.json"))
+    assert len(journals) == 1 and json.loads(journals[0].read_text())["unit"]
     with pytest.raises(SandboxSecurityError, match="stop failed"):
         await backend.terminate("box")
     assert record.state == SandboxState.ERROR
@@ -453,7 +453,7 @@ async def test_cancel_during_python_preparation_never_launches_workload(tmp_path
     await entered.wait()
     cancellation = asyncio.create_task(backend.cancel("preparing"))
     await asyncio.sleep(0)
-    assert record.cancelled.is_set()
+    assert all(command.cancelled.is_set() for command in record.executions.values())
     release.set()
     result = await execution
     await cancellation

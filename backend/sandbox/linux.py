@@ -24,7 +24,7 @@ import tempfile
 import time
 import uuid
 from collections.abc import Mapping, Sequence
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from pathlib import Path, PurePosixPath
 from typing import Any
 
@@ -285,6 +285,10 @@ class _Record:
     workspace_access: ResourceAccess = ResourceAccess.READ_WRITE
     state: SandboxState = SandboxState.STOPPED
     attachments: dict[str, ResourceAttachment] = field(default_factory=dict)
+    execution_id: str | None = None
+    executions: dict[str, _Record] = field(default_factory=dict)
+    finished: asyncio.Event = field(default_factory=asyncio.Event)
+    cleanup_failed: bool = False
     active_command: tuple[str, ...] | None = None
     unit: str | None = None
     cancelled: asyncio.Event = field(default_factory=asyncio.Event)
@@ -433,7 +437,11 @@ class LinuxSandboxBackend(SandboxBackend):
     async def start(self, sandbox_id: str) -> SandboxInfo:
         record = await self._record(sandbox_id)
         async with record.lock:
+            if not record.stop_requested and not record.cleanup_failed and record.state in {SandboxState.READY, SandboxState.RUNNING}:
+                return self._info(record)
             self._assert_idle(record)
+            if record.cleanup_failed:
+                raise SandboxStateError("Stop the Sandbox to resolve pending cleanup before starting")
             if sys.platform != "linux":
                 raise SandboxSecurityError("Linux sandbox execution requires Linux")
             await asyncio.to_thread(self._validate_record_paths, record)
@@ -444,8 +452,39 @@ class LinuxSandboxBackend(SandboxBackend):
         await self._emit_state(record)
         return self._info(record)
 
-    async def execute(
-        self, sandbox_id: str, argv: Sequence[str], *,
+    async def execute(self, sandbox_id, argv, **options):
+        from .models import execution_command_id
+        from uuid import uuid4
+        if type((options.get("execution_policy") or {}).get("network_enabled", False)) is not bool:
+            raise SandboxValidationError("network_enabled must be a boolean")
+        owner = await self._record(sandbox_id)
+        command_id = execution_command_id.get() or uuid4().hex
+        self._validate_id(command_id)
+        async with owner.lock:
+            if owner.stop_requested or owner.state not in {SandboxState.READY, SandboxState.RUNNING}:
+                raise SandboxStateError("sandbox must be ready before executing a command")
+            record = _Record(sandbox_id, owner.root, owner.workspace_path, owner.workspace_access,
+                state=SandboxState.READY, attachments=dict(owner.attachments), execution_id=command_id)
+            owner.executions[command_id] = record
+            owner.state = SandboxState.RUNNING
+        token = execution_command_id.set(command_id)
+        try:
+            return await self._execute_record(record, sandbox_id, argv, **options)
+        finally:
+            async with owner.lock:
+                owner.executions.pop(command_id, None)
+                owner.state = (SandboxState.RUNNING if owner.executions else
+                    SandboxState.STOPPED if owner.stop_requested else SandboxState.READY)
+                if record.unit is not None:
+                    owner.cleanup_failed = True
+                if owner.cleanup_failed:
+                    owner.state = SandboxState.ERROR
+                record.finished.set()
+            execution_command_id.reset(token)
+            await self._emit_state(owner)
+
+    async def _execute_record(
+        self, record: _Record, sandbox_id: str, argv: Sequence[str], *,
         timeout_seconds: float | None = None, env: Mapping[str, str] | None = None,
         _unit_name: str | None = None,
         invocation_env: Mapping[str, str] | None = None,
@@ -466,7 +505,6 @@ class LinuxSandboxBackend(SandboxBackend):
         timeout = limits.default_timeout_seconds if timeout_seconds is None else float(timeout_seconds)
         if not math.isfinite(timeout) or timeout <= 0:
             raise SandboxValidationError("timeout_seconds must be finite and positive")
-        record = await self._record(sandbox_id)
         unit = _unit_name or new_unit_name()
         if not _SAFE_UNIT.fullmatch(unit):
             raise SandboxValidationError("invalid sandbox service identity")
@@ -477,15 +515,13 @@ class LinuxSandboxBackend(SandboxBackend):
             mount = None
             if runtime_mount is not None:
                 command = runtime_mount.command(command, Path("/.oaw") / runtime_mount.bundle.key)
-                source = materialize_bundle(record.root, runtime_mount.bundle)
+                source = materialize_bundle(record.root, runtime_mount.bundle.versioned())
                 mount = (source, runtime_mount.bundle.key)
             isolated = bubblewrap_command(record.host_workspace, record.workspace_access,
                 tuple(record.attachments.values()), command, environment, mount, network_enabled=bool(policy.get("network_enabled")), python_runtime=self.python_runtime, home=record.root / "home")
             invocation = service_command(isolated, unit, limits, timeout, network_enabled=bool(policy.get("network_enabled")))
             record.state = SandboxState.RUNNING
             record.active_command, record.unit = command, unit
-            record.cancelled.clear()
-            record.stop_requested = False
             record.done.clear()
             try:
                 self._save(record)
@@ -638,7 +674,7 @@ class LinuxSandboxBackend(SandboxBackend):
         from .materialization import bundle_status
         record = await self._record(sandbox_id, recover_active=False)
         async with record.lock:
-            return await asyncio.to_thread(bundle_status, record.root, bundle)
+            return await asyncio.to_thread(bundle_status, record.root, bundle.versioned())
 
     async def reset_cache(self, sandbox_id):
         record = await self._record(sandbox_id)
@@ -648,31 +684,40 @@ class LinuxSandboxBackend(SandboxBackend):
             cleanup_materializations(record.root)
 
     async def cancel(self, sandbox_id):
-        record = await self._record(sandbox_id)
-        async with record.lock:
-            if record.state == SandboxState.RUNNING:
+        owner = await self._record(sandbox_id)
+        async with owner.lock:
+            active = list(owner.executions.values())
+            for record in active:
                 record.cancelled.set()
-        await record.done.wait()
+        await asyncio.gather(*(record.finished.wait() for record in active))
 
     async def terminate(self, sandbox_id: str) -> None:
-        record = await self._record(sandbox_id)
-        async with record.lock:
-            record.stop_requested = True
-            record.cancelled.set()
-        # execute owns stopping its service. Waiting closes spawn-versus-stop
-        # races: a stop requested before service creation still kills that unit.
-        await record.done.wait()
-        async with record.lock:
-            self._assert_idle(record)
-            if record.unit is not None:
-                # A failed earlier cleanup is an outstanding obligation, not
-                # evidence of a stopped sandbox. Preserve it on disk until the
-                # exact cgroup is confirmed gone, including after restarts.
-                await self.kill_unit(record.unit)
-                record.unit = None
-            record.state = SandboxState.STOPPED
-            self._save(record)
-        await self._emit_state(record)
+        owner = await self._record(sandbox_id)
+        async with owner.lock:
+            owner.stop_requested = True
+            active = list(owner.executions.values())
+            for record in active:
+                record.stop_requested = True
+                record.cancelled.set()
+        await asyncio.gather(*(record.finished.wait() for record in active))
+        async with owner.lock:
+            await self._recover_commands(owner.root)
+            if owner.unit is not None:
+                await self.kill_unit(owner.unit)
+                owner.unit = None
+            owner.state = SandboxState.STOPPED
+            owner.cleanup_failed = False
+            self._save(owner)
+        await self._emit_state(owner)
+
+    async def _recover_commands(self, root):
+        # Each worker owns only its own journal. Only lifecycle recovery scans
+        # all journals, so a second WSL execution never reaps a live sibling.
+        for path in (root / "commands").glob("*.json"):
+            raw = json.loads(path.read_text(encoding="utf-8"))
+            if raw.get("unit"):
+                await self.kill_unit(raw["unit"])
+            path.unlink(missing_ok=True)
 
     async def attach_resource(self, sandbox_id: str, resource_id: str, source: Path,
         relative_path: str, access: ResourceAccess) -> ResourceAttachment:
@@ -682,6 +727,8 @@ class LinuxSandboxBackend(SandboxBackend):
         attachment = ResourceAttachment(sandbox_id, resource_id, source, relative, ResourceAccess(access))
         record = await self._record(sandbox_id)
         async with record.lock:
+            if not record.stop_requested and record.attachments.get(resource_id) == attachment:
+                return attachment
             self._assert_idle(record)
             for key, item in record.attachments.items():
                 if key == resource_id:
@@ -756,6 +803,8 @@ class LinuxSandboxBackend(SandboxBackend):
                 raw = json.loads(manifest.read_text(encoding="utf-8"))
                 if raw["sandbox_id"] != sandbox_id or raw["runtime_id"] != self._runtime_id:
                     raise ValueError("manifest runtime or identity mismatch")
+                if recover_active:
+                    await self._recover_commands(root)
                 # Reclaim a surviving command before inspecting user-mutable
                 # folders/resources: cleanup must work even if they vanished.
                 if raw.get("unit") and recover_active:
@@ -782,6 +831,17 @@ class LinuxSandboxBackend(SandboxBackend):
             return record
 
     def _save(self, record: _Record) -> None:
+        if record.execution_id is not None:
+            directory = record.root / "commands"
+            directory.mkdir(exist_ok=True)
+            target = directory / f"{record.execution_id}.json"
+            if record.unit is None:
+                target.unlink(missing_ok=True)
+            else:
+                temporary = target.with_suffix(".tmp")
+                temporary.write_text(json.dumps({"unit": record.unit}), encoding="utf-8")
+                temporary.replace(target)
+            return
         payload = {
             "version": 1, "sandbox_id": record.sandbox_id, "runtime_id": self._runtime_id,
             "workspace_path": record.workspace_path, "workspace_access": record.workspace_access.value,
@@ -802,7 +862,7 @@ class LinuxSandboxBackend(SandboxBackend):
             supported_network_modes=("disabled", "enabled"), network_reason="Public IPv4 TCP/UDP egress; private networks, host services and IPv6 are blocked.",
             network_available=self._network_ready,
             network_status="available" if self._network_ready else "unprobed",
-            active_command=record.active_command, runtime_id=self._runtime_id, platform="linux",
+            active_command=(next(iter(record.executions.values())).active_command if len(record.executions) == 1 else record.active_command), runtime_id=self._runtime_id, platform="linux",
             shell=("/bin/sh", "-c"), workspace_path=record.workspace_path,
             workspace_access=record.workspace_access, resources_path=Path("/sandbox"),
             runtime_locked=True)
@@ -891,7 +951,7 @@ class LinuxSandboxBackend(SandboxBackend):
     def _assert_idle(record: _Record) -> None:
         if record.deleted:
             raise SandboxNotFoundError("sandbox was deleted")
-        if record.state == SandboxState.RUNNING:
+        if record.executions or record.state == SandboxState.RUNNING:
             raise SandboxStateError("stop the sandbox command before changing its configuration or resources")
 
     async def _emit_state(self, record: _Record) -> None:
@@ -899,6 +959,9 @@ class LinuxSandboxBackend(SandboxBackend):
             {"state": record.state.value}))
 
     async def _emit(self, event: SandboxEvent) -> None:
+        from .models import execution_command_id
+        if command_id := execution_command_id.get():
+            event = replace(event, payload={**event.payload, "command_id": command_id})
         if self._event_sink is not None:
             result = self._event_sink(event)
             if inspect.isawaitable(result):

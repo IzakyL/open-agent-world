@@ -762,11 +762,16 @@ async def test_cancelled_sandbox_execution_keeps_capture_lease_until_terminated(
             self.terminate_entered = asyncio.Event()
             self.terminate_release = asyncio.Event()
 
+        async def execute(self, sandbox_id: str, argv, **options):
+            try:
+                return await super().execute(sandbox_id, argv, **options)
+            except asyncio.CancelledError:
+                self.terminate_entered.set()
+                await self.terminate_release.wait()
+                raise
+
         async def terminate(self, sandbox_id: str) -> None:
-            await self.get(sandbox_id)
-            self.terminate_entered.set()
-            await self.terminate_release.wait()
-            self.command_release.set()
+            raise AssertionError("Cancelling one command must not stop the shared Sandbox")
 
     backend = CancellableBackend(tmp_path / "sandboxes")
     backend.block_commands = True
@@ -782,7 +787,7 @@ async def test_cancelled_sandbox_execution_keeps_capture_lease_until_terminated(
         )
         await backend.command_entered.wait()
         execution.cancel()
-        await backend.terminate_entered.wait()
+        await asyncio.wait_for(backend.terminate_entered.wait(), 3)
 
         capture = asyncio.create_task(services.capture_legion(LegionCapture(
             name="After cancellation", node_ids=[sandbox.id, agent.id]

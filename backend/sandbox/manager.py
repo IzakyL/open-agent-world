@@ -190,6 +190,10 @@ class SandboxManager(SandboxBackend):
     async def start(self, sandbox_id: str) -> SandboxInfo:
         binding = self._binding(sandbox_id)
         async with binding.lock:
+            if binding.provisioned:
+                info = await self._backend(binding.resolved_runtime or "").get(sandbox_id)
+                if info.state in {SandboxState.READY, SandboxState.RUNNING}:
+                    return await self.get(sandbox_id)
             runtime = await self.registry.select(binding.resolved_runtime or (self.preferred if binding.runtime == "auto" else binding.runtime))
             if not runtime.available:
                 raise SandboxSecurityError(runtime.reason or "sandbox runtime unavailable")

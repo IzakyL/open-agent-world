@@ -70,7 +70,10 @@ async def handle(request: dict[str, Any], *, stdin_pending: bool = False) -> Any
     if operation == "start":
         return await backend.start(sandbox_id)
     if operation == "execute":
-        await backend.start(sandbox_id)
+        from .models import SandboxState, execution_command_id
+        execution_command_id.set(request.get("command_id"))
+        record = await backend._record(sandbox_id, recover_active=False)
+        record.state = SandboxState.READY
         execution = asyncio.create_task(backend.execute(sandbox_id, request["argv"],
             timeout_seconds=request.get("timeout_seconds"), env=request.get("env"),
             invocation_env=request.get("invocation_env"), execution_policy=request.get("execution_policy"),

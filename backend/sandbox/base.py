@@ -37,7 +37,11 @@ class SandboxBackend(ABC):
 
     @abstractmethod
     async def start(self, sandbox_id: str) -> SandboxInfo:
-        """Validate and prepare an existing sandbox for commands."""
+        """Ensure readiness; already ready/running is a no-op.
+
+        Repeated Start must not remount resources or recover live executions.
+        Pending cleanup may still reject admission.
+        """
 
     @abstractmethod
     async def execute(
@@ -62,11 +66,15 @@ class SandboxBackend(ABC):
         execution_policy is host-owned configuration captured at admission;
         backends advertise support before it is passed. It is never an Agent
         tool parameter and never changes process-global defaults.
+
+        Independent commands may overlap in the same workspace. Cancelling the
+        execute task must join cleanup of only that command's process tree.
+        terminate is sandbox-wide and closes admission before joining all trees.
         """
 
     @abstractmethod
     async def terminate(self, sandbox_id: str) -> None:
-        """Terminate the complete active process tree, if any."""
+        """Stop admission and terminate every active command process tree."""
 
     @abstractmethod
     async def attach_resource(

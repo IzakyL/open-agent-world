@@ -15,19 +15,20 @@ def read_key(services, history_key, sandbox_id):
     with services.database.locked() as connection:
         row = connection.execute("SELECT value_json FROM application_settings WHERE key = ?", (history_key,)).fetchone()
     items = json.loads(row[0]) if row else []
-    active = services._sandbox_commands.get(sandbox_id)
+    active = {key: value for key, value in services._sandbox_commands.items() if value["sandbox_id"] == sandbox_id}
     for item in items:
-        if item["state"] == "running" and (not active or active["id"] != item["id"]):
+        if item["state"] == "running" and item["id"] not in active:
             item["state"] = "interrupted"
             item["error"] = "Execution could not be recovered after backend restart; it was not resubmitted."
-    if active and active.get("history_key") == history_key:
-        items = [entry for entry in items if entry["id"] != active["id"]] + [dict(active)]
+    for command in active.values():
+        if command.get("history_key") == history_key:
+            items = [entry for entry in items if entry["id"] != command["id"]] + [dict(command)]
     return items
 
 
 def recent_summaries(services, sandbox_id):
     """The Agent view uses the same receipts as the UI, with smaller output tails."""
-    fields = ("id", "state", "exit_code", "timed_out", "cancelled", "termination_reason",
+    fields = ("id", "caller", "run_id", "argv", "started_at", "state", "exit_code", "timed_out", "cancelled", "termination_reason",
               "cancellation_reason", "error", "duration_seconds")
     return [
         {key: entry[key] for key in fields if key in entry}
@@ -63,34 +64,62 @@ async def stop(services, sandbox_id, *, terminate=False, agent_id=None, command_
         if agent_id is not None:
             kind = "sandbox.stop" if terminate else "sandbox.execute"
             services.capabilities.capability_for_id(agent_id, f"{kind}:{sandbox_id}")
-        if command_id is not None:
+        active_commands = [r for r in services._sandbox_commands.values() if r['sandbox_id'] == sandbox_id]
+        if not terminate:
             from backend.sandbox.models import SandboxStateError
-            current = services._sandbox_commands.get(sandbox_id)
-            if current is None or current['id'] != command_id:
+            if command_id is None:
+                if len(active_commands) != 1:
+                    raise SandboxStateError('Select a command_id to cancel; inspect active_commands')
+                command_id = active_commands[0]['id']
+            active = services._sandbox_commands.get(command_id)
+            if active is None or active['sandbox_id'] != sandbox_id:
                 raise SandboxStateError('Command is no longer active; inspect the Sandbox again')
+            if agent_id is not None and active['caller'] != agent_id:
+                services.capabilities.capability_for_id(agent_id, f"sandbox.stop:{sandbox_id}")
+        else:
+            active = active_commands[0] if active_commands else None
         services.resources.artifacts.assert_source_idle(sandbox_id)
-        active = services._sandbox_commands.get(sandbox_id)
         pending = next((r for r in reversed(read(services, sandbox_id)) if r.get('cleanup') in {'pending', 'failed'}), None)
         receipt = active or pending or {'id': uuid4().hex, 'sandbox_id': sandbox_id, 'caller': 'user', 'state': 'stopping',
             'argv': [], 'started_at': datetime.now(UTC).isoformat(), 'history_key': key(services, sandbox_id)}
-        receipt.update(cancellation_requested=True, cancellation_reason="sandbox_stop" if terminate else "command_cancel", cleanup='pending', cleanup_error=None, stop_runtime=terminate)
-        save(services, sandbox_id, receipt)
-        services._sandbox_stopping.add(sandbox_id)
+        receipts = active_commands if terminate and active_commands else [receipt]
+        for item in receipts:
+            item.update(cancellation_requested=True, cancellation_reason="sandbox_stop" if terminate else "command_cancel", cleanup='pending', cleanup_error=None, stop_runtime=terminate)
+            save(services, sandbox_id, item)
+        if terminate:
+            services._sandbox_stopping.add(sandbox_id)
+        tasks = [services._sandbox_tasks[r["id"]] for r in (active_commands if terminate else [active])
+            if r["id"] in services._sandbox_tasks]
     try:
         backend = services._require_sandbox_backend()
+        async def cleanup():
+            for task in tasks:
+                if not task.cancelling():
+                    task.cancel()
+            outcomes = await asyncio.shield(asyncio.gather(*tasks, return_exceptions=True))
+            for outcome in outcomes:
+                if isinstance(outcome, BaseException) and not isinstance(outcome, asyncio.CancelledError):
+                    raise outcome
+            if terminate:
+                await backend.terminate(sandbox_id)
         await services._run_bounded_lifecycle_cleanup(
-            backend.terminate(sandbox_id) if terminate else backend.cancel(sandbox_id),
+            cleanup(),
             timeout_seconds=services._lifecycle_cleanup_timeout_seconds)
-        receipt.update(cleanup='complete', termination_confirmed=True)
+        for item in receipts:
+            item.update(cleanup='complete', termination_confirmed=True)
         if receipt['state'] == 'stopping':
             receipt['state'] = 'stopped'
     except BaseException as error:
-        receipt.update(cleanup='failed', termination_confirmed=False, cleanup_error=f'{type(error).__name__}: {error}')
-        save(services, sandbox_id, receipt)
+        for item in receipts:
+            item.update(cleanup='failed', termination_confirmed=False, cleanup_error=f'{type(error).__name__}: {error}')
+            save(services, sandbox_id, item)
+        services._sandbox_stopping.add(sandbox_id)
         raise
     else:
-        save(services, sandbox_id, receipt)
-        services._sandbox_stopping.discard(sandbox_id)
+        for item in receipts:
+            save(services, sandbox_id, item)
+        if terminate:
+            services._sandbox_stopping.discard(sandbox_id)
     return receipt
 
 
@@ -103,11 +132,11 @@ async def recover(services):
             continue
         if receipt.get('cleanup') in {'pending', 'failed'}:
             try:
-                await stop(services, sandbox_id, terminate=receipt.get('stop_runtime', True))
+                await stop(services, sandbox_id, terminate=True)
             except Exception:
                 # stop persisted the actionable native failure and closed admission.
                 continue
             receipt.update(cleanup='complete', termination_confirmed=True)
-        if receipt['state'] == 'running' and sandbox_id not in services._sandbox_commands:
+        if receipt['state'] == 'running' and receipt['id'] not in services._sandbox_commands:
             receipt.update(state='interrupted', error='Backend restarted; command was not resubmitted')
         save(services, sandbox_id, receipt)

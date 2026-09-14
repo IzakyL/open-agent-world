@@ -68,11 +68,23 @@ Enable public outbound networking using **Stop → Save → Start**. Missing net
 
 ## Console and recovery
 
+Start is idempotent: if another Agent already started the Sandbox or has commands
+running, Start returns its current state without remounting resources or restarting
+the environment. Reattaching an unchanged resource is also a no-op. Actual resource
+or configuration conflicts are returned to Agents as recoverable tool feedback,
+so they can inspect activity and retry without failing their entire Run.
+
 The terminal uses multiline input and closed stdin, not a PTY. Enter submits the current command; Shift+Enter adds a line. Up/Down recalls history, and Ctrl+C cancels the active command or clears input when no text is selected. Separate commands do not retain `cd`, `export` or shell-session state. Explicit interactive requests such as `read`, `set /p`, terminal editors and `ssh -tt` are rejected; other commands that require prompts may fail on EOF or reach the configured timeout. Full interactive-session detection is not possible for arbitrary programs.
 
 Named presets load ordinary command text and use the same execution path. They never execute on opening a card/window. Do not put secret values into command text or presets. Use environment references.
 
-One command occupies a Sandbox at a time. The window and inspect tool show its caller; competing submissions return a busy error. **Cancel command** terminates its process tree and leaves the Sandbox ready. **Stop Sandbox** terminates execution and stops/revokes the runtime's workspace access. **Reset runtime cache** requires a stopped Sandbox and removes host-managed Skill materializations, preserving workspace outputs and external folders.
+Commands from multiple Agents can execute concurrently in one Sandbox, sharing its workspace and persistent HOME. The inspect tool exposes `active_commands` with command IDs, callers, Run IDs, argv and start times. Results include their `command_id` and a `concurrent_commands` snapshot from admission. The window's History lists active commands with individual cancellation buttons; terminal output carries command identity. These are coordination information, not file locks: Agents should inspect activity and coordinate edits to the same files. Arbitrary shell writes are not transactional and cannot be automatically merged.
+
+**Cancel command** targets a specific command ID and cleans up only that process tree. Agents can cancel their own commands; cancelling another Agent's command requires Sandbox management authority. A stale ID never selects a newer command. Cancellation and timeout leave other commands running. **Stop Sandbox** closes admission, terminates all commands and stops/revokes runtime workspace access. Resource limits apply to each command's process tree, so concurrent commands can consume more resources in aggregate.
+
+Special shared operations retain protection: changing workspace/runtime bindings, resetting caches and publishing artifacts require the relevant environment to be idle. Shared Python package mutations retain their OS file lock. On Windows, Skill bundle ACLs and enabled-network policies belong to the shared AppContainer identity, so commands using them require exclusive admission and return a retryable busy error if another command is active. Ordinary Windows commands and Linux/WSL commands can overlap. Linux/WSL Skill revisions use immutable cache paths so a new revision cannot replace files mounted by a running command.
+
+**Reset runtime cache** requires a stopped Sandbox and removes host-managed Skill materializations, preserving workspace outputs and external folders.
 
 The host retains the latest 20 command receipts, with at most 64 KiB per output stream, exit code, duration, caller and terminal status. Live backend output remains bounded by the existing 2 MiB limit. Drafts and sidebar width use the existing surface store. Receipts belong to the live node identity and are not portable state. Copies/templates carry requirements, never credential bindings or past executions. A disconnected manual HTTP request does not stop its admitted command; explicit cancellation remains separate. Backend restart recovery marks unrecoverable running receipts interrupted, without resubmission.
 
@@ -92,6 +104,11 @@ Run native tests with an ordinary user token outside restricted tool sandboxes.
 See [network acceptance setup](sandbox-networking.md#real-runtime-acceptance)
 for the separate networking prerequisites and verification boundaries. Preserve
 per-run logs, failures, skips and unresolved platform evidence in `.outputs/` or CI.
+
+Concurrency regression coverage is in `backend/tests/test_sandbox_concurrency.py`.
+Set `OAW_TEST_WSL_DISTRO` to an existing distribution to run its real WSL overlap
+and command cancellation test. `frontend/e2e/sandbox-concurrency.spec.ts` verifies
+the window using mocked API responses; it does not prove native isolation.
 
 
 ## Execution continuity and installation

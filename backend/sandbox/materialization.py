@@ -67,6 +67,13 @@ class RuntimeBundle:
         return {"key": self.key, "files": [[p, base64.b64encode(b).decode("ascii")] for p, b in self.files],
                 "directories": list(self.directories)}
 
+    def versioned(self):
+        """Immutable cache address: a later revision cannot replace a live mount."""
+        import hashlib
+        import json
+        digest = hashlib.sha256(json.dumps(self.to_wire(), sort_keys=True).encode()).hexdigest()
+        return RuntimeBundle(f"versions/{digest}/{self.key}", self.files, self.directories)
+
     @classmethod
     def from_wire(cls, value):
         return cls(value["key"], tuple((p, base64.b64decode(b, validate=True)) for p, b in value["files"]),
@@ -148,6 +155,8 @@ def materialize_bundle(runtime_root: Path, bundle: RuntimeBundle) -> Path:
         if not _matches_bundle(staging, expected, directories):
             raise SandboxValidationError("Runtime filesystem aliases bundle paths")
         if target.exists():
+            if _matches_bundle(target, expected, directories):
+                return target
             shutil.rmtree(target)
         # Windows can briefly deny a directory rename while a child file is
         # open elsewhere. Retry only that atomic publication, with a fixed
@@ -156,7 +165,10 @@ def materialize_bundle(runtime_root: Path, bundle: RuntimeBundle) -> Path:
             try:
                 staging.replace(target)
                 break
-            except PermissionError as exc:
+            except OSError as exc:
+                # Another worker may have published the same immutable version.
+                if _matches_bundle(target, expected, directories):
+                    return target
                 if getattr(exc, "winerror", None) not in {5, 32} or attempt == 4:
                     raise
                 time.sleep(0.025 * (attempt + 1))

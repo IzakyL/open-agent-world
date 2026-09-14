@@ -105,9 +105,10 @@ export function SandboxWorkspace({ card }: { card: WorldCard }) {
   const [copyPath, setCopyPath] = useState("");
   const [overwrite, setOverwrite] = useState(false);
   const fileQuery = (operation: string, root: string, path: string) => `files?${new URLSearchParams({ operation, root, path })}`;
-  const running = history.find(h => h.state === "running");
+  const activeCommands = history.filter(h => h.state === "running");
+  const running = activeCommands.length === 1 ? activeCommands[0] : undefined;
   const occupied = !!busy || !!running || card.status === "running" || diagnosticBusy;
-  const ready = info?.state === "ready" && !occupied;
+  const ready = (info?.state === "ready" || info?.state === "running") && !busy && !diagnosticBusy;
   const output = Array.isArray(card.config.output) && card.config.output.length
     ? card.config.output.map(String).slice(-250).join("\n")
     : history.map(h => [`$ ${h.argv.at(-1) ?? h.argv.join(" ")}`, h.stdout, h.stderr, h.error].filter(Boolean).join("\n")).join("\n");
@@ -231,7 +232,8 @@ export function SandboxWorkspace({ card }: { card: WorldCard }) {
     if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); void run(); return; }
     if (e.ctrlKey && e.key.toLowerCase() === "c" && !window.getSelection()?.toString()) {
       e.preventDefault();
-      if (occupied) void action("cancel");
+      if (running) void action(`cancel?command_id=${encodeURIComponent(running.id)}`);
+      else if (activeCommands.length > 1) setTerminalTab("history");
       else setDraft("");
       return;
     }
@@ -363,7 +365,8 @@ export function SandboxWorkspace({ card }: { card: WorldCard }) {
             </nav>
             <div className="sandbox-pane-actions">
               <span className="sandbox-shell-hint" title={t("Non-interactive commands. Each command starts in the working folder; cd and export do not persist. Interactive prompts are unsupported. Closing this window leaves execution running.")}>{t("Non-interactive")}</span>
-              {(running || card.status === "running") && <IconButton icon={Square} size="xs" quiet label={t("Cancel command")} onClick={() => void action("cancel")} />}
+              {activeCommands.length > 0 && <button type="button" onClick={() => setTerminalTab("history")}>{activeCommands.length} {t("running")}</button>}
+              {running && <IconButton icon={Square} size="xs" quiet label={t("Cancel command")} onClick={() => void action(`cancel?command_id=${encodeURIComponent(running.id)}`)} />}
               {terminalTab === "history" && <IconButton icon={RefreshCw} size="xs" quiet label={t("Refresh history")} onClick={() => void refreshHistory().catch(e => setError(apiErrorMessage(e)))} />}
             </div>
           </header>
@@ -385,6 +388,7 @@ export function SandboxWorkspace({ card }: { card: WorldCard }) {
           <div className="sandbox-history" role="tabpanel" id={`${card.id}-history-panel`} aria-labelledby={`${card.id}-history-tab`} hidden={terminalTab !== "history"}>
             {!history.length && <div className="sandbox-pane-empty">{t("No executions yet.")}</div>}
             {[...history].reverse().map(h => <article key={h.id}><header><strong>{h.caller} · {h.state}</strong><small>{t("Exit")} {h.exit_code ?? "—"} · {h.duration_seconds?.toFixed(2) ?? "—"}s</small></header>
+              {h.state === "running" && <IconButton icon={Square} size="xs" quiet label={t("Cancel command")} onClick={() => void action(`cancel?command_id=${encodeURIComponent(h.id)}`)} />}
               <code>{h.argv.join(" ")}</code><pre>{h.error || `${h.stdout ?? ""}${h.stderr ?? ""}`}</pre></article>)}
           </div>
         </section>

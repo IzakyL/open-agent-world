@@ -111,7 +111,9 @@ class WslSandboxBackend(SandboxBackend):
         self._limits = limits
         self._event_sink = event_sink
         self._infos: dict[str, SandboxInfo] = {}
-        self._active: dict[str, _Active] = {}
+        self._active: dict[str, dict[str, _Active]] = {}
+        self._stopping: set[str] = set()
+        self._failed: set[str] = set()
         self._locks: dict[str, asyncio.Lock] = {}
 
     @classmethod
@@ -275,7 +277,7 @@ class WslSandboxBackend(SandboxBackend):
         return info
 
     def _assert_idle(self, sandbox_id: str) -> None:
-        if sandbox_id in self._active:
+        if self._active.get(sandbox_id) or sandbox_id in self._stopping:
             raise SandboxStateError("stop the sandbox command before changing configuration or resources")
 
     async def create(self, sandbox_id: str) -> SandboxInfo:
@@ -288,6 +290,10 @@ class WslSandboxBackend(SandboxBackend):
         if workspace_path is not None and (not PureWindowsPath(workspace_path).is_absolute() or "\0" in workspace_path):
             raise SandboxValidationError("WSL workspace_path must be an absolute Windows directory")
         async with self._lock(sandbox_id):
+            info = await self.get(sandbox_id)
+            if (sandbox_id not in self._stopping
+                and (info.workspace_path, info.workspace_access) == (workspace_path, ResourceAccess(workspace_access))):
+                return info
             self._assert_idle(sandbox_id)
             raw = await self._request(self._payload("configure", sandbox_id,
                 workspace_path=workspace_path, workspace_access=ResourceAccess(workspace_access).value))
@@ -298,13 +304,22 @@ class WslSandboxBackend(SandboxBackend):
 
     async def start(self, sandbox_id: str) -> SandboxInfo:
         async with self._lock(sandbox_id):
+            if sandbox_id not in self._stopping and sandbox_id not in self._failed:
+                info = await self.get(sandbox_id)
+                if info.state in {SandboxState.READY, SandboxState.RUNNING}:
+                    return info
             self._assert_idle(sandbox_id)
-            return self._info(await self._request(self._payload("start", sandbox_id)))
+            info = self._info(await self._request(self._payload("start", sandbox_id)))
+            self._failed.discard(sandbox_id)
+            return info
 
     async def execute(self, sandbox_id: str, argv: Sequence[str], *,
         timeout_seconds: float | None = None, env: Mapping[str, str] | None = None,
         invocation_env: Mapping[str, str] | None = None,
         runtime_mount: RuntimeMount | None = None, execution_policy: Mapping[str, Any] | None = None) -> CommandResult:
+        from .models import execution_command_id
+        from uuid import uuid4
+        command_id = execution_command_id.get() or uuid4().hex
         policy = execution_policy or {}
         if type(policy.get("network_enabled", False)) is not bool:
             raise SandboxValidationError("network_enabled must be a boolean")
@@ -317,32 +332,37 @@ class WslSandboxBackend(SandboxBackend):
         if not math.isfinite(timeout) or timeout <= 0:
             raise SandboxValidationError("timeout_seconds must be finite and positive")
         async with self._lock(sandbox_id):
-            self._assert_idle(sandbox_id)
+            if sandbox_id in self._stopping:
+                raise SandboxStateError("Sandbox is stopping")
             info = await self.get(sandbox_id)
-            if info.state != SandboxState.READY:
+            if info.state not in {SandboxState.READY, SandboxState.RUNNING}:
                 raise SandboxStateError("sandbox must be ready before executing a command")
             await self.prepare_python()
             active = _Active(new_unit_name())
-            self._active[sandbox_id] = active
+            self._active.setdefault(sandbox_id, {})[command_id] = active
             self._infos[sandbox_id] = replace(info, state=SandboxState.RUNNING, active_command=command)
         try:
             raw = await self._request(self._payload("execute", sandbox_id, argv=list(command),
                 timeout_seconds=timeout, env=dict(env) if env is not None else None,
                 invocation_env=dict(invocation_env) if invocation_env is not None else None,
-                unit=active.unit, execution_policy=policy, runtime_mount=runtime_mount.to_wire() if runtime_mount is not None else None),
+                unit=active.unit, command_id=command_id, execution_policy=policy, runtime_mount=runtime_mount.to_wire() if runtime_mount is not None else None),
                 timeout=timeout + 20, active=active)
             result = CommandResult(sandbox_id=raw["sandbox_id"], argv=tuple(raw["argv"]),
                 exit_code=raw["exit_code"], stdout=raw["stdout"], stderr=raw["stderr"],
                 duration_seconds=raw["duration_seconds"], timed_out=raw["timed_out"],
                 cancelled=raw["cancelled"])
-            self._infos[sandbox_id] = replace(info,
-                state=SandboxState.STOPPED if active.stop_requested else SandboxState.READY)
             return result
-        except BaseException:
-            self._infos[sandbox_id] = replace(info, state=SandboxState.ERROR)
+        except BaseException as error:
+            if not isinstance(error, asyncio.CancelledError):
+                self._failed.add(sandbox_id)
             raise
         finally:
-            self._active.pop(sandbox_id, None)
+            remaining = self._active.get(sandbox_id, {})
+            remaining.pop(command_id, None)
+            if not remaining:
+                self._active.pop(sandbox_id, None)
+            self._infos[sandbox_id] = replace(info, active_command=None,
+                state=SandboxState.ERROR if sandbox_id in self._failed else SandboxState.RUNNING if remaining else SandboxState.STOPPED if active.stop_requested else SandboxState.READY)
             active.done.set()
 
     async def bundle_status(self, sandbox_id, bundle):
@@ -358,44 +378,44 @@ class WslSandboxBackend(SandboxBackend):
 
     async def cancel(self, sandbox_id: str) -> None:
         async with self._lock(sandbox_id):
-            active = self._active.get(sandbox_id)
-            if active is not None:
-                active.cancelled = True
-                if active.process is not None and active.process.stdin is not None:
+            active = list(self._active.get(sandbox_id, {}).values())
+            for command in active:
+                command.cancelled = True
+                if command.process is not None and command.process.stdin is not None:
                     try:
-                        active.process.stdin.write(b'{"cancel":true}\n')
-                        await active.process.stdin.drain()
+                        command.process.stdin.write(b'{"cancel":true}\n')
+                        await command.process.stdin.drain()
                     except (BrokenPipeError, ConnectionResetError):
                         pass
-        if active is not None:
-            await active.done.wait()
+        await asyncio.gather(*(command.done.wait() for command in active))
 
     async def terminate(self, sandbox_id: str) -> None:
         async with self._lock(sandbox_id):
-            active = self._active.get(sandbox_id)
-            if active is not None:
-                active.stop_requested = True
-                active.cancelled = True
-                if active.process is not None and active.process.stdin is not None:
-                    try:
-                        active.process.stdin.write(b'{"cancel":true}\n')
-                        await active.process.stdin.drain()
-                    except (BrokenPipeError, ConnectionResetError):
-                        pass
-        if active is not None:
-            await active.done.wait()
-            info = self._infos.get(sandbox_id)
-            if info is not None and info.state == SandboxState.ERROR:
-                raise SandboxSecurityError("WSL command failed while stopping; inspect sandbox status")
-        else:
+            self._stopping.add(sandbox_id)
+            for command in self._active.get(sandbox_id, {}).values():
+                command.stop_requested = True
+        try:
+            await self.cancel(sandbox_id)
             await self._request(self._payload("terminate", sandbox_id))
-        if sandbox_id in self._infos:
-            self._infos[sandbox_id] = replace(self._infos[sandbox_id], state=SandboxState.STOPPED, active_command=None)
+            self._failed.discard(sandbox_id)
+            if sandbox_id in self._infos:
+                self._infos[sandbox_id] = replace(self._infos[sandbox_id], state=SandboxState.STOPPED, active_command=None)
+        except BaseException:
+            self._failed.add(sandbox_id)
+            if sandbox_id in self._infos:
+                self._infos[sandbox_id] = replace(self._infos[sandbox_id], state=SandboxState.ERROR)
+            raise
+        finally:
+            self._stopping.discard(sandbox_id)
 
     async def attach_resource(self, sandbox_id: str, resource_id: str, source: Path,
         relative_path: str, access: ResourceAccess) -> ResourceAttachment:
         relative = validate_relative_path(relative_path)
         async with self._lock(sandbox_id):
+            attachment = ResourceAttachment(sandbox_id, resource_id, Path(source), relative, ResourceAccess(access))
+            info = await self.get(sandbox_id)
+            if sandbox_id not in self._stopping and attachment in info.attachments:
+                return attachment
             self._assert_idle(sandbox_id)
             raw = await self._request(self._payload("attach_resource", sandbox_id,
                 resource_id=resource_id, source=str(source), relative_path=relative,
