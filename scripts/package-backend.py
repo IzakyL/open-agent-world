@@ -1,10 +1,11 @@
-"""Build a self-contained Windows Python payload from a clean interpreter and uv.lock."""
+"""Build a self-contained Windows/macOS Python payload and locked dependencies."""
 from __future__ import annotations
 
 import argparse
 from datetime import datetime, UTC
 import json
 import os
+import platform
 from pathlib import Path
 import shutil
 import subprocess
@@ -22,8 +23,8 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--python", default=sys.executable, help="A full Windows CPython installation (not a frozen executable)")
     args = parser.parse_args()
-    if os.name != "nt":
-        parser.error("The installer pipeline currently targets Windows x64. Use scripts/start.py on Linux/macOS.")
+    if os.name != "nt" and sys.platform != "darwin":
+        parser.error("Build desktop installers on Windows or macOS.")
     root = Path(__file__).resolve().parents[1]
     uv = shutil.which("uv")
     if not uv:
@@ -35,28 +36,42 @@ def main():
     if source_info["bits"] != 64:
         parser.error("Build with a 64-bit Python interpreter")
     source = Path(source_info["base"])
-    if not (source / "python.exe").is_file() or not (source / "Lib/venv").is_dir():
+    if os.name == "nt" and (not (source / "python.exe").is_file() or not (source / "Lib/venv").is_dir()):
         parser.error("Use a full CPython installation with the standard library and venv module")
     build_root = root / ".open-agent-world"
     stage = build_root / ("desktop-staging-" + uuid4().hex[:10])
     stage.mkdir(parents=True)
     python_root = stage / "python"
-    python_root.mkdir()
-    for pattern in ("python*.exe", "python*.dll", "python*.zip", "vcruntime*.dll", "LICENSE*"):
+    if os.name == "nt":
+        python_root.mkdir()
+    for pattern in (("python*.exe", "python*.dll", "python*.zip", "vcruntime*.dll", "LICENSE*") if os.name == "nt" else ()):
         for item in source.glob(pattern):
             if item.is_file():
                 shutil.copy2(item, python_root / item.name)
-    for name in ("Lib", "DLLs"):
+    for name in (("Lib", "DLLs") if os.name == "nt" else ()):
         if (source / name).is_dir():
             shutil.copytree(source / name, python_root / name,
                 ignore=shutil.ignore_patterns("site-packages", "__pycache__", "*.pth", "sitecustomize.py", "usercustomize.py", "test", "tests"))
     env = dict(os.environ)
     env["UV_CACHE_DIR"] = str(root / ".uv-cache")
     env["UV_PYTHON_INSTALL_DIR"] = str(build_root / "build-python")
+    if sys.platform == "darwin":
+        # A managed standalone interpreter is relocatable; Homebrew/framework
+        # installations can retain absolute references to the build machine.
+        run([uv, "python", "install", "3.12"], root=root, env=env)
+        managed = Path(subprocess.check_output(
+            [uv, "python", "find", "--managed-python", "3.12"],
+            cwd=root, env=env, text=True).strip()).resolve().parent.parent
+        shutil.copytree(managed, python_root, symlinks=False,
+                        ignore=shutil.ignore_patterns("__pycache__"))
+    python = python_root / ("python.exe" if os.name == "nt" else "bin/python3")
+    site_packages = python_root / ("Lib/site-packages" if os.name == "nt" else "lib/python3.12/site-packages")
+    source_info["version"] = subprocess.check_output(
+        [str(python), "-I", "-c", "import sys; print(sys.version)"], text=True).strip()
     requirements = stage / "requirements.txt"
     run([uv, "export", "--project", "backend", "--locked", "--no-dev", "--extra", "adk", "--extra", "litellm",
          "--no-emit-project", "--output-file", requirements], root=root, env=env, quiet=True)
-    run([uv, "pip", "install", "--python", python_root / "python.exe", "--target", python_root / "Lib/site-packages",
+    run([uv, "pip", "install", "--python", python, "--target", site_packages,
          "--require-hashes", "--no-deps", "--only-binary", ":all:", "-r", requirements], root=root, env=env)
     # Honor repository ignores, including local .env files, caches and user data.
     # New implementation files are included even before a developer commits them.
@@ -77,12 +92,12 @@ def main():
     # Debug reset code is neither imported nor shipped with the installed backend.
     shutil.copytree(root / "frontend/dist", stage / "frontend/dist")
     (stage / "tools").mkdir()
-    shutil.copy2(uv, stage / "tools/uv.exe")
+    shutil.copy2(uv, stage / ("tools/uv.exe" if os.name == "nt" else "tools/uv"))
     shutil.copy2(root / "scripts/desktop-entry.py", stage / "launch.py")
     (stage / "build-info.json").write_text(json.dumps({"built_at": datetime.now(UTC).isoformat(),
-        "python": source_info["version"], "platform": "windows-x64", "backend_dependencies": "requirements.txt"}, indent=2), encoding="utf-8")
+        "python": source_info["version"], "platform": "windows-x64" if os.name == "nt" else f"macos-{platform.machine()}", "backend_dependencies": "requirements.txt"}, indent=2), encoding="utf-8")
     env["PATH"] = str(stage / "tools") + os.pathsep + env.get("PATH", "")
-    run([python_root / "python.exe", "-I", "-B", stage / "launch.py", "--self-test"], root=stage, env=env)
+    run([python, "-I", "-B", stage / "launch.py", "--self-test"], root=stage, env=env)
     destination = build_root / "desktop-payload"
     # Both paths are fixed build outputs in this checkout; keep the previous package
     # until the newly staged interpreter, plugins, and Sandbox venv passed validation.

@@ -11,11 +11,13 @@ Open Agent World has three entry points sharing the same application code:
 
 ## Daily use
 
+Download published installers from [GitHub Releases](https://github.com/theAfish/open-agent-world/releases). See [installation and first use](install.md) for the correct asset, macOS preview limitations, and model setup. Maintainers: see [publishing releases](releasing.md).
+
 On Windows, install the generated `Open Agent World_*_x64-setup.exe`, then open **Open Agent World** from the Start menu. The per-user NSIS installer does not require a developer environment. It includes a complete Python interpreter, locked backend dependencies, bundled plugins, frontend assets, and uv for managed Sandbox Python provisioning. Its WebView2 bootstrapper downloads the runtime if needed.
 
 The desktop shell shows startup progress, waits for backend readiness, and opens the world in a separate window. Opening the app again focuses its existing window. Closing the final window asks the backend to shut down; a Windows Job Object also owns the backend process tree for crash/forced-exit cleanup. Backend logs rotate at 5 MB. Formal launch logs use `%LOCALAPPDATA%\OpenAgentWorld.logs\launcher.log`, outside the relocatable data store; development and explicitly configured stores use `logs/launcher.log` inside their profile. The startup window reports the log path.
 
-Application installation and Sandbox provisioning remain separate. Scientific plugin dependencies and platform-specific execution prerequisites may still require a first-use download or OS configuration. macOS still has no local Sandbox runtime. The current installer pipeline targets **Windows x64**; the source launcher also supports Linux/macOS.
+Application installation and Sandbox provisioning remain separate. Scientific plugin dependencies and platform-specific execution prerequisites may still require a first-use download or OS configuration. macOS still has no local Sandbox runtime. The release pipeline targets **Windows x64**, **macOS Apple Silicon**, and **macOS Intel**; macOS packages are previews. Build macOS packages on a Mac with `bash scripts/build-desktop.sh`.
 
 Formal data keeps its existing default location (`%LOCALAPPDATA%\OpenAgentWorld` on Windows), including any relocation already selected in Settings. An application upgrade does not replace this directory. Uninstalling the application leaves user data available for a later reinstall. Source launches continue to support `OPEN_AGENT_WORLD_DATA_ROOT`; the installed desktop uses the formal user location and its storage settings.
 

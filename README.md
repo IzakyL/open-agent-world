@@ -8,7 +8,7 @@
 
 A visual workspace where AI agents, tools, and resources become cards you can connect.
 
-[Get started](docs/getting-started.md) / [Documentation](docs/README.md) / [Plugins](docs/plugins.md)
+[Download / 下载](https://github.com/theAfish/open-agent-world/releases) / [Install](docs/install.md) / [Documentation](docs/README.md) / [Plugins](docs/plugins.md)
 
 </div>
 
@@ -22,6 +22,10 @@ A visual workspace where AI agents, tools, and resources become cards you can co
 - **Build a World.** Arrange shared documents, toolboxes, and isolated Sandboxes on an open canvas. Add new kinds of cards through plugins.
 
 ## Quick Start
+
+**Install the desktop app:** open [Releases](https://github.com/theAfish/open-agent-world/releases), expand **Assets**, and select the Windows `.exe` or the macOS preview `.dmg` matching your processor. See [installation and first use / 安装与使用](docs/install.md). Published installers include Python and application dependencies. **Source code** archives are for developers. If no release is listed, a public installer has not been published yet.
+
+### Run from source
 
 Clone this repository and run from its root. You need **Python 3.11+**, **uv**, and **Node.js 20+**.
 

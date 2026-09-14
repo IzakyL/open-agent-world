@@ -20,10 +20,12 @@ if "--self-test" in sys.argv:
             catalog = services.plugins.catalog()
             assert len(catalog.plugins) > 1, "Bundled plugins are missing"
             assert (root / "frontend/dist/index.html").is_file()
-            runtime = SharedPythonRuntime(Path(temporary))
-            runtime.prepare_sync()
-            assert runtime.python.is_file(), "Sandbox Python could not be prepared"
-            print(json.dumps({"status": "ok", "plugins": [plugin.id for plugin in catalog.plugins], "sandbox_python": "ready"}))
+            sandbox_status = "unsupported" if sys.platform == "darwin" else "ready"
+            if sys.platform != "darwin":
+                runtime = SharedPythonRuntime(Path(temporary))
+                runtime.prepare_sync()
+                assert runtime.python.is_file(), "Sandbox Python could not be prepared"
+            print(json.dumps({"status": "ok", "plugins": [plugin.id for plugin in catalog.plugins], "sandbox_python": sandbox_status}))
         finally:
             services.close()
 else:
