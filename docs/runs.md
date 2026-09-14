@@ -11,8 +11,13 @@ Open Agent World keeps four execution concepts separate:
 
 The persisted `RunRecord` is authoritative. Provider events are live output,
 not lifecycle storage. A provider turn ending also does not imply that the Run
-succeeded: a provider must explicitly emit a terminal `run_status`. If its
-event stream ends without one, `RunManager` leaves the Run in `waiting`.
+succeeded. The provider contract is explicit: a provider turn must end with
+either a terminal `run_status` event or an explicitly registered
+suspension (`suspend_run`). If the event stream ends with neither,
+`RunManager` fails the Run with a provider protocol error. `waiting` therefore
+always means a deliberate, explainable wait with a recorded reason and a
+resume/ownership mechanism — never "the provider stopped producing events
+and we don't know why".
 
 Run working data is deliberately separate from `RunRecord`. Every new Run owns
 a fresh durable `run:<run_id>` state scope for its input, progress, scratch data,
@@ -48,7 +53,7 @@ Run status.
 
 `TOOL_STARTED` and `TOOL_COMPLETED` are activity events only. A short tool call
 does not change Run status or release capacity. Long-running work must make an
-explicit suspension decision:
+explicit suspension decision before the provider turn ends:
 
 ```python
 await run_manager.suspend_run(
@@ -71,19 +76,26 @@ Execution-turn synchronization is also separate from durable completion:
 
 ## Provider event-stream inactivity policy
 
-`RunManager` currently applies a provider event-stream inactivity policy. If a
-stream produces no events for the configured window, the Run is transitioned
-to `failed` with an explicit error instead of stalling silently, and
-`stop(run_id)` is called on the provider. Stream silence is an operational
-heuristic, not proof that the provider's underlying task failed. This temporary
-policy should be replaced once providers expose a formal liveness/heartbeat
-contract. The default window is
+`RunManager` applies two distinct liveness rules:
+
+- **Exhausted stream**: a provider turn that ends without a terminal
+  `run_status` or an explicit suspension fails immediately with a provider
+  protocol error (see above). This is a contract violation, not a timeout.
+- **Silent open stream**: if a still-open stream produces no events for the
+  configured inactivity window, the Run is transitioned to `failed` with an
+  explicit error instead of stalling silently, and `stop(run_id)` is called on
+  the provider. Stream silence is an operational heuristic, not proof that the
+  provider's underlying task failed. This temporary policy should be replaced
+  once providers expose a formal liveness/heartbeat contract.
+
+The default inactivity window is
 300 seconds; it can be changed globally with
 `OPEN_AGENT_WORLD_RUN_INACTIVITY_TIMEOUT` (non-positive disables it) or
 per Agent with the `run_inactivity_timeout_seconds` card configuration key
 (non-positive disables it for that Agent). Each provider event resets the
 window, so long multi-step runs are unaffected as long as they keep reporting
-activity through the normalized event stream.
+activity through the normalized event stream. Active tool execution and
+explicitly suspended Runs are exempt from the inactivity window.
 
 ## Conversation outcomes
 

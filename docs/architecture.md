@@ -44,6 +44,10 @@ The backend rejects unsupported, duplicate, and self-referential edges. Scoped c
 
 An Agent-to-Agent `communicate` edge has a persisted direction. A `forward` edge exposes one target-scoped messaging tool to the source Agent, while a `bidirectional` edge exposes the corresponding scoped tool to both Agents. Invoking either tool starts the other Agent with the message and returns its final response. The permission and direction are re-checked at invocation time like every other graph-derived capability.
 
+### Equipment model
+
+Agent equipment represents private capabilities/resources attached to an Agent and participates in Agent templates, Barracks, and summoning. `EquipmentBinding` (`owner_id` + `relationship`, persisted on the equipped card itself as `equipment_json`) is the single authoritative record of an equipment relationship. Equipment edges shown in the graph are derived projections synthesized at read time (`equipment:{card_id}`); they are never independently persisted, and edge creation for an equipment-shaped connection is rejected to prevent a second source of truth. Capability derivation and deletion cascades operate on the binding, not on any stored edge.
+
 ## Direct interaction flow
 
 1. The user connects an Agent to a Text card.

@@ -50,6 +50,9 @@ class RecordingProvider(RuntimeProvider):
         self.started = asyncio.Event()
         self.tool_started = asyncio.Event()
         self.continue_tool = asyncio.Event()
+        # In "waiting" mode the turn stays open until released so tests can
+        # register an explicit suspension before the stream is exhausted.
+        self.release_turn = asyncio.Event()
 
     async def create_agent(self, config: AgentConfig) -> AgentInfo:
         self.configs[config.agent_id] = config
@@ -109,6 +112,8 @@ class RecordingProvider(RuntimeProvider):
             AgentEventType.MESSAGE,
             {"text": runtime_input.prompt},
         )
+        if self.mode == "waiting":
+            await self.release_turn.wait()
         if self.mode in {"success", "tool"}:
             yield AgentEvent(
                 context.agent_id,
@@ -470,7 +475,7 @@ async def test_agents_in_one_world_can_select_different_providers(tmp_path: Path
 
 
 @pytest.mark.asyncio
-async def test_transition_authority_and_stream_exhaustion_waiting(
+async def test_transition_authority_and_explicit_suspension(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     provider = RecordingProvider(mode="waiting")
@@ -479,13 +484,13 @@ async def test_transition_authority_and_stream_exhaustion_waiting(
         agent = await services.create_card(CardCreate(type="agent", name="Atlas"))
         manager = services._require_run_manager()
         run = await manager.start_run(agent.id, "submit external work")
+        await manager.suspend_run(run.run_id, reason="awaiting_operator")
+        provider.release_turn.set()
         record = await manager.wait_execution(run.run_id)
         assert record.status is RunStatus.WAITING
         assert run.run_id not in manager._runtime_tasks
         assert manager.holds_agent_slot(run.run_id)
         assert services.get_card(agent.id).status == "running"
-        await manager.suspend_run(run.run_id, reason="awaiting_operator")
-        assert manager.holds_agent_slot(run.run_id)
         assert manager.get_suspension(run.run_id).release_agent_slot is False
         with pytest.raises(RuntimeUnavailableError, match="max_concurrent_runs=1"):
             await manager.start_run(agent.id, "slot is still occupied")
@@ -495,7 +500,10 @@ async def test_transition_authority_and_stream_exhaustion_waiting(
         )
         assert not manager.holds_agent_slot(run.run_id)
         assert services.get_card(agent.id).status == "idle"
+        provider.release_turn = asyncio.Event()
         another = await manager.start_run(agent.id, "another provider turn")
+        await manager.suspend_run(another.run_id, reason="second_external_job")
+        provider.release_turn.set()
         assert (await manager.wait_execution(another.run_id)).status is RunStatus.WAITING
         assert manager.holds_agent_slot(another.run_id)
         await manager.transition_run(another.run_id, RunStatus.FAILED)
@@ -543,6 +551,8 @@ async def test_resume_requires_a_live_agent_even_when_the_run_retains_its_slot(
         agent = await services.create_card(CardCreate(type="agent", name="Atlas"))
         manager = services._require_run_manager()
         run = await manager.start_run(agent.id, "wait")
+        await manager.suspend_run(run.run_id, reason="external_job")
+        provider.release_turn.set()
         assert (await manager.wait_execution(run.run_id)).status is RunStatus.WAITING
         assert manager.holds_agent_slot(run.run_id)
 
@@ -670,6 +680,8 @@ async def test_restart_interrupts_incomplete_run_without_claiming_success(
     agent = await first.create_card(CardCreate(type="agent", name="Atlas"))
     manager = first._require_run_manager()
     run = await manager.start_run(agent.id, "wait")
+    await manager.suspend_run(run.run_id, reason="external_job")
+    provider.release_turn.set()
     assert (await manager.wait_execution(run.run_id)).status is RunStatus.WAITING
     first.close()
 
@@ -774,12 +786,34 @@ async def test_final_text_reads_from_state_and_terminal_task_releases_slot(
         manager._task_finished(run.run_id)
         assert not manager.holds_agent_slot(run.run_id)
 
-        # A non-terminal (waiting) Run keeps its slot when its turn task ends.
+        # An explicitly suspended (waiting) Run keeps its slot when its turn ends.
         waiting_provider = RecordingProvider(mode="waiting")
         manager.install_provider("test.runtime", waiting_provider)
         waiting = await manager.start_run(agent.id, "external work")
+        await manager.suspend_run(waiting.run_id, reason="external_job")
+        waiting_provider.release_turn.set()
         assert (await manager.wait_execution(waiting.run_id)).status is RunStatus.WAITING
         assert manager.holds_agent_slot(waiting.run_id)
         await manager.cancel_run(waiting.run_id)
+    finally:
+        services.close()
+
+
+@pytest.mark.asyncio
+async def test_silent_stream_exhaustion_is_a_provider_protocol_error(
+    tmp_path: Path,
+) -> None:
+    provider = RecordingProvider(mode="waiting")
+    provider.release_turn.set()
+    services = _services(tmp_path, provider)
+    try:
+        agent = await services.create_card(CardCreate(type="agent", name="Atlas"))
+        manager = services._require_run_manager()
+        run = await manager.start_run(agent.id, "end silently")
+        record = await manager.wait_terminal(run.run_id)
+        assert record.status is RunStatus.FAILED
+        assert "provider protocol error" in (record.error or "")
+        assert not manager.holds_agent_slot(run.run_id)
+        assert services.get_card(agent.id).status == "idle"
     finally:
         services.close()

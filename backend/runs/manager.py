@@ -692,11 +692,18 @@ class RunManager:
                         raise
             current = self.get_run(record.run_id)
             if current.status is RunStatus.RUNNING:
-                # Stream exhaustion means the provider turn ended. It is not
-                # implicit work completion; absent an explicit terminal event,
-                # the durable Run remains waiting for a future resume signal.
-                # Occupancy is retained unless suspend_run explicitly releases it.
-                await self.transition_run(record.run_id, RunStatus.WAITING)
+                # Provider protocol: a turn must end with an explicit terminal
+                # run_status or an explicitly registered suspension. Silent
+                # stream exhaustion with neither is a protocol error, never an
+                # implicit wait: WAITING always has an owner and a reason.
+                await self.transition_run(
+                    record.run_id,
+                    RunStatus.FAILED,
+                    error=(
+                        "provider protocol error: event stream ended without a "
+                        "terminal run_status or an explicit suspension"
+                    ),
+                )
         except asyncio.CancelledError:
             current = self.get_run(record.run_id)
             if current.status not in TERMINAL_RUN_STATUSES:
