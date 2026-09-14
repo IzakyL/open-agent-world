@@ -1,3 +1,4 @@
+import { CardFace } from "../components/CardFace";
 import { t, useLocale } from "../i18n";
 import { AlertTriangle, Layers3, LibraryBig, Plus, Trash2, X } from "lucide-react";
 import { useEffect, useRef, useState, type CSSProperties, type DragEvent } from "react";
@@ -128,11 +129,9 @@ export function ComponentPalette() {
             }} onDragEnd={endDrag}
             onClick={() => { if (available) entry.kind === "node" ? void createCard(entry.id) : void instantiateLegion(entry.id); }}
             aria-label={available ? t("Place {v0}", { v0: String(label) }) : t("{v0} unavailable", { v0: String(label) })} title={available ? (definition ? t(definition.description) : undefined) ?? t("Deploy saved formation") : t("Content unavailable. Inspect it in the Library.")}>
-            <span className={`palette-item palette-item--${entry.kind === "node" ? entry.id : "legion"}`} data-deck-visual>
-              <span className="palette-card-corner">{definition ? <CatalogIcon definition={definition} size={15} /> : <Layers3 size={15} />}</span>
-              <span className="palette-item-icon">{available ? definition ? <CatalogIcon definition={definition} size={25} /> : <Layers3 size={25} /> : <AlertTriangle size={25} />}</span>
-              <span className="palette-item-copy"><strong>{label}</strong><small>{available ? (definition ? t(definition.description) : undefined) ?? t("Saved formation") : t("Unavailable")}</small></span>
-              <span className="palette-draw">{available ? t("Place") : t("Unavailable")}</span>
+            <span style={{ "--collection-color": definition?.color ?? "#78967b" } as CSSProperties} className={`card-stock palette-item palette-item--${entry.kind === "node" ? entry.id : "legion"}`} data-deck-visual>
+              <CardFace icon={available ? definition ? <CatalogIcon definition={definition} /> : <Layers3 /> : <AlertTriangle />} label={label}
+                description={available ? (definition ? t(definition.description) : undefined) ?? t("Saved formation") : t("Unavailable")} />
             </span>
           </button>;
         })}

@@ -43,16 +43,12 @@
 .library-internal-cards > p { font-size: 11px; color: var(--ink-faint); margin: 18px 0 12px; }
 .library-card-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(160px, 1fr)); gap: 12px; }
 .library-card { min-width: 0; display: flex; perspective: 850px; border-radius: 10px; }
-.library-card-stock { position: relative; isolation: isolate; width: 100%; display: flex; flex-direction: column; padding: 6px; border: 1px solid color-mix(in srgb, var(--collection-color) 40%, var(--line-strong)); border-radius: 10px; background: repeating-linear-gradient(0deg, transparent 0 2px, #887b6610 2px 3px), var(--card-surface); box-shadow: 0 1px 0 #fffc inset, 1px 2px 0 var(--surface-solid), 2px 3px 0 var(--line-strong), 3px 6px 10px var(--shadow); transform: rotateX(var(--surface-rx, 0deg)) rotateY(var(--surface-ry, 0deg)); transition: transform 220ms ease-out, box-shadow 220ms; }
+.library-card-stock { position: relative; isolation: isolate; width: 100%; display: flex; flex-direction: column; padding: 6px; transform: rotateX(var(--surface-rx, 0deg)) rotateY(var(--surface-ry, 0deg)); transition: transform 220ms ease-out, box-shadow 220ms; }
 .library-card[data-tilting] .library-card-stock { transition-duration: 90ms; box-shadow: 0 1px 0 #fffc inset, 1px 2px 0 var(--surface-solid), 2px 3px 0 var(--line-strong), 4px 10px 18px var(--shadow); }
 .library-card.is-selected .library-card-stock { outline: 2px solid var(--accent); outline-offset: 3px; }
 .library-card-sheen { position: absolute; inset: 0; z-index: 2; border-radius: inherit; pointer-events: none; background: radial-gradient(ellipse at var(--light-x, 30%) var(--light-y, 10%), #fff5, transparent 65%); opacity: .35; }
 .library-card[data-tilting] .library-card-sheen { opacity: .65; }
-.library-card-inspect { display: flex; width: 100%; min-height: 196px; flex: 1; flex-direction: column; align-items: flex-start; gap: 9px; padding: 13px; border: 1px solid color-mix(in srgb, var(--collection-color) 25%, transparent); border-radius: 5px 5px 0 0; color: var(--ink); background: linear-gradient(150deg, color-mix(in srgb, var(--collection-color) 13%, transparent), transparent 70%); text-align: left; }
-.library-card-inspect > svg, .library-card-inspect > .catalog-asset-icon { color: var(--collection-color); margin: 8px 0 12px; filter: drop-shadow(0 1px 0 #fff8); }
-.library-card-inspect > span { font-size: 9px; text-transform: uppercase; color: var(--ink-faint); }
-.library-card-inspect > strong { font-size: 14px; overflow-wrap: anywhere; }
-.library-card-inspect > small { font-size: 10px; line-height: 1.5; color: var(--ink-soft); overflow: hidden; display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; }
+.library-card-inspect { display: flex; flex-direction: column; width: 100%; aspect-ratio: 3 / 4; flex: 1; padding: 0; border: 0; background: transparent; text-align: left; }
 .library-card-add { display: flex; align-items: center; justify-content: center; gap: 7px; width: 100%; padding: 10px; font-size: 11px !important; border: 0; border-top: 1px solid var(--line); background: var(--surface-soft); color: var(--ink-soft); }
 .library-card-add.is-in-deck { color: var(--accent); background: var(--accent-soft); }
 .library-card-usage { padding: 10px; border-top: 1px solid var(--line); color: var(--ink-faint); background: var(--surface-soft); font-size: 10px; text-align: center; }

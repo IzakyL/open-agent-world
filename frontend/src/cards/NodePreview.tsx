@@ -1,8 +1,7 @@
 import { t, useLocale } from "../i18n";
-import { Bot, FileText, Image as ImageIcon, MessagesSquare, ShieldCheck, Workflow } from "lucide-react";
+import { Bot, FileText, Image as ImageIcon, MessagesSquare, ShieldCheck } from "lucide-react";
 import { TaskBoardPreview } from "./TaskBoard";
 import { SkillToolboxPreview } from "./SkillToolbox";
-import { useMemo } from "react";
 import { useWorldStore } from "../state/worldStore";
 import type { WorldCard } from "../types/world";
 import { PluginSurface } from "../plugins/PluginSurface";
@@ -22,13 +21,9 @@ function DefaultNodePreview({ card }: { card: WorldCard }) {
   useLocale();
   const sandbox = useWorldStore(s => s.sandboxInfo[card.id]);
   const sandboxError = useWorldStore(s => s.sandboxErrors[card.id]);
-  const edges = useWorldStore((state) => state.edges);
   const catalog = useWorldStore((state) => state.catalog);
   const modelCatalog = useWorldStore((state) => state.modelCatalog);
-  const connectionCount = useMemo(
-    () => edges.filter((edge) => edge.source === card.id || edge.target === card.id).length,
-    [card.id, edges],
-  );
+
 
   if (catalog.node_types.find((definition) => definition.id === card.type)?.traits.includes("ui.skill-package.v1")) return <SkillToolboxPreview card={card} />;
   if (catalog.node_types.find((definition) => definition.id === card.type)?.traits.includes("ui.task-board.v1")) return <TaskBoardPreview card={card} />;
@@ -47,7 +42,6 @@ function DefaultNodePreview({ card }: { card: WorldCard }) {
         <p>{compactText(card.config.system_instruction, t("Ready for a scoped instruction."))}</p>
         <div className="node-preview-metadata">
           <span title={modelName}><Bot size={12} /> {modelName}</span>
-          <span>{connectionCount} {t("world connections")}</span>
         </div>
       </div>
     );
@@ -59,7 +53,6 @@ function DefaultNodePreview({ card }: { card: WorldCard }) {
         <p>{compactText(card.config.description, t("A shared field for durable conversations."))}</p>
         <div className="node-preview-metadata">
           <span><MessagesSquare size={12} /> {t("Conversation field")}</span>
-          <span>{connectionCount} {t("agents")}</span>
         </div>
       </div>
     );
@@ -102,7 +95,6 @@ function DefaultNodePreview({ card }: { card: WorldCard }) {
       <p>{String(sandbox?.runtime_id ?? card.config.runtime ?? "auto")} · {(sandbox?.network_enabled ?? card.config.network_enabled) ? t("Network enabled") : t("Network disabled")}</p>
       <p>{String(sandboxError || sandbox?.unavailable_reason || card.config.active_command || card.config.last_error || t("Idle"))}</p>
       <div className="node-preview-metadata">
-        <span><Workflow size={12} /> {connectionCount} {t("connections")}</span>
         <span><ShieldCheck size={12} /> {card.config.workspace_access === "read_only" ? t("Read only") : t("Read & write")} · {card.status}</span>
       </div>
     </div>
@@ -114,7 +106,6 @@ function DefaultNodePreview({ card }: { card: WorldCard }) {
       <p>{compactText(card.config.summary ?? card.config.description, definition?.description ?? t("Plugin-defined world object."))}</p>
       <div className="node-preview-metadata">
         <span>{definition?.label ?? card.type}</span>
-        <span>{connectionCount} {t("connections")}</span>
       </div>
     </div>
   );

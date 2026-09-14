@@ -1640,14 +1640,10 @@ body:has(.tutorial-bubble[data-step="place-demo"]) .component-palette .deck-stag
   flex-direction: column;
   align-items: center;
   justify-content: flex-start;
-  gap: 5px;
+  gap: 3px;
   margin: 0 -3px;
-  padding: 10px 8px 8px;
+  padding: 4px;
   overflow: hidden;
-  border: 1px solid var(--line-strong);
-  border-radius: 15px;
-  background: linear-gradient(155deg, var(--card-surface), var(--card-soft));
-  box-shadow: 0 8px 15px var(--shadow), inset 0 1px 0 var(--highlight);
   text-align: center;
   transform-origin: 50% 110%;
   cursor: grab;
@@ -1676,7 +1672,6 @@ body:has(.tutorial-bubble[data-step="place-demo"]) .component-palette .deck-stag
 .component-palette .palette-item-copy { width: 100%; display: grid; gap: 1px; }
 .component-palette .palette-item-copy strong { overflow: hidden; font-size: 10px; text-overflow: ellipsis; white-space: nowrap; }
 .component-palette .palette-item-copy small { overflow: hidden; color: var(--ink-faint); font-size: 8px; text-overflow: ellipsis; white-space: nowrap; }
-.palette-draw { display: flex; align-items: center; gap: 3px; margin-top: auto; color: var(--accent-strong); font-size: 8px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.06em; }
 
 .legion-palette-entry {
   position: relative;
@@ -2347,3 +2342,26 @@ body:has(.tutorial-bubble[data-step="place-demo"]) .component-palette .deck-stag
 .map-pin-marker span { padding: 3px 6px; border: 1px solid var(--line); border-radius: 6px; background: var(--chrome); color: var(--ink); font-size: 12px; max-width: 180px; overflow: hidden; text-overflow: ellipsis; }
 .world-canvas.pin-tool-active > .react-flow .react-flow__pane { cursor: crosshair; }
 @media (max-width: 760px) { .map-tools.react-flow__panel { right: 60px; bottom: 82px; } }
+
+/* Shared printed cards remain compact in the hand. */
+.component-palette .card-face { gap: 3px; padding: 5px; }
+.component-palette .card-face-art { min-height: 27px; }
+.component-palette .card-face-art > svg, .component-palette .card-face-art > img { width: 25px; height: 25px; }
+.component-palette .card-face-copy { gap: 2px; }
+.component-palette .card-face-copy strong { font-size: 10px; }
+.component-palette .card-face-copy small { font-size: 8px; -webkit-line-clamp: 1; }
+
+/* Preview is a portrait card; React Flow uses NODE_SURFACE_SIZE.preview. */
+.world-card.node-surface.is-preview { border-radius: 14px; }
+.node-surface.is-preview .node-surface-header { height: 144px; display: flex; flex-direction: column; align-items: stretch; gap: 10px; padding: 20px 16px 12px; }
+.node-surface.is-preview .card-kind-icon { width: 54px; height: 54px; border-radius: 12px; margin: 0 auto; flex: 0 0 auto; }
+.node-surface.is-preview .card-kind-icon > svg { width: 28px; height: 28px; }
+.node-surface.is-preview .card-title-group { width: 100%; }
+.node-surface.is-preview .card-title-group h2 { font-size: 15px; line-height: 1.3; }
+.node-surface.is-preview .card-status { position: absolute; left: 12px; top: 12px; padding: 0; border: 0; background: transparent; }
+.node-surface.is-preview .card-status > span:last-child { display: none; }
+.node-surface.is-preview .node-surface-toggle { position: absolute; top: 9px; right: 9px; }
+.node-surface.is-preview .node-preview-content { inset: 150px 16px 14px; padding-top: 12px; padding-bottom: 18px; border-top: 1px solid var(--line); overflow: hidden; }
+.node-surface.is-preview .node-preview-summary p { font-size: 11px; line-height: 1.55; -webkit-line-clamp: 4; }
+.node-surface.is-preview .node-preview-metadata { flex-wrap: wrap; font-size: 9px; }
+.node-surface.is-preview .node-preview-hint { font-size: 8px; }
