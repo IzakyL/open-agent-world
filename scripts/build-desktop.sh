@@ -32,8 +32,6 @@ if [[ "${OPEN_AGENT_WORLD_MANUAL_DMG:-}" == "1" ]]; then
     trap 'rm -rf -- "$staging_dir"' EXIT
     ditto "$app" "$staging_dir/Open Agent World.app"
     hdiutil create -volname "Open Agent World" -srcfolder "$staging_dir" -ov -format UDZO "$dmg"
-    codesign --force --sign - "$dmg"
-    codesign --verify --deep --strict "$dmg"
   )
 fi
 echo "Installer: desktop/src-tauri/target/release/bundle/dmg/"
