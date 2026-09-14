@@ -13,10 +13,25 @@ npm --prefix frontend ci --ignore-scripts --no-audit --no-fund
 npm --prefix frontend run build
 python3 scripts/package-backend.py
 npm --prefix desktop ci --ignore-scripts --no-audit --no-fund
-(cd desktop && npm run build)
+if [[ -n "${OPEN_AGENT_WORLD_TAURI_BUNDLES:-}" ]]; then
+  (cd desktop && npm run build -- --bundles "$OPEN_AGENT_WORLD_TAURI_BUNDLES")
+else
+  (cd desktop && npm run build)
+fi
 app="$PWD/desktop/src-tauri/target/release/bundle/macos/Open Agent World.app"
 # Exercise the installed resource layout, including spaces and relocated Python.
 payload="$app/Contents/Resources/payload"
 PATH="$payload/tools:$PATH" "$payload/python/bin/python3" -I -B "$payload/launch.py" --self-test
 codesign --verify --deep --strict "$app"
+if [[ "${OPEN_AGENT_WORLD_MANUAL_DMG:-}" == "1" ]]; then
+  dmg_dir="$PWD/desktop/src-tauri/target/release/bundle/dmg"
+  mkdir -p "$dmg_dir"
+  dmg="$dmg_dir/Open Agent World_x64.dmg"
+  (
+    staging_dir="$(mktemp -d -t open-agent-world-dmg)"
+    trap 'rm -rf -- "$staging_dir"' EXIT
+    ditto "$app" "$staging_dir/Open Agent World.app"
+    hdiutil create -volname "Open Agent World" -srcfolder "$staging_dir" -ov -format UDZO "$dmg"
+  )
+fi
 echo "Installer: desktop/src-tauri/target/release/bundle/dmg/"
