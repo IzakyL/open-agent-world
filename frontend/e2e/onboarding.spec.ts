@@ -118,7 +118,7 @@ test.describe('canvas onboarding', () => {
           .map(element => element.getBoundingClientRect()).filter(rect => rect.width && rect.height);
         const candidates = [{ x, y }, ...[200, 350, 480].flatMap(y => [260, 450, 680, 950, 1100].map(x => ({ x, y })))];
         return candidates.find(point => {
-          const left = point.x - 95 * zoom, top = point.y - 30 * zoom, right = left + 286 * zoom, bottom = top + 156 * zoom;
+          const left = point.x - 64 * zoom, top = point.y - 102 * zoom, right = left + 224 * zoom, bottom = top + 300 * zoom;
           return left > 20 && top > 20 && right < innerWidth - 20 && bottom < innerHeight - 120
             && !occupied.some(rect => left < rect.right + 25 && right > rect.left - 25 && top < rect.bottom + 25 && bottom > rect.top - 25);
         });

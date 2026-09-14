@@ -135,6 +135,7 @@ export interface WorldChunk {
 }
 
 export interface WorldSnapshot {
+  terrain_seed?: number;
   nodes: WorldCard[];
   edges: WorldEdge[];
   chunks: Array<WorldChunk | string | [number, number]>;

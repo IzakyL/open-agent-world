@@ -4,7 +4,7 @@ import { profileStorage } from '../state/profileStorage';
 import { worldApi, apiErrorMessage } from '../api/client';
 import { useWorldStore, mergeCards } from '../state/worldStore';
 import { useCardLibrary } from '../state/cardLibrary';
-import { useNodeSurfaceStore } from '../state/nodeSurfaces';
+import { NODE_SURFACE_SIZE, useNodeSurfaceStore } from '../state/nodeSurfaces';
 import { beginGlueEdit, persistGlue, useGlueStore, type GlueBox } from '../state/glue';
 import { observeInteractions, type WorldInteraction } from '../state/interactions';
 import { positionSurfaceAtNodeCenter } from '../canvas/nodeDisplacement';
@@ -236,12 +236,12 @@ async function demonstrate(action: Demonstration, signal: AbortSignal) {
       const b = await create('glueB', { x: a.position.x + 390, y: a.position.y }, true, signal);
       useTutorialStore.setState({ target: 'glueA' });
       await visuals?.focus([a.id, b.id]);
-      await visuals?.move(b.id, { x: a.position.x + 286, y: a.position.y }, signal);
+      await visuals?.move(b.id, { x: a.position.x + NODE_SURFACE_SIZE.preview.width, y: a.position.y }, signal);
       ensureActive(signal);
       const end = beginGlueEdit();
       try {
         const boxes = Object.fromEntries([requireCard('glueA'), requireCard('glueB')].map(card => [card.id, {
-          ...positionSurfaceAtNodeCenter(card.position, 'preview'), width: 286, height: 156, level: 'preview',
+          ...positionSurfaceAtNodeCenter(card.position, 'preview'), ...NODE_SURFACE_SIZE.preview, level: 'preview',
         }])) as Record<string, GlueBox>;
         useGlueStore.getState().setLayout(boxes, { a: a.id, b: b.id, side: 'right' });
         await persistGlue();

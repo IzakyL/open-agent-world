@@ -48,7 +48,7 @@ class SandboxLimits:
 
     memory_bytes: int = 512 * 1024 * 1024
     active_process_limit: int = 64
-    default_timeout_seconds: float = 60.0
+    default_timeout_seconds: float = 3600.0
 
     def __post_init__(self) -> None:
         if self.memory_bytes < 16 * 1024 * 1024:

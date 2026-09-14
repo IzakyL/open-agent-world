@@ -1,0 +1,117 @@
+name: Desktop release
+
+on:
+  workflow_dispatch:
+  push:
+    tags: ['v*']
+
+permissions:
+  contents: read
+
+concurrency:
+  group: desktop-release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: windows-2022
+            platform: windows-x64
+            extension: exe
+          - runner: macos-14
+            platform: macos-arm64
+            extension: dmg
+          - runner: macos-15-intel
+            platform: macos-x86_64
+            extension: dmg
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - uses: astral-sh/setup-uv@v6
+      - name: Check release version
+        shell: python
+        env:
+          REF_TYPE: ${{ github.ref_type }}
+          REF_NAME: ${{ github.ref_name }}
+        run: |
+          import json, os, pathlib, tomllib
+          version = json.loads(pathlib.Path('desktop/src-tauri/tauri.conf.json').read_text())['version']
+          assert json.loads(pathlib.Path('desktop/package.json').read_text())['version'] == version
+          assert tomllib.loads(pathlib.Path('desktop/src-tauri/Cargo.toml').read_text())['package']['version'] == version
+          if os.environ['REF_TYPE'] == 'tag':
+              assert os.environ['REF_NAME'] == 'v' + version, 'Tag must match desktop version'
+      - name: Install Rust
+        run: rustup toolchain install stable --profile minimal
+      - name: Select Rust
+        run: rustup default stable
+      - name: Build Windows installer and verify payload
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          npm --prefix frontend ci --ignore-scripts --no-audit --no-fund
+          if ($LASTEXITCODE -ne 0) { throw 'Frontend dependency installation failed' }
+          uv venv backend/.venv --python 3.12
+          if ($LASTEXITCODE -ne 0) { throw 'Python environment creation failed' }
+          ./scripts/build-desktop.ps1
+      - name: Build macOS installer and verify app
+        if: runner.os == 'macOS'
+        run: bash scripts/build-desktop.sh
+      - name: Collect installer and checksum
+        shell: python
+        env:
+          PLATFORM: ${{ matrix.platform }}
+          EXTENSION: ${{ matrix.extension }}
+        run: |
+          import hashlib, json, os, pathlib, shutil
+          version = json.loads(pathlib.Path('desktop/src-tauri/tauri.conf.json').read_text())['version']
+          files = list(pathlib.Path('desktop/src-tauri/target/release/bundle').rglob('*.' + os.environ['EXTENSION']))
+          assert len(files) == 1, f'Expected one installer, found {files}'
+          output = pathlib.Path('release-assets')
+          output.mkdir()
+          name = f"Open-Agent-World-{version}-{os.environ['PLATFORM']}.{os.environ['EXTENSION']}"
+          target = output / name
+          shutil.copy2(files[0], target)
+          digest = hashlib.file_digest(target.open('rb'), 'sha256').hexdigest()
+          (output / (name + '.sha256')).write_text(f'{digest}  {name}\n')
+      - uses: actions/upload-artifact@v4
+        with:
+          name: installer-${{ matrix.platform }}
+          path: release-assets/*
+          if-no-files-found: error
+
+  release:
+    if: github.ref_type == 'tag'
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: installer-*
+          merge-multiple: true
+          path: release-assets
+      - name: Create draft release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ github.ref_name }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          if gh release view "$RELEASE_TAG" --json isDraft > release-state.json; then
+            python -c 'import json; assert json.load(open("release-state.json"))["isDraft"], "Refusing to replace a published release"'
+          else
+            gh release create "$RELEASE_TAG" --verify-tag --draft --title "Open Agent World $RELEASE_TAG" --notes-file docs/release-notes.md
+          fi
+          gh release upload "$RELEASE_TAG" release-assets/* --clobber

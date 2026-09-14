@@ -71,7 +71,7 @@ describe("local inspector displacement", () => {
     const preview = positionSurfaceAtNodeCenter(compact, "preview");
     const inspector = positionSurfaceAtNodeCenter(compact, "inspector");
     const workspace = positionSurfaceAtNodeCenter(compact, "workspace");
-    expect(preview).toEqual({ x: 305, y: 270 });
+    expect(preview).toEqual({ x: 336, y: 198 });
     expect(inspector).toEqual({ x: 229, y: 63 });
     expect(workspace).toEqual({ x: -62, y: -2 });
     expect(nodePositionFromSurfacePosition(preview, "preview")).toEqual(compact);
@@ -79,12 +79,12 @@ describe("local inspector displacement", () => {
     expect(nodePositionFromSurfacePosition(workspace, "workspace")).toEqual(compact);
   });
 
-  it("uses the full 286 by 156 preview rectangle when clearing nearby nodes", () => {
+  it("uses the full 224 by 300 preview rectangle when clearing nearby nodes", () => {
     const preview = card("preview", 500, 400);
     const neighbor = card("neighbor", 650, 400);
     const original = { ...neighbor.position };
     const previewTopLeft = positionSurfaceAtNodeCenter(preview.position, "preview");
-    const previewRight = previewTopLeft.x + 286;
+    const previewRight = previewTopLeft.x + 224;
 
     const layout = displacedPositions(
       [preview, neighbor],
@@ -117,7 +117,7 @@ describe("local inspector displacement", () => {
     const movedPreview = layout.get(preview.id)!;
     const movedNeighbor = layout.get(neighbor.id)!;
     const movedPreviewTopLeft = positionSurfaceAtNodeCenter(movedPreview.position, "preview");
-    const movedPreviewRight = movedPreviewTopLeft.x + 286;
+    const movedPreviewRight = movedPreviewTopLeft.x + 224;
 
     expect(movedPreview.displaced).toBe(true);
     expect(movedPreviewTopLeft.x).toBeGreaterThanOrEqual(inspectorRight);

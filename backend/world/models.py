@@ -105,7 +105,7 @@ class SandboxConfig(BaseModel):
     network_enabled: bool = False
     memory_bytes: int = Field(default=512 * 1024 * 1024, ge=16 * 1024 * 1024, le=8 * 1024 * 1024 * 1024)
     active_process_limit: int = Field(default=64, ge=1, le=256)
-    command_timeout: float = Field(default=60, gt=0, le=600)
+    command_timeout: float = Field(default=600, gt=0, le=36000)
     presets: dict[str, str] = Field(default_factory=dict, max_length=30)
 
     @field_validator("presets")
@@ -297,3 +297,4 @@ class WorldSnapshot(BaseModel):
     edges: list[Edge]
     chunks: list[tuple[int, int]]
     chunk_size: int
+    terrain_seed: int = Field(ge=0, le=0xFFFFFFFF)

@@ -18,6 +18,7 @@ from backend.errors import (
 )
 from backend.plugins.registry import PluginRegistry
 from backend.persistence.database import Database
+from backend.world.terrain import ensure_terrain_seed
 from backend.world.models import (
     Card,
     CardBatchPatch,
@@ -58,13 +59,15 @@ class WorldStore:
             raise RevisionConflictError("Canvas object changed; read it again before editing")
 
     def __init__(
-        self, database: Database, registry: PluginRegistry, *, chunk_size: int = 2048
+        self, database: Database, registry: PluginRegistry, *, chunk_size: int = 2048,
+        new_world: bool = False,
     ) -> None:
         if chunk_size <= 0:
             raise ValueError("chunk_size must be positive")
         self.database = database
         self.registry = registry
         self.chunk_size = chunk_size
+        self.terrain_seed = ensure_terrain_seed(database, new_world=new_world)
 
     def assert_plugin_availability(self) -> None:
         """Fail startup with ownership-aware diagnostics for persisted objects."""

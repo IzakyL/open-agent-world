@@ -7,7 +7,7 @@ import { BookOpen, Maximize2, Minus, ExternalLink, Trash2, X } from "lucide-reac
 import { memo, type ComponentType, type CSSProperties, type PointerEvent as ReactPointerEvent, useEffect, useRef } from "react";
 import { ConnectionHoverHint, clearConnectionHoverHint, updateConnectionHoverHint } from "./ConnectionHoverHint";
 import { IconButton } from "../components/IconButton";
-import { WORKSPACE_MIN_SIZE, nodeSurfaceSupport, surfaceLevelForNode, useNodeSurfaceStore, type NodeSurfaceLevel } from "../state/nodeSurfaces";
+import { NODE_SURFACE_RADIUS, WORKSPACE_MIN_SIZE, nodeSurfaceSupport, surfaceLevelForNode, useNodeSurfaceStore, type NodeSurfaceLevel } from "../state/nodeSurfaces";
 import { useWorldStore } from "../state/worldStore";
 import { type CardType, type WorldCard } from "../types/world";
 import { TaskBoardBody } from "./TaskBoard";
@@ -138,7 +138,7 @@ function WorldCardNodeComponent({ data, selected, dragging }: NodeProps<CanvasNo
     <article
       ref={cardRef}
       className={`world-card node-surface world-card--${card.type} is-${visualLevel} ${selected ? "is-selected" : ""} ${card.status === "running" ? "is-running" : ""} ${card.status === "error" ? "is-error" : ""} ${card.ephemeral ? "is-ephemeral" : ""}`}
-      style={{ "--card-kind": definition?.color } as CSSProperties}
+      style={{ "--card-kind": definition?.color, borderRadius: NODE_SURFACE_RADIUS[visualLevel] } as CSSProperties}
       aria-label={`${label} ${card.name}`}
       data-card-id={card.id}
       data-card-type={card.type}

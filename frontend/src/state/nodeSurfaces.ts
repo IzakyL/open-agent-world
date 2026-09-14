@@ -5,6 +5,11 @@ import type { CardType, PluginCatalog } from "../types/world";
 
 export type NodeSurfaceLevel = "node" | "preview" | "inspector" | "workspace";
 
+/** Shared by the visible card boundary and relationship geometry. */
+export const NODE_SURFACE_RADIUS: Record<NodeSurfaceLevel, number> = {
+  node: 48, preview: 14, inspector: 24, workspace: 20,
+};
+
 export interface NodeSurfaceSupport {
   preview: boolean;
   inspector: boolean;
@@ -36,7 +41,7 @@ export function nodeSurfaceSupport(
 
 export const NODE_SURFACE_SIZE = {
   node: { width: 96, height: 96 },
-  preview: { width: 286, height: 156 },
+  preview: { width: 224, height: 300 },
   inspector: { width: 438, height: 570 },
   workspace: { width: 1_020, height: 700 },
 } as const;

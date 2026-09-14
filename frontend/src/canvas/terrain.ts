@@ -29,6 +29,7 @@ export interface TerrainChunkGeometry {
   resolution: number;
   minorPath: string;
   majorPath: string;
+  fillPaths: string[];
 }
 
 const gradients: ReadonlyArray<readonly [number, number]> = [
@@ -134,27 +135,27 @@ function ridgedNoise(x: number, y: number, seed: number, octaves: number) {
  * Continuous procedural height field. Chunk coordinates never enter the noise,
  * so independently generated neighbors sample exactly the same shared edge.
  */
-export function terrainHeightAt(worldX: number, worldY: number) {
-  const warpX = fractalNoise(worldX / 3900, worldY / 3900, TERRAIN_SEED + 17, 3);
+export function terrainHeightAt(worldX: number, worldY: number, seed = TERRAIN_SEED) {
+  const warpX = fractalNoise(worldX / 3900, worldY / 3900, seed + 17, 3);
   const warpY = fractalNoise(
     (worldX + 12_700) / 3900,
     (worldY - 8_300) / 3900,
-    TERRAIN_SEED + 43,
+    seed + 43,
     3,
   );
   const warpedX = worldX + warpX * 760;
   const warpedY = worldY + warpY * 760;
-  const continent = fractalNoise(warpedX / 6200, warpedY / 6200, TERRAIN_SEED + 101, 5);
-  const rolling = fractalNoise(warpedX / 1750, warpedY / 1750, TERRAIN_SEED + 211, 4);
+  const continent = fractalNoise(warpedX / 6200, warpedY / 6200, seed + 101, 5);
+  const rolling = fractalNoise(warpedX / 1750, warpedY / 1750, seed + 211, 4);
   const mountainField = fractalNoise(
     (warpedX - 4_100) / 4100,
     (warpedY + 2_900) / 4100,
-    TERRAIN_SEED + 307,
+    seed + 307,
     3,
   );
   const mountainMask = smoothstep(-0.24, 0.52, mountainField);
-  const ridges = ridgedNoise(warpedX / 1050, warpedY / 1050, TERRAIN_SEED + 401, 4);
-  const detail = fractalNoise(warpedX / 520, warpedY / 520, TERRAIN_SEED + 503, 2);
+  const ridges = ridgedNoise(warpedX / 1050, warpedY / 1050, seed + 401, 4);
+  const detail = fractalNoise(warpedX / 520, warpedY / 520, seed + 503, 2);
 
   return (
     continent * 0.54
@@ -170,7 +171,7 @@ export function terrainResolutionForZoom(zoom: number) {
   return 32;
 }
 
-export function sampleTerrainChunk(chunkX: number, chunkY: number, resolution: number): TerrainGrid {
+export function sampleTerrainChunk(chunkX: number, chunkY: number, resolution: number, seed = TERRAIN_SEED): TerrainGrid {
   const stride = resolution + 1;
   const step = CHUNK_SIZE / resolution;
   const originX = chunkX * CHUNK_SIZE;
@@ -182,6 +183,7 @@ export function sampleTerrainChunk(chunkX: number, chunkY: number, resolution: n
       values[row * stride + column] = terrainHeightAt(
         originX + column * step,
         originY + row * step,
+        seed,
       );
     }
   }
@@ -270,6 +272,11 @@ function smoothPolyline(points: Point[]) {
     for (let index = 0; index < ring.length; index += 1) {
       const current = ring[index];
       const next = ring[(index + 1) % ring.length];
+      // Keep chunk boundaries straight, including corners and contour exits.
+      if (current.x === 0 || current.y === 0 || current.x === CHUNK_SIZE || current.y === CHUNK_SIZE) {
+        commands.push(`L${pointText(current)}L${pointText(midpoint(current, next))}`);
+        continue;
+      }
       commands.push(`Q${pointText(current)} ${pointText(midpoint(current, next))}`);
     }
     commands.push("Z");
@@ -325,12 +332,13 @@ function stitchSegments(segments: Segment[]) {
   return paths.join("");
 }
 
-function buildTerrainChunk(chunkX: number, chunkY: number, resolution: number): TerrainChunkGeometry {
-  const grid = sampleTerrainChunk(chunkX, chunkY, resolution);
+function buildTerrainChunk(chunkX: number, chunkY: number, resolution: number, seed: number): TerrainChunkGeometry {
+  const grid = sampleTerrainChunk(chunkX, chunkY, resolution, seed);
   const stride = resolution + 1;
   const step = CHUNK_SIZE / resolution;
   const minorSegments: string[] = [];
   const majorSegments: string[] = [];
+  const fillPaths: string[] = [];
 
   for (let levelIndex = 0; levelIndex < CONTOUR_LEVELS.length; levelIndex += 1) {
     const level = CONTOUR_LEVELS[levelIndex];
@@ -363,22 +371,41 @@ function buildTerrainChunk(chunkX: number, chunkY: number, resolution: number): 
       }
     }
     if (levelSegments.length > 0) destination.push(stitchSegments(levelSegments));
+    // Close superlevel regions along the chunk perimeter, never by drawing a
+    // shortcut between contour exits. Interior holes use the SVG evenodd rule.
+    const fillSegments = [...levelSegments];
+    const addBoundary = (start: Point, end: Point, a: number, b: number) => {
+      if (a < level && b < level) return;
+      const t = interpolate(level, a, b);
+      const crossing = { x: start.x + (end.x - start.x) * t, y: start.y + (end.y - start.y) * t };
+      fillSegments.push({ start: a >= level ? start : crossing, end: b >= level ? end : crossing });
+    };
+    for (let index = 0; index < resolution; index += 1) {
+      const a = index * step;
+      const b = (index + 1) * step;
+      addBoundary({ x: a, y: 0 }, { x: b, y: 0 }, grid.values[index], grid.values[index + 1]);
+      addBoundary({ x: a, y: CHUNK_SIZE }, { x: b, y: CHUNK_SIZE }, grid.values[resolution * stride + index], grid.values[resolution * stride + index + 1]);
+      addBoundary({ x: 0, y: a }, { x: 0, y: b }, grid.values[index * stride], grid.values[(index + 1) * stride]);
+      addBoundary({ x: CHUNK_SIZE, y: a }, { x: CHUNK_SIZE, y: b }, grid.values[index * stride + resolution], grid.values[(index + 1) * stride + resolution]);
+    }
+    fillPaths.push(stitchSegments(fillSegments));
   }
 
   return {
-    key: `${chunkX}:${chunkY}:${resolution}`,
+    key: `${seed}:${chunkX}:${chunkY}:${resolution}`,
     chunkX,
     chunkY,
     resolution,
     minorPath: minorSegments.join(""),
     majorPath: majorSegments.join(""),
+    fillPaths,
   };
 }
 
 const terrainCache = new Map<string, TerrainChunkGeometry>();
 
-export function getTerrainChunk(chunkX: number, chunkY: number, resolution: number) {
-  const key = `${chunkX}:${chunkY}:${resolution}`;
+export function getTerrainChunk(chunkX: number, chunkY: number, resolution: number, seed = TERRAIN_SEED) {
+  const key = `${seed}:${chunkX}:${chunkY}:${resolution}`;
   const cached = terrainCache.get(key);
   if (cached) {
     terrainCache.delete(key);
@@ -386,7 +413,7 @@ export function getTerrainChunk(chunkX: number, chunkY: number, resolution: numb
     return cached;
   }
 
-  const chunk = buildTerrainChunk(chunkX, chunkY, resolution);
+  const chunk = buildTerrainChunk(chunkX, chunkY, resolution, seed);
   terrainCache.set(key, chunk);
   if (terrainCache.size > TERRAIN_CACHE_LIMIT) {
     const oldestKey = terrainCache.keys().next().value;

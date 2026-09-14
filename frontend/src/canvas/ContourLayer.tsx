@@ -23,6 +23,7 @@ export function ContourLayer() {
   // that outer CSS transform, so convert screen pixels back to world units.
   const zoom = useStore(state => state.transform[2]);
   const storedViewport = useWorldStore((state) => state.viewport);
+  const terrainSeed = useWorldStore((state) => state.terrainSeed);
   const [terrainView, setTerrainView] = useState(() => terrainViewFor(storedViewport));
   const signature = useRef(terrainView.signature);
   const acceptViewport = useCallback((viewport: FlowViewportState) => {
@@ -39,10 +40,10 @@ export function ContourLayer() {
   useOnViewportChange({ onChange: onViewportChange, onEnd: onViewportChange });
   useEffect(() => acceptViewport(storedViewport), [acceptViewport, storedViewport]);
 
-  const chunks = useMemo(() => terrainView.keys.flatMap((key) => {
+  const chunks = useMemo(() => terrainSeed === null ? [] : terrainView.keys.flatMap((key) => {
     const coordinates = parseChunkKey(key);
-    return coordinates ? [getTerrainChunk(coordinates.x, coordinates.y, terrainView.resolution)] : [];
-  }), [terrainView]);
+    return coordinates ? [getTerrainChunk(coordinates.x, coordinates.y, terrainView.resolution, terrainSeed)] : [];
+  }), [terrainView, terrainSeed]);
 
   return (
     <ViewportPortal>
@@ -60,6 +61,9 @@ export function ContourLayer() {
           } as CSSProperties}
           role="presentation"
         >
+          {chunk.fillPaths.map((path, index) => path && (
+            <path key={index} className="contour-fill" fillRule="evenodd" d={path} />
+          ))}
           {chunk.minorPath && <path className="contour contour-minor" d={chunk.minorPath} />}
           {chunk.majorPath && <path className="contour contour-major" d={chunk.majorPath} />}
         </svg>

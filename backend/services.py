@@ -534,6 +534,7 @@ class ApplicationServices:
     llm_settings: LlmSettingsStore
     card_library: CardLibraryStore
     _sandbox_commands: dict[str, dict] = field(default_factory=dict, init=False, repr=False)
+    _sandbox_command_locks: dict[str, asyncio.Lock] = field(default_factory=dict, init=False, repr=False)
     _sandbox_stopping: set[str] = field(default_factory=set, init=False, repr=False)
     # Short-lived desktop review requests. Restart expires them; approval never
     # becomes a durable grant or an Agent tool argument.
@@ -1573,6 +1574,7 @@ class ApplicationServices:
                 edges=edges,
                 chunks=loaded_chunks,
                 chunk_size=self.world.chunk_size,
+                terrain_seed=self.world.terrain_seed,
             )
 
     def _validate_membership_change(self, current: Card, updated: Card) -> None:
@@ -2936,7 +2938,7 @@ class ApplicationServices:
                         self._sandbox_commands[sandbox_id] = receipt
                         save(self, sandbox_id, receipt)
                     result = await backend.execute(
-                        sandbox_id, execution_argv, timeout_seconds=timeout_seconds or self.world.get_card(sandbox_id).config.get("command_timeout", 60), **options
+                        sandbox_id, execution_argv, timeout_seconds=timeout_seconds or self.world.get_card(sandbox_id).config.get("command_timeout", 600), **options
                     )
                     if self._execution_secrets.get():
                         from backend.security.redaction import redact
@@ -2978,11 +2980,29 @@ class ApplicationServices:
                             sandbox_id, agent_id=agent_id
                         )
 
-            execution_task = asyncio.create_task(execute_and_refresh())
+            execution_started = False
+
+            async def execute_in_order() -> CommandResult:
+                nonlocal execution_started
+                lock = self._sandbox_command_locks.setdefault(sandbox_id, asyncio.Lock())
+                async with lock:
+                    execution_started = True
+                    return await execute_and_refresh()
+
+            execution_task = asyncio.create_task(execute_in_order())
             try:
                 return await asyncio.shield(execution_task)
             except asyncio.CancelledError:
                 async def stop_and_finish() -> None:
+                    if not execution_started and not _keep_on_disconnect:
+                        # A queued caller owns no native process. Cancelling it
+                        # must never terminate another caller's active command.
+                        execution_task.cancel()
+                        try:
+                            await execution_task
+                        except asyncio.CancelledError:
+                            pass
+                        return
                     if not command_finished.is_set() and not _keep_on_disconnect:
                         current = self._sandbox_commands.get(sandbox_id)
                         if current is not None:
@@ -3578,9 +3598,10 @@ def create_services(
     settings.data_root.mkdir(parents=True, exist_ok=True)
     for directory in ("projects", "assets", "sandboxes", "database", "logs"):
         (settings.data_root / directory).mkdir(parents=True, exist_ok=True)
+    new_world = not settings.database_path.exists()
     database = Database(settings.database_path)
     plugin_registry = plugins or load_plugin_registry(plugin_directories=settings.plugin_directories)
-    world = WorldStore(database, plugin_registry, chunk_size=settings.chunk_size)
+    world = WorldStore(database, plugin_registry, chunk_size=settings.chunk_size, new_world=new_world)
     try:
         card_library = CardLibraryStore(database, plugin_registry)
         from backend.migrations.barracks import check_legacy
