@@ -2,14 +2,14 @@ import { t, useLocale } from "../i18n";
 import { createPortal } from 'react-dom';
 import { getNodesBounds, getViewportForBounds, useReactFlow } from '@xyflow/react';
 import { ArrowRight, ChevronDown, Compass, RotateCcw, X } from 'lucide-react';
-import { useCallback, useEffect, useLayoutEffect, useRef, useState, type CSSProperties } from 'react';
+import { useCallback, useEffect, useId, useLayoutEffect, useRef, useState, type CSSProperties } from 'react';
 import { useCardLibrary } from '../state/cardLibrary';
 import { useWorldStore } from '../state/worldStore';
 import { useNodeSurfaceStore } from '../state/nodeSurfaces';
 import { beginGlueEdit, glueGroup, persistGlue, useGlueStore } from '../state/glue';
 import { nodePositionFromSurfacePosition } from '../canvas/nodeDisplacement';
 import { OawGuide, type GuideMotion } from './OawGuide';
-import { CHAPTERS, STEPS, starterPack, type Role, type Target } from './steps';
+import { CHAPTERS, STEPS, STARTER_CARDS, starterPack, type Role, type Target } from './steps';
 import { tutorial, useTutorialStore, type GuideVisuals } from './controller';
 import './onboarding.css';
 import { Spotlight, type SpotlightHandle } from './Spotlight';
@@ -68,6 +68,8 @@ export function Onboarding() {
   const tracePath = useRef<SVGPathElement>(null);
   const guide = useRef<HTMLDivElement>(null);
   const spotlight = useRef<SpotlightHandle>(null);
+  const deckArrow = useRef<SVGPathElement>(null);
+  const arrowId = useId();
   const flightLayer = useRef<HTMLDivElement>(null);
   const focusSequence = useRef(0);
   const welcome = s.view === 'welcome';
@@ -313,18 +315,39 @@ export function Onboarding() {
         const element = targetElement(role); return element ? [{ id: role, element }] : [];
       });
       const subjects = [...participants, ...(element && !participants.some(item => item.element === element) ? [{ id: target, element }] : [])];
+      const library = useCardLibrary.getState();
+      const deck = library.snapshot?.decks.find(item => item.id === (library.selectedDeckId || library.snapshot?.active_deck_id));
+      const candidates = s.view === 'active' && step.id === 'deck-build' && library.open && library.tab === 'cards'
+        ? STARTER_CARDS.filter(id => !deck?.entries.some(entry => entry.kind === 'node' && entry.id === id)).flatMap(id => {
+          const card = document.querySelector<HTMLElement>(`[data-library-card="${id}"]`);
+          return card ? [{ id: `library-card-${id}`, element: card.closest<HTMLElement>('.library-card') ?? card }] : [];
+        }) : [];
       const chooser = participants.length ? document.querySelector<HTMLElement>('.connection-dialog') : null;
-      const regions = [...subjects, ...(chooser ? [{ id: 'capability-chooser', element: chooser }] : [])];
+      const regions = [...subjects, ...candidates, ...(chooser ? [{ id: 'capability-chooser', element: chooser }] : [])];
       const elements = regions.map(item => item.element);
       for (const old of highlighted) if (!elements.includes(old)) old.removeAttribute('data-tutorial-highlight');
       for (const next of elements) if (!highlighted.includes(next)) {
         if (s.view === 'active') next.setAttribute('data-tutorial-highlight', 'true');
-        if (target.startsWith('model-') || target.startsWith('library-')) next.scrollIntoView({ block: 'nearest', inline: 'nearest' });
+        if (!candidates.some(item => item.element === next) && (target.startsWith('model-') || target.startsWith('library-'))) next.scrollIntoView({ block: 'nearest', inline: 'nearest' });
       }
       highlighted = elements;
       const visible = regions.map(item => ({ id: item.id, glow: !chooser || item.id === 'capability-chooser', ...(() => {
         const box = visibleBounds(item.element); return { x: box.x, y: box.y, width: box.width, height: box.height };
       })() })).filter(box => box.width > 0 && box.height > 0);
+      const source = visible.find(box => candidates.some(item => item.id === box.id));
+      const destination = document.querySelector<HTMLElement>('.library-deck-destination.is-selected .library-deck-destination-select');
+      const end = destination ? visibleBounds(destination) : undefined;
+      if (deckArrow.current) {
+        const show = source && end && end.width > 0 && end.height > 0;
+        deckArrow.current.style.display = show ? '' : 'none';
+        if (show) {
+          const x = source.x + source.width - 8, y = source.y + source.height / 2;
+          const tx = end.x + 16, ty = end.y + end.height / 2;
+          const bend = Math.max(35, Math.abs(tx - x) * .45);
+          deckArrow.current.setAttribute('d', `M ${x} ${y} C ${x + bend} ${y}, ${tx - bend} ${ty}, ${tx} ${ty}`);
+          deckArrow.current.dataset.source = source.id;
+        }
+      }
       const pair = step.participants?.map(role => useTutorialStore.getState().session?.refs[role]);
       let route = pair?.[0] && pair[1] ? connectionGeometry(pair[0], pair[1]) : undefined;
       if (route && step.participants?.[0] === 'glueA' && participants.length === 2) {
@@ -339,7 +362,7 @@ export function Onboarding() {
       // The character stays beside the interacting cards, even when an extra
       // tool is also illuminated. Including that distant toolbar in the bounds
       // would push the guide to an unrelated corner of the viewport.
-      const nearby = chooser ? [visibleBounds(chooser)] : participants.length
+      const nearby = source ? [new DOMRect(source.x, source.y, source.width, source.height)] : chooser ? [visibleBounds(chooser)] : participants.length
         ? participants.map(item => visibleBounds(item.element)).filter(box => box.width && box.height)
         : element ? [visibleBounds(element)] : [];
       const left = Math.min(...nearby.map(box => box.left)), top = Math.min(...nearby.map(box => box.top));
@@ -373,7 +396,7 @@ export function Onboarding() {
           ? '.settings-dialog input, .settings-dialog select, .settings-dialog button, .settings-dialog .field-label'
           : libraryOpen ? '.library-tabs button, .pack-touch-area, .library-card-inspect, .library-card-add, .library-deck-rail' : '.world-canvas .react-flow__node, .top-bar, .component-palette, .map-tools, .world-controls, .react-flow__minimap, .minister-presence:not([hidden]), .minister-panel, .toast-stack, .edge-inspector, .connection-dialog')]
           .map(element => element.getBoundingClientRect()).filter(box => box.width > 0 && box.height > 0);
-        const key = chooser ? 'capability-chooser' : participants.length ? participants.map(item => item.id).join(':') : target;
+        const key = source ? source.id : chooser ? 'capability-chooser' : participants.length ? participants.map(item => item.id).join(':') : target;
         const placed = placeGuide({ x, y }, rect, { width: bubbleWidth, height: bubbleHeight }, { width, height }, obstacles, mascotOffset, anchor.current?.key === key ? anchor.current : undefined);
         anchor.current = { ...placed, key };
         x = placed.x; y = placed.y;
@@ -391,7 +414,7 @@ export function Onboarding() {
     }
     place();
     return () => { cancelAnimationFrame(frame); highlighted.forEach(element => element.removeAttribute('data-tutorial-highlight')); };
-  }, [welcome, libraryOpen, s.view, target, step.participants, targetElement, flow, connectionGeometry, cards.length]);
+  }, [welcome, libraryOpen, s.view, target, step.id, step.participants, targetElement, flow, connectionGeometry, cards.length]);
 
   if (s.view === 'hidden') return null;
   const motion: GuideMotion = welcome || s.view === 'paused' ? 'idle' : s.busy ? 'think' : step.id === 'enter' ? 'enter' : step.expects ? 'indicate' : 'speak';
@@ -408,6 +431,10 @@ export function Onboarding() {
   const missing = role && step.expects !== 'place' && step.expects !== 'delete' && !cards.some(card => card.id === s.session?.refs[role]);
   return createPortal(<div className={`onboarding-layer ${welcome ? 'is-welcome' : 'is-tutorial'} ${settingsStep ? 'is-settings-guide' : ''} ${libraryOpen ? 'is-library-guide' : ''} ${step.participants ? 'is-interaction-guide' : ''}`}>
     <Spotlight ref={spotlight} />
+    <svg className="tutorial-deck-arrow" aria-hidden="true">
+      <defs><marker id={arrowId} viewBox="0 0 10 10" refX="8" refY="5" markerWidth="5" markerHeight="5" orient="auto-start-reverse"><path d="M 1 1 L 8 5 L 1 9" /></marker></defs>
+      <path ref={deckArrow} className="tutorial-deck-arrow-path" markerEnd={`url(#${arrowId})`} style={{ display: 'none' }} />
+    </svg>
     <div className={`onboarding-logo-ring ${welcome ? '' : 'has-entered'}`}><OawGuide ringOnly /></div>
     {welcome && <section className="onboarding-welcome" aria-label={t("Welcome to Open Agent World")}>
       <span className="onboarding-eyebrow">{t("A world of possibilities")}</span>
