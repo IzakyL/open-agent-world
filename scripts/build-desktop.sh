@@ -28,10 +28,11 @@ if [[ "${OPEN_AGENT_WORLD_MANUAL_DMG:-}" == "1" ]]; then
   dmg_dir="$PWD/desktop/src-tauri/target/release/bundle/dmg"
   mkdir -p "$dmg_dir"
   dmg="$dmg_dir/Open Agent World_${version}_x64.dmg"
-  staging_dir="$(mktemp -d "${TMPDIR:-/tmp}/open-agent-world-dmg.XXXXXX")"
-  cleanup_staging_dir() { rm -rf -- "$staging_dir"; }
-  ditto "$app" "$staging_dir/Open Agent World.app" || { cleanup_staging_dir; exit 1; }
-  hdiutil create -volname "Open Agent World" -srcfolder "$staging_dir" -ov -format UDZO "$dmg" || { cleanup_staging_dir; exit 1; }
-  cleanup_staging_dir
+  (
+    staging_dir="$(mktemp -d "${TMPDIR:-/tmp}/open-agent-world-dmg.XXXXXX")"
+    trap 'rm -rf -- "$staging_dir"' EXIT
+    ditto "$app" "$staging_dir/Open Agent World.app"
+    hdiutil create -volname "Open Agent World" -srcfolder "$staging_dir" -ov -format UDZO "$dmg"
+  )
 fi
 echo "Installer: desktop/src-tauri/target/release/bundle/dmg/"
