@@ -4,6 +4,8 @@
 
 # Open Agent World
 
+**English** | [简体中文](README.zh-CN.md)
+
 **Build agents. Bring them together. Give them a world to work in.**
 
 A visual workspace where AI agents, tools, and resources become cards you can connect.

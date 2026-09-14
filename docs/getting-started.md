@@ -1,5 +1,7 @@
 # Getting started
 
+**English** | [简体中文](getting-started.zh-CN.md)
+
 [Documentation](README.md) / [Configuration](configuration.md)
 
 ## Requirements and installation

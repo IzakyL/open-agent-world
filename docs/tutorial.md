@@ -1,5 +1,7 @@
 # Interactive tutorial
 
+**English** | [简体中文](tutorial.zh-CN.md)
+
 An empty world opens with the OAW logo and three choices: **Start Tutorial**, **Place Minister Card**, and **Start Directly**. The tutorial takes place on the real canvas. It covers navigation, cards, an Agent–Conversation–Sandbox workflow, sticking cards together, and the Minister. The compass button in the world controls replays it.
 
 The guide waits for your actions. Its small compass button finds the current subject or recovers a missing card. Minimize the bubble to clear some space; × skips the tutorial. After a reload, choose Resume or restart. Model setup uses the ordinary Agent settings and **Manage models**. Sending to a model is optional; a real provider must be configured to receive a useful reply. The guide does not generate a simulated response or start a Sandbox for you.

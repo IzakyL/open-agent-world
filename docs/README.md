@@ -1,5 +1,7 @@
 # Open Agent World documentation
 
+**English** | [简体中文](README.zh-CN.md)
+
 [Project home](../README.md)
 
 Use these guides to look up a feature or understand how it works. Start with setup if you are new; the other pages can be read independently.
