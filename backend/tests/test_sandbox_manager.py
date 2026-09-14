@@ -418,3 +418,23 @@ def test_workspace_creation_failure_and_card_rollback_keep_defaults_safe(tmp_pat
         assert response.status_code == 422
         assert services.world.list_cards() == []
     services.close()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize('saved_timeout', [60, 600, 3600, 36000])
+async def test_saved_timeout_without_execution_policy_support(tmp_path, monkeypatch, saved_timeout):
+    manager, backend = make_manager(tmp_path)
+    await manager.create('lab')
+    await manager.configure_options('lab', {'command_timeout': saved_timeout})
+    await manager.start('lab')
+    original = backend.execute
+    budgets = []
+
+    async def capture(*args, **kwargs):
+        budgets.append(kwargs['timeout_seconds'])
+        return await original(*args, **kwargs)
+
+    monkeypatch.setattr(backend, 'execute', capture)
+    await manager.execute('lab', ['echo', 'saved'])
+    await manager.execute('lab', ['echo', 'override'], timeout_seconds=1200)
+    assert budgets == [saved_timeout, 1200]

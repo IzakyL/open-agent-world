@@ -247,7 +247,7 @@ class _CapabilityContext:
             "current_command_id": current["id"] if current else None,
             "recent_commands": recent_summaries(self.services, sandbox_id),
             "console_mode": "non-interactive; each command starts in the configured workspace; cd/export/activation do not persist",
-            "command_timeout": self.services.world.get_card(sandbox_id).config.get("command_timeout", 60),
+            "command_timeout": self.services.world.get_card(sandbox_id).config.get("command_timeout", 600),
             "installation": "Use install_python_packages for the shared read-only Python environment. On Linux/WSL, HOME=/sandbox/home persists; use $HOME/.local/bin or $HOME/bin for local CLI tools, or create a private venv in HOME/workspace and invoke its interpreter explicitly. npm -g defaults to $HOME/.local, with bins on PATH. /tmp is ephemeral.",
             "attachments": [
                 {"resource_id": item.resource_id,

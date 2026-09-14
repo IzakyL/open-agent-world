@@ -122,7 +122,7 @@ export function SandboxSettings({ card, onDirtyChange, compact = false }: { card
   const network = draft.network ?? Boolean(card.config.network_enabled), setNetwork = (network: boolean) => edit({ network });
   const memory = draft.memory ?? Number(card.config.memory_bytes ?? 536870912), setMemory = (memory: number) => edit({ memory });
   const processes = draft.processes ?? Number(card.config.active_process_limit ?? 64), setProcesses = (processes: number) => edit({ processes });
-  const timeout = draft.timeout ?? Number(card.config.command_timeout ?? 60), setTimeoutValue = (timeout: number) => edit({ timeout });
+  const timeout = draft.timeout ?? Number(card.config.command_timeout ?? 600), setTimeoutValue = (timeout: number) => edit({ timeout });
   const [cacheMessage, setCacheMessage] = useState("");
   const [pickingFolder, setPickingFolder] = useState(false);
   const runtime = draft.runtime ?? card.config.runtime ?? "auto", setRuntime = (runtime: string) => edit({ runtime });
@@ -138,7 +138,7 @@ export function SandboxSettings({ card, onDirtyChange, compact = false }: { card
     || (workspace.trim() || null) !== (card.config.workspace_path ?? null)
     || access !== (card.config.workspace_access ?? "read_write")
     || network !== Boolean(card.config.network_enabled) || memory !== Number(card.config.memory_bytes ?? 536870912)
-    || processes !== Number(card.config.active_process_limit ?? 64) || timeout !== Number(card.config.command_timeout ?? 60);
+    || processes !== Number(card.config.active_process_limit ?? 64) || timeout !== Number(card.config.command_timeout ?? 600);
   useEffect(() => { onDirtyChange?.(dirty || pickingFolder); }, [dirty, pickingFolder, onDirtyChange]);
   const canConfigure = stopped && !busy && !pickingFolder && !!info;
   const selectedRuntime = runtimes?.runtimes.find((item) => item.id === (
@@ -160,7 +160,7 @@ export function SandboxSettings({ card, onDirtyChange, compact = false }: { card
           ...(network !== Boolean(card.config.network_enabled) ? { network_enabled: network } : {}),
           ...(memory !== Number(card.config.memory_bytes ?? 536870912) ? { memory_bytes: memory } : {}),
           ...(processes !== Number(card.config.active_process_limit ?? 64) ? { active_process_limit: processes } : {}),
-          ...(timeout !== Number(card.config.command_timeout ?? 60) ? { command_timeout: timeout } : {}),
+          ...(timeout !== Number(card.config.command_timeout ?? 600) ? { command_timeout: timeout } : {}),
         }).then(saved => { if (saved) useNodeSurfaceStore.getState().setDraft(draftKey, ""); });
       }}>
         <div className="section-heading">
@@ -217,7 +217,7 @@ export function SandboxSettings({ card, onDirtyChange, compact = false }: { card
           <div className="sandbox-limits-grid">
             <label className="field-label">{t("Memory (MiB)")}<input type="number" min={16} max={8192} disabled={!canConfigure} value={memory / 1048576} onChange={event => setMemory(Number(event.target.value) * 1048576)} /></label>
             <label className="field-label">{t("Process limit")}<input type="number" min={1} max={256} disabled={!canConfigure} value={processes} onChange={event => setProcesses(Number(event.target.value))} /></label>
-            <label className="field-label">{t("Command timeout (seconds)")}<input type="number" min={1} max={600} disabled={!canConfigure} value={timeout} onChange={event => setTimeoutValue(Number(event.target.value))} /></label>
+            <label className="field-label">{t("Command timeout (seconds)")}<input type="number" min={1} max={3600} disabled={!canConfigure} value={timeout} onChange={event => setTimeoutValue(Number(event.target.value))} /></label>
           </div>
           <p className="sandbox-help">{t("On Linux/WSL, the process limit includes threads. npm installers may need 64 or more.")}</p>
         </details>
