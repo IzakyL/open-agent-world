@@ -28,6 +28,6 @@ if [[ "${OPEN_AGENT_WORLD_MANUAL_DMG:-}" == "1" ]]; then
   dmg_dir="$PWD/desktop/src-tauri/target/release/bundle/dmg"
   mkdir -p "$dmg_dir"
   dmg="$dmg_dir/Open Agent World_${version}_x64.dmg"
-  hdiutil create -volname "Open Agent World" -srcfolder "$PWD/desktop/src-tauri/target/release/bundle/macos" -ov -format UDZO "$dmg"
+  hdiutil create -volname "Open Agent World" -srcfolder "$app" -ov -format UDZO "$dmg"
 fi
 echo "Installer: desktop/src-tauri/target/release/bundle/dmg/"
