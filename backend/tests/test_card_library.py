@@ -1,10 +1,11 @@
 from dataclasses import replace
+import json
 
 import pytest
 from fastapi.testclient import TestClient
-from pydantic import BaseModel
+from pydantic import BaseModel, ValidationError
 
-from backend.card_library import CardLibraryStore, LibraryEdit
+from backend.card_library import KEY, CardLibraryStore, LibraryEdit
 from backend.config import Settings
 from backend.errors import GraphValidationError, RevisionConflictError
 from backend.main import create_app
@@ -31,6 +32,39 @@ def install(registry, *, explicit=True, extra=False):
 
 def edit(store, action, **kwargs):
     return store.edit(LibraryEdit(expected_revision=store.read().revision, action=action, **kwargs))
+
+
+@pytest.mark.parametrize("compatibility", [False, True])
+def test_retired_pack_metadata_migrates_without_losing_user_state(tmp_path, compatibility):
+    db = Database(tmp_path / "world.db")
+    registry = create_builtin_registry()
+    install(registry)
+    store = CardLibraryStore(db, registry)
+    edit(store, "open_pack", id="example.default")
+    expected = edit(store, "update_deck", id="starter", entries=[{"id": "example.card"}])
+    payload = expected.model_dump(mode="json")
+    for pack in payload["packs"].values():
+        pack["definition"]["compatibility"] = compatibility
+    with db.transaction(immediate=True) as connection:
+        connection.execute("UPDATE application_settings SET value_json=? WHERE key=?", (json.dumps(payload), KEY))
+    # Also migrate metadata retained for plugins no longer installed.
+    restarted = CardLibraryStore(db, create_builtin_registry())
+    state = restarted.read()
+    assert state.decks == expected.decks
+    assert state.collection == expected.collection
+    assert state.active_deck_id == expected.active_deck_id
+    assert state.packs["example.default"] == expected.packs["example.default"]
+    with db.transaction() as connection:
+        saved = json.loads(connection.execute("SELECT value_json FROM application_settings WHERE key=?", (KEY,)).fetchone()[0])
+    assert all("compatibility" not in pack["definition"] for pack in saved["packs"].values())
+    assert restarted.read().revision == state.revision
+    # Unrecognized metadata still fails validation and is not rewritten.
+    saved["packs"]["example.default"]["definition"]["unexpected"] = True
+    with db.transaction(immediate=True) as connection:
+        connection.execute("UPDATE application_settings SET value_json=? WHERE key=?", (json.dumps(saved), KEY))
+    with pytest.raises(ValidationError):
+        restarted.read()
+    db.close()
 
 
 def test_new_install_open_deck_remove_restart(tmp_path):

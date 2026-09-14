@@ -3,20 +3,39 @@ import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-libra
 import { useRef } from "react";
 import { afterEach, expect, it, vi } from "vitest";
 import { worldApi } from "../api/client";
-import type { ConversationMessage, ConversationMessagePage } from "../types/world";
+import type { ConversationMessage, ConversationMessagePage, RuntimeEvent } from "../types/world";
 import { useConversationTimeline } from "./useConversationTimeline";
 const messages: ConversationMessage[] = Array.from({ length: 420 }, (_, i) => ({
   id: String(i + 1), sequence: i + 1, conversation_id: "room", session_id: "a",
   sender_kind: "agent", sender_name: "Atlas", content: `Message ${i + 1}`, mention_agent_ids: [], created_at: "2026-09-09T00:00:00Z",
 }));
-function Harness({ session = "a", refresh = "" }: { session?: string; refresh?: string }) {
+function Harness({ session = "a", refresh = "", events = [] }: { session?: string; refresh?: string; events?: RuntimeEvent[] }) {
   const ref = useRef<HTMLDivElement>(null);
-  const history = useConversationTimeline("room", session, refresh, true, ref);
+  const history = useConversationTimeline("room", session, refresh, true, ref, events);
   return <><button onClick={history.loadOlder}>Older</button><button onClick={history.loadNewer}>Newer</button>
     <div ref={ref} onScroll={history.onScroll}>{history.messages.map((m) => <p key={m.id} data-message-id={m.id}>{m.content}</p>)}</div>
+    <output data-testid="active">{history.activeAgentIds.join(",")}</output>
     <span>{history.loading ? "busy" : "ready"}</span></>;
 }
 afterEach(() => { cleanup(); vi.restoreAllMocks(); });
+it("preserves events arriving during a snapshot request, then lets a later snapshot repair missed stops", async () => {
+  let finish!: (page: ConversationMessagePage) => void;
+  const fetch = vi.spyOn(worldApi, "getConversationTimeline").mockImplementation(() => new Promise((resolve) => { finish = resolve; }));
+  const { rerender } = render(<Harness />);
+  const started: RuntimeEvent = { id: "start", type: "run_started", agent_id: "atlas", conversation_id: "room",
+    session_id: "a", timestamp: "2026-09-14T00:00:00Z", payload: {} };
+  rerender(<Harness events={[started]} />);
+  expect(screen.getByTestId("active").textContent).toBe("atlas");
+  const snapshot = { items: [messages[0]], has_before: false, has_after: false, active_agent_ids: [] };
+  await act(async () => finish(snapshot));
+  expect(screen.getByTestId("active").textContent).toBe("atlas");
+  fetch.mockResolvedValue(snapshot);
+  rerender(<Harness events={[started]} refresh="repair" />);
+  await waitFor(() => expect(screen.getByTestId("active").textContent).toBe(""));
+  fetch.mockResolvedValue({ ...snapshot, active_agent_ids: ["river"] });
+  rerender(<Harness events={[started]} refresh="reconnect" />);
+  await waitFor(() => expect(screen.getByTestId("active").textContent).toBe("river"));
+});
 it("keeps a bounded contiguous window while paging in both directions", async () => {
   vi.spyOn(worldApi, "getConversationTimeline").mockImplementation(async (_room, _session, cursor = {}) => {
     const filtered = messages.filter((m) => cursor.before !== undefined ? m.sequence! < cursor.before : cursor.after !== undefined ? m.sequence! > cursor.after : true);

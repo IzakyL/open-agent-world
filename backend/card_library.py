@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 from datetime import UTC, datetime
+import json
 from typing import Literal
 from uuid import uuid4
 
@@ -91,7 +92,24 @@ class CardLibraryStore:
     @staticmethod
     def _read(db) -> LibraryState | None:
         row = db.execute("SELECT value_json FROM application_settings WHERE key=?", (KEY,)).fetchone()
-        return LibraryState.model_validate_json(row[0]) if row else None
+        if row is None:
+            return None
+        payload = json.loads(row[0])
+        # Older catalogs persisted this retired metadata field. Migrate only
+        # stored snapshots; current plugin definitions remain strictly validated.
+        migrated = False
+        if isinstance(payload, dict) and payload.get("schema_version", 1) == 1:
+            packs = payload.get("packs", {})
+            if isinstance(packs, dict):
+                for pack in packs.values():
+                    definition = pack.get("definition") if isinstance(pack, dict) else None
+                    if isinstance(definition, dict) and "compatibility" in definition:
+                        del definition["compatibility"]
+                        migrated = True
+        state = LibraryState.model_validate(payload)
+        if migrated:
+            CardLibraryStore._write(db, state)
+        return state
 
     @staticmethod
     def _write(db, state: LibraryState) -> None:

@@ -48,6 +48,7 @@ export function activeConversationAgentIds(
   events: RuntimeEvent[],
   conversationId: string,
   sessionId?: string,
+  snapshotAgentIds: string[] = [],
 ): string[] {
   if (!sessionId) return [];
   const resolved = new Map<string, boolean>();
@@ -62,6 +63,9 @@ export function activeConversationAgentIds(
     }
     const state = responderState(event);
     if (state !== undefined) resolved.set(event.agent_id, state);
+  }
+  for (const agentId of snapshotAgentIds) {
+    if (!resolved.has(agentId)) resolved.set(agentId, true);
   }
   return [...resolved].filter(([, active]) => active).map(([agentId]) => agentId);
 }

@@ -61,6 +61,27 @@ describe("ConversationWorkspace snapshots", () => {
 
   afterEach(() => cleanup());
 
+  it("shows start and stop events immediately while the history refresh is stalled", async () => {
+    vi.mocked(worldApi.getConversation).mockResolvedValue({
+      conversation_id: card.id, sessions: [{ ...session, participant_ids: ["atlas"] }],
+      agents: [{ id: "atlas", name: "Atlas", status: "idle", model: "mock", connected: true }],
+    });
+    vi.mocked(worldApi.getConversationTimeline).mockResolvedValue({
+      items: [historicalMessage], has_before: false, has_after: false, active_agent_ids: [],
+    });
+    render(<ConversationWorkspace card={card} />);
+    await screen.findByText(historicalMessage.content);
+    const initialCalls = vi.mocked(worldApi.getConversationTimeline).mock.calls.length;
+    vi.mocked(worldApi.getConversationTimeline).mockReturnValue(new Promise(() => {}));
+    const started = { id: "start", type: "run_started", agent_id: "atlas", conversation_id: card.id,
+      session_id: session.id, timestamp: historicalMessage.created_at, payload: {} };
+    act(() => useWorldStore.setState({ events: [started] }));
+    expect(screen.getByLabelText("Atlas is responding")).toBeTruthy();
+    await waitFor(() => expect(worldApi.getConversationTimeline).toHaveBeenCalledTimes(initialCalls + 1));
+    act(() => useWorldStore.setState({ events: [{ ...started, id: "stop", type: "run_succeeded" }, started] }));
+    expect(screen.queryByLabelText("Atlas is responding")).toBeNull();
+  });
+
   it("uploads and sends an attachment without text, then previews its image", async () => {
     const attachment = { version_id: 'version-1', path: 'plot.png', name: 'plot.png', size_bytes: 12, media_type: 'image/png' };
     vi.spyOn(worldApi, 'uploadConversationAttachment').mockResolvedValue(attachment);
