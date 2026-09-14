@@ -3,9 +3,8 @@ import { useConversationTimeline } from "../state/useConversationTimeline";
 import { MarkdownMessage } from "./MarkdownMessage";
 import { ConversationAttachments } from "./ConversationAttachments";
 import { ArrowDown, Bot, Info, LoaderCircle, MessageSquare, MoreHorizontal, Paperclip, Pencil, Plus, Send, Trash2, UserMinus, UserRound, Users, X } from "lucide-react";
-import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { apiErrorMessage, worldApi } from "../api/client";
-import { activeConversationAgentIds } from "../state/conversationActivity";
 import {
   appendMention,
   completeMention,
@@ -35,6 +34,13 @@ export function ConversationWorkspace({ card }: { card: WorldCard }) {
         || event.type === "conversation_session_updated"
         || event.type === "conversation_session_deleted"
         || event.type === "agent_status_changed"
+        || event.type === "agent_started"
+        || event.type === "run_started"
+        || event.type === "run_resumed"
+        || event.type === "run_succeeded"
+        || event.type === "run_failed"
+        || event.type === "run_cancelled"
+        || event.type === "run_interrupted"
       ),
   )?.id);
   const pushToast = useWorldStore((state) => state.pushToast);
@@ -71,10 +77,7 @@ export function ConversationWorkspace({ card }: { card: WorldCard }) {
   const participants = (activeSession?.participant_ids ?? [])
     .map((id) => agents.find((item) => item.id === id))
     .filter((item): item is ConversationAgent => Boolean(item?.connected));
-  const respondingAgentIds = useMemo(() => activeConversationAgentIds(
-    runtimeEvents, card.id, activeSessionId,
-  ), [activeSessionId, card.id, runtimeEvents]);
-  const history = useConversationTimeline(card.id, activeSessionId, refreshEvent, socketLive, transcript);
+  const history = useConversationTimeline(card.id, activeSessionId, refreshEvent, socketLive, transcript, runtimeEvents);
   const visibleOutgoing = outgoing.filter((item) => item.message.conversation_id === card.id
     && item.message.session_id === activeSessionId && !history.messages.some((message) => message.id === item.message.id));
   const messages = [...history.messages, ...visibleOutgoing.map((item) => item.message)];
@@ -89,7 +92,7 @@ export function ConversationWorkspace({ card }: { card: WorldCard }) {
       revealOutgoing.current = false;
     }
   }, [outgoing]);
-  const respondingAgents = participants.filter((agent) => (history.activeAgentIds ?? respondingAgentIds).includes(agent.id));
+  const respondingAgents = participants.filter((agent) => history.activeAgentIds.includes(agent.id));
   const activeGroupId = activeSession?.group_id ?? activeSession?.id;
   const groups = [...new Map(sessions.map((session) => [session.group_id ?? session.id, session])).values()];
   const groupSessions = sessions.filter((session) => (session.group_id ?? session.id) === activeGroupId);

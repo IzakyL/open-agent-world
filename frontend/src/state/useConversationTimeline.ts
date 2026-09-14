@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState, type RefObject } from "react";
 import { apiErrorMessage, worldApi } from "../api/client";
-import type { ConversationMessagePage } from "../types/world";
+import type { ConversationMessagePage, RuntimeEvent } from "../types/world";
+import { activeConversationAgentIds } from "./conversationActivity";
 
 export const CONVERSATION_WINDOW_SIZE = 150;
 const emptyPage: ConversationMessagePage = { items: [], has_before: false, has_after: false };
@@ -8,11 +9,13 @@ type Direction = "latest" | "before" | "after" | "refresh";
 
 /** REST is authoritative. Keep a bounded contiguous window, including after reconnect. */
 export function useConversationTimeline(conversationId: string, sessionId: string | undefined,
-  refresh: string | undefined, socketLive: boolean, element: RefObject<HTMLDivElement>) {
+  refresh: string | undefined, socketLive: boolean, element: RefObject<HTMLDivElement>, events: RuntimeEvent[] = []) {
   const scope = `${conversationId}/${sessionId ?? ""}`;
   const currentScope = useRef(scope);
   currentScope.current = scope;
-  const [state, setState] = useState({ scope, page: emptyPage });
+  const [state, setState] = useState<{ scope: string; page: ConversationMessagePage; activityBoundary?: string }>({ scope, page: emptyPage });
+  const latestEvent = useRef<string>();
+  latestEvent.current = events[0]?.id;
   const [awayFromBottom, setAwayFromBottom] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string>();
@@ -33,6 +36,9 @@ export function useConversationTimeline(conversationId: string, sessionId: strin
       return;
     }
     const version = generation.current;
+    // Only events received after this request may override its snapshot.
+    // Capture before awaiting so events arriving in flight remain visible.
+    const activityBoundary = latestEvent.current;
     pending.current = true;
     if (direction !== "refresh") setLoading(true);
     const current = pageRef.current;
@@ -45,7 +51,7 @@ export function useConversationTimeline(conversationId: string, sessionId: strin
         const next = { ...current, active_agent_ids: incoming.active_agent_ids,
           has_after: current.has_after || incoming.items.length > 0 };
         pageRef.current = next;
-        setState({ scope, page: next });
+        setState({ scope, page: next, activityBoundary });
         setError(undefined);
         return;
       }
@@ -66,7 +72,7 @@ export function useConversationTimeline(conversationId: string, sessionId: strin
         has_after: direction === "before" ? current.has_after || trimmed : incoming.has_after,
       };
       pageRef.current = next;
-      setState({ scope, page: next });
+      setState({ scope, page: next, activityBoundary });
       setError(undefined);
     } catch (reason) {
       if (version === generation.current) setError(apiErrorMessage(reason));
@@ -145,7 +151,11 @@ export function useConversationTimeline(conversationId: string, sessionId: strin
     if (node.scrollTop < 40 && page.has_before) void load("before");
     else if (follow.current && page.has_after) void load("after");
   };
-  return { messages: page.items, activeAgentIds: page.active_agent_ids, hasBefore: page.has_before, hasAfter: page.has_after,
+  const boundaryIndex = state.scope === scope && state.activityBoundary
+    ? events.findIndex((event) => event.id === state.activityBoundary) : -1;
+  const activityEvents = boundaryIndex < 0 ? events : events.slice(0, boundaryIndex);
+  const activeAgentIds = activeConversationAgentIds(activityEvents, conversationId, sessionId, page.active_agent_ids);
+  return { messages: page.items, activeAgentIds, hasBefore: page.has_before, hasAfter: page.has_after,
     showLatest: state.scope === scope && (awayFromBottom || page.has_after),
     loading, error, onScroll, loadOlder: () => load("before"), loadNewer: () => load("after"),
     loadLatest: () => load("latest") };
