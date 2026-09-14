@@ -1,8 +1,14 @@
 <div align="center">
 
-<img src="docs/assets/logo.svg" alt="Open Agent World logo" width="160" />
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/assets/logo-dark.svg" />
+  <source media="(prefers-color-scheme: light)" srcset="docs/assets/logo.svg" />
+  <img src="docs/assets/logo.svg" alt="Open Agent World logo" width="160" />
+</picture>
 
 # Open Agent World
+
+**English** | [简体中文](README.zh-CN.md)
 
 **Build agents. Bring them together. Give them a world to work in.**
 
