@@ -2,71 +2,56 @@
 
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="docs/assets/logo-dark.svg" />
-  <source media="(prefers-color-scheme: light)" srcset="docs/assets/logo.svg" />
-  <img src="docs/assets/logo.svg" alt="Open Agent World 标志" width="160" />
+  <img src="docs/assets/logo.svg" alt="Open Agent World 标志" width="120" />
 </picture>
 
 # Open Agent World
 
 [English](README.md) | **简体中文**
 
-**创建智能体，让它们协作，给它们一个可以工作的世界。**
+**把 AI 团队放到一张画布上。**
 
-一个可视化工作空间：将 AI 智能体、工具和资源化为卡牌，通过连线建立协作关系。
+连接智能体、文件和工具，让每个智能体各司其职，在同一个工作空间里协作。
 
-[下载](https://github.com/theAfish/open-agent-world/releases) / [安装（中英混排）](docs/install.md) / [文档](docs/README.zh-CN.md) / [插件（英文）](docs/plugins.md)
+[下载](https://github.com/theAfish/open-agent-world/releases) · [开始使用](docs/install.md) · [文档](docs/README.zh-CN.md)
 
 </div>
 
-> **世界预览**：截图或简短演示 GIF 即将补充。
-<!-- 补充已提交到仓库的图片，展示一个小型、可运行的世界。 -->
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/assets/demos/world-overview-dark.png" />
+  <img src="docs/assets/demos/world-overview.png" alt="研究工作区：两个智能体连接项目说明、共享对话和任务板" width="1600" />
+</picture>
 
-## 可以做什么？
+## 看看它能做什么
 
-- **创建智能体（Agent）。** 选择模型、编写指令，连接它可以使用的资源和工具。
-- **组建团队。** 连接多个智能体，将它们组织成可复用的军团（Legion），通过任务板（Task Board）协调工作。
-- **构建世界。** 在开放画布上布置共享文档、工具箱和隔离的沙盒（Sandbox），也可以通过插件添加新的卡牌类型。
+### 连起你的 AI 团队
 
-## 快速开始
+给智能体共享资料，也给它们协作的方式。拖出一条连线，选择允许它做什么：读取文档、使用工具，或与另一个智能体交流。
 
-**安装桌面应用：** 打开 [Releases](https://github.com/theAfish/open-agent-world/releases)，展开 **Assets**，选择 Windows `.exe` 或与你的处理器匹配的 macOS 预览版 `.dmg`。详见[安装与首次使用（中英混排）](docs/install.md)。发布的安装包包含 Python 和应用依赖。**Source code** 压缩包供开发者使用。如果没有列出发行版，表示尚未发布公开安装包。
+![连接两个智能体，并选择双向通信权限](docs/assets/demos/connect-cards.gif)
 
-### 从源码运行
+### 把计划变成看得见的进展
 
-克隆仓库后，在仓库根目录运行以下命令。需要 **Python 3.11+**、**uv** 和 **Node.js 20+**。
+任务、依赖和进度放在一起。完成前置任务，下一步就会变为可开始；连接的智能体也可以更新任务板。
 
-**Windows（PowerShell）**
+![切换任务列表与依赖图，完成前置任务后解锁下一步](docs/assets/demos/task-dependencies.gif)
 
-```powershell
-./scripts/setup.ps1
-./scripts/start.ps1
-```
+### 把需要的工具带进工作区
 
-**Linux / WSL2**
+通过插件加入技能工具箱、隔离沙箱和专业查看器。例如，在对话中打开结构文件，旁边的三维查看器就会跟着切换。
 
-```bash
-bash scripts/setup.sh
-python3 scripts/start.py
-```
+![打开晶体文件、旋转三维结构，再切换到分子文件](docs/assets/demos/structure-viewer.gif)
 
-打开启动器输出的本地地址。在 **Settings > Models（设置 > 模型）** 中添加连接和模型，并选择默认模型。打开 **Pack & Card Library（卡包与卡牌库）**，收集卡牌并将它们加入牌组。
+*以上为 OAW 实际运行界面，使用示例数据。[静态截图与录制说明](docs/assets/demos/README.md)。*
 
-安装细节、macOS 限制，以及不配置模型凭据的体验方式，请参阅[入门指南](docs/getting-started.zh-CN.md)。
+## 开始使用
 
-开发时使用 `./scripts/dev.ps1` 或 `python3 scripts/dev.py`，按 **F3** 可选择性重置状态或生成压力测试卡牌。开发环境使用独立配置目录，日常使用的数据保留在原位置。Windows 安装包、发布预览、配置目录位置和恢复备份详见[桌面安装与开发（英文）](docs/desktop.md)。
+1. [下载桌面应用](https://github.com/theAfish/open-agent-world/releases)，按[安装指南](docs/install.md)完成安装。
+2. 在 **设置 → 模型** 中添加你的模型连接。
+3. 跟随画布教程收集卡牌、放置智能体，建立第一条连接。
 
-## 核心概念
+想从源码运行？查看[入门指南](docs/getting-started.zh-CN.md)。
 
-**卡牌代表事物，连线授予访问权限，画布就是你的世界。** 智能体只能使用连线允许访问的资源；修改连线也会改变访问权限。[了解核心概念（英文）](docs/concepts.md)
+[交互教程](docs/tutorial.zh-CN.md) · [插件（英文）](docs/plugins.md) · [参与贡献](docs/getting-started.zh-CN.md#开发与验证)
 
-## 学习与探索
-
-- **[交互教程](docs/tutorial.zh-CN.md)**：从空画布跟随 OAW 向导开始，或使用指南针按钮重放教程，学习导航、卡牌、连线、粘合和 Minister。
-- **[文档](docs/README.zh-CN.md)**：按需查阅功能用法、配置说明和技术参考。
-- **[插件（英文）](docs/plugins.md)**：使用内置扩展，或开发自己的卡牌、能力和运行时集成。
-
-## 参与贡献与许可证
-
-欢迎报告问题、改进文档和提交范围明确的修改。提交前请阅读[开发与验证](docs/getting-started.zh-CN.md#开发与验证)。
-
-OAW 是一个本地实验项目，仓库目前尚未包含许可证文件。
+OAW 是一个实验性项目，仓库目前尚未包含许可证文件。
