@@ -260,11 +260,9 @@ export function SandboxWorkspace({ card }: { card: WorldCard }) {
     } catch (e) { setError(apiErrorMessage(e)); }
   }
   async function savePreset() {
-    try {
-      const saved = await worldApi.updateNode(card.id, { config: { presets: { ...(card.config.presets as Record<string, string> ?? {}), [presetName.trim()]: draft } } });
-      useWorldStore.setState(s => ({ cards: s.cards.map(c => c.id === card.id ? saved : c) }));
-      setPresetName("");
-    } catch (e) { setError(apiErrorMessage(e)); }
+    // Route through the store so the mutation is serialized and revision-guarded.
+    await useWorldStore.getState().updateCard(card.id, { config: { presets: { ...(card.config.presets as Record<string, string> ?? {}), [presetName.trim()]: draft } } });
+    setPresetName("");
   }
   useEffect(() => {
     setBundle(undefined); setResource("");

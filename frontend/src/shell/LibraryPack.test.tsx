@@ -15,7 +15,7 @@ function fixture(): LibrarySnapshot {
   const descriptor = TEST_CATALOG.plugins.find(plugin => plugin.id === card.plugin_id)!;
   return { schema_version: 1, revision: 1, migration_pending: false,
     plugins: { [card.plugin_id]: { descriptor, enabled: true, installed: true } },
-    packs: { tools: { definition: { id: "tools", plugin_id: card.plugin_id, name: "Tools", description: "Useful tools", cards: [card.id], compatibility: false }, owned: true, opened: false, opened_at: null } },
+    packs: { tools: { definition: { id: "tools", plugin_id: card.plugin_id, name: "Tools", description: "Useful tools", cards: [card.id] }, owned: true, opened: false, opened_at: null } },
     card_definitions: { [card.id]: card }, collection: {}, decks: [], active_deck_id: "",
     available_pack_ids: ["tools"], available_card_ids: [] };
 }

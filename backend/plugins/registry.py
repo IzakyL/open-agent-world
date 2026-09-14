@@ -66,7 +66,6 @@ class PackDefinition(BaseModel):
 
 class PackCatalogItem(PackDefinition):
     plugin_id: str
-    compatibility: bool = False
     artwork_url: str | None = None
 
 
@@ -406,8 +405,7 @@ class PluginRegistry:
 
         staged = PluginRegistration(descriptor)
         register(staged)
-        compatibility = bool(staged.nodes) and not staged.packs
-        if compatibility:
+        if bool(staged.nodes) and not staged.packs:
             staged.register_pack(PackDefinition(
                 id=f"{descriptor.id}.default", name=descriptor.name or descriptor.id,
                 description=descriptor.description or "", cards=tuple(staged.nodes),
@@ -417,7 +415,7 @@ class PluginRegistry:
 
         self._plugins[descriptor.id] = descriptor
         self._commit_owned("pack", descriptor.id, self._packs, {
-            key: PackCatalogItem(**pack.model_dump(), plugin_id=descriptor.id, compatibility=compatibility,
+            key: PackCatalogItem(**pack.model_dump(), plugin_id=descriptor.id,
                 artwork_url=f"/api/plugins/{descriptor.id}/assets/{pack.artwork_asset}" if pack.artwork_asset else None)
             for key, pack in staged.packs.items()
         })

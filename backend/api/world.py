@@ -85,7 +85,6 @@ async def get_chunk_range(
 
 
 @router.get("/nodes", response_model=list[Card])
-@router.get("/cards", response_model=list[Card], include_in_schema=False)
 async def list_cards(
     chunks: str | None = Query(default=None),
     services: ApplicationServices = Depends(get_services),
@@ -94,9 +93,6 @@ async def list_cards(
 
 
 @router.post("/nodes", response_model=Card, status_code=status.HTTP_201_CREATED)
-@router.post(
-    "/cards", response_model=Card, status_code=status.HTTP_201_CREATED, include_in_schema=False
-)
 async def create_card(
     request: CardCreate,
     services: ApplicationServices = Depends(get_services),
@@ -121,7 +117,6 @@ async def duplicate_agent(card_id: str, services: ApplicationServices = Depends(
 
 
 @router.get("/nodes/{card_id}", response_model=Card)
-@router.get("/cards/{card_id}", response_model=Card, include_in_schema=False)
 async def get_card(
     card_id: str, services: ApplicationServices = Depends(get_services)
 ) -> Card:
@@ -129,7 +124,6 @@ async def get_card(
 
 
 @router.patch("/nodes/{card_id}", response_model=Card)
-@router.patch("/cards/{card_id}", response_model=Card, include_in_schema=False)
 async def update_card(
     card_id: str,
     request: CardPatch,
@@ -147,7 +141,6 @@ async def update_cards(
 
 
 @router.delete("/nodes/{card_id}", response_model=Card)
-@router.delete("/cards/{card_id}", response_model=Card, include_in_schema=False)
 async def delete_card(
     card_id: str, services: ApplicationServices = Depends(get_services),
     expected_revision: Annotated[int | None, Query(ge=1)] = None,

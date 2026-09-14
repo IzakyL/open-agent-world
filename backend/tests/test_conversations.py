@@ -510,6 +510,7 @@ class _ScriptedProvider:
     def __init__(self, mode: str) -> None:
         self.mode = mode
         self.configs: dict[str, Any] = {}
+        self.run_manager: Any = None
 
     async def create_agent(self, config: Any) -> Any:
         self.configs[config.agent_id] = config
@@ -534,7 +535,12 @@ class _ScriptedProvider:
                 {"text": ""},
                 run_status=RunStatus.SUCCEEDED,
             )
-        # "waiting": end the stream without a terminal status.
+        # "waiting": explicitly suspend, then end the turn. Silent stream
+        # exhaustion without a suspension is a provider protocol error.
+        if self.mode == "waiting":
+            await self.run_manager.suspend_run(
+                context.run_id, reason="external_job"
+            )
 
     async def stop(self, run_id: str) -> None:
         del run_id
@@ -561,6 +567,7 @@ def _scripted_conversation_services(data_root: Path, mode: str):
     settings = Settings.for_data_root(data_root)
     services = create_services(settings, plugins=registry)
     services.install_runtime_provider("test.scripted", provider, default=True)
+    provider.run_manager = services._require_run_manager()
     return services
 
 

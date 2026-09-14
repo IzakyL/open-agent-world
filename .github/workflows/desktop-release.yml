@@ -27,6 +27,8 @@ jobs:
           - runner: macos-15-intel
             platform: macos-x86_64
             extension: dmg
+            tauri_bundles: app
+            manual_dmg: '1'
     runs-on: ${{ matrix.runner }}
     timeout-minutes: 90
     steps:
@@ -65,6 +67,9 @@ jobs:
           ./scripts/build-desktop.ps1
       - name: Build macOS installer and verify app
         if: runner.os == 'macOS'
+        env:
+          OPEN_AGENT_WORLD_TAURI_BUNDLES: ${{ matrix.tauri_bundles }}
+          OPEN_AGENT_WORLD_MANUAL_DMG: ${{ matrix.manual_dmg }}
         run: bash scripts/build-desktop.sh
       - name: Collect installer and checksum
         shell: python
