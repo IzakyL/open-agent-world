@@ -53,7 +53,7 @@ function packSnapshot() {
   const pluginId = TEST_CATALOG.plugins[0].id;
   state.plugins = { [pluginId]: { descriptor: TEST_CATALOG.plugins[0], installed: true, enabled: true } };
   for (const [id, name, cards] of [["alpha", "Alpha pack", ["card.1", "card.2"]], ["beta", "Beta pack", ["card.3", "card.4"]]] as const) {
-    state.packs[id] = { definition: { id, name, plugin_id: pluginId, cards: [...cards], description: "Research tools", compatibility: false }, owned: true, opened: true, opened_at: null };
+    state.packs[id] = { definition: { id, name, plugin_id: pluginId, cards: [...cards], description: "Research tools" }, owned: true, opened: true, opened_at: null };
     for (const card of cards) state.collection[card].source_pack_ids = [id];
   }
   state.card_definitions["card.1"].label = "Review toolbox";

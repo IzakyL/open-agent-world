@@ -750,3 +750,36 @@ async def test_watchdog_resets_on_provider_activity(tmp_path: Path) -> None:
         assert record.status is RunStatus.SUCCEEDED
     finally:
         services.close()
+
+
+@pytest.mark.asyncio
+async def test_final_text_reads_from_state_and_terminal_task_releases_slot(
+    tmp_path: Path,
+) -> None:
+    provider = RecordingProvider(mode="success")
+    services = _services(tmp_path, provider)
+    try:
+        agent = await services.create_card(CardCreate(type="agent", name="Atlas"))
+        manager = services._require_run_manager()
+        run = await manager.start_run(agent.id, "produce output")
+        record = await manager.wait_terminal(run.run_id)
+        assert record.status is RunStatus.SUCCEEDED
+        # The durable state store is the only source for run output.
+        assert manager.final_text(run.run_id) == "produce output"
+        assert not manager.holds_agent_slot(run.run_id)
+
+        # Safety net: even if a terminal transition failed to release the slot,
+        # task completion must not leave a terminal Run occupying its Agent.
+        manager._occupied_runs[run.run_id] = agent.id
+        manager._task_finished(run.run_id)
+        assert not manager.holds_agent_slot(run.run_id)
+
+        # A non-terminal (waiting) Run keeps its slot when its turn task ends.
+        waiting_provider = RecordingProvider(mode="waiting")
+        manager.install_provider("test.runtime", waiting_provider)
+        waiting = await manager.start_run(agent.id, "external work")
+        assert (await manager.wait_execution(waiting.run_id)).status is RunStatus.WAITING
+        assert manager.holds_agent_slot(waiting.run_id)
+        await manager.cancel_run(waiting.run_id)
+    finally:
+        services.close()

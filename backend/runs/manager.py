@@ -88,7 +88,6 @@ class RunManager:
     _runtime_tasks: dict[str, asyncio.Task[None]] = field(default_factory=dict)
     _execution_done: dict[str, asyncio.Event] = field(default_factory=dict)
     _terminal_done: dict[str, asyncio.Event] = field(default_factory=dict)
-    _final_text: dict[str, str] = field(default_factory=dict)
     _occupied_runs: dict[str, str] = field(default_factory=dict)
     _suspensions: dict[str, RunSuspension] = field(default_factory=dict)
     _start_locks: dict[str, asyncio.Lock] = field(default_factory=dict)
@@ -310,8 +309,6 @@ class RunManager:
         return self.get_run(run_id)
 
     def final_text(self, run_id: str) -> str:
-        if run_id in self._final_text:
-            return self._final_text[run_id]
         scope = self.state.ensure_scope("run", run_id, schema_id="core.run")
         return self.state.resolve(StateContext((scope,)), "output_text").value
 
@@ -674,7 +671,6 @@ class RunManager:
                         last_signal=event.type.value)
                     text = event.payload.get("text")
                     if event.type.value == "agent_message" and isinstance(text, str):
-                        self._final_text[record.run_id] = text
                         self.state.set(context.state_context.local_scope, "output_text", text, run_id=record.run_id)
                     if event.run_status is not None:
                         current = self.get_run(record.run_id)
@@ -779,6 +775,16 @@ class RunManager:
         execution_done = self._execution_done.get(run_id)
         if execution_done is not None:
             execution_done.set()
+        # Safety net: a terminal Run must never retain its Agent slot, even if
+        # the terminal transition's release was interrupted by an exception.
+        try:
+            status = self.store.get(run_id).status
+        except Exception:
+            # Store unavailable (shutdown) or run purged; the in-memory slot
+            # map dies with the manager, so there is nothing to reconcile.
+            return
+        if status in TERMINAL_RUN_STATUSES:
+            self._release_agent_slot(run_id)
 
     def _provider_id(self, card: Card) -> str:
         provider_id = self._optional_provider_id(card)

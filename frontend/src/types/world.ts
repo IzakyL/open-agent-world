@@ -194,12 +194,12 @@ export interface RelationshipCatalogItem {
 }
 
 export interface PackDefinition {
-  id: string; plugin_id: string; name: string; description: string; cards: string[]; compatibility: boolean;
+  id: string; plugin_id: string; name: string; description: string; cards: string[];
   artwork_asset?: string | null; artwork_url?: string | null; accent_color?: string | null;
 }
 
 export interface PluginCatalog {
-  packs?: PackDefinition[];
+  packs: PackDefinition[];
   plugins: Array<{
     id: string;
     version: string;

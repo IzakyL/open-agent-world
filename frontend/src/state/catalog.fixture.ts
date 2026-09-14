@@ -50,6 +50,7 @@ function relationship(
 }
 
 export const TEST_CATALOG: PluginCatalog = {
+  packs: [],
   plugins: [
     {
       id: "open-agent-world.core",
