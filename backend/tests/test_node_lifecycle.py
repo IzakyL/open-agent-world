@@ -910,14 +910,15 @@ async def test_failed_batch_delete_preserves_agent_state_until_commit(
         services.state.set(agent_scope, "memory", {"kept": True})
         manager = services._require_run_manager()
         resumable = await manager.start_run(agent.id, "wait for resume")
-        assert (
-            await manager.wait_execution(resumable.run_id)
-        ).status is RunStatus.WAITING
         await manager.suspend_run(
             resumable.run_id,
             reason="external work",
             release_agent_slot=True,
         )
+        runtime.release_turn.set()
+        assert (
+            await manager.wait_execution(resumable.run_id)
+        ).status is RunStatus.WAITING
         run = await manager.start_run(agent.id, "keep working")
         await runtime.started.wait()
         assert manager.get_run(run.run_id).status is RunStatus.RUNNING
@@ -1154,11 +1155,15 @@ class BlockingAgentRuntime(MockAgentRuntime):
     def __init__(self) -> None:
         super().__init__(EmptyCapabilityProvider())  # type: ignore[arg-type]
         self.started = asyncio.Event()
+        self.release_turn = asyncio.Event()
         self.stopped_runs: list[str] = []
 
     async def execute(self, config: Any, context: Any, runtime_input: Any) -> Any:
         del config, context
         if runtime_input.prompt == "wait for resume":
+            # Hold the turn open so the test can register an explicit
+            # suspension before the stream is exhausted.
+            await self.release_turn.wait()
             return
         self.started.set()
         await asyncio.Event().wait()
@@ -1197,6 +1202,8 @@ async def test_failed_agent_finalization_keeps_admission_reserved_until_retry(
         agent = await services.create_card(CardCreate(id="cleanup-debt", type="agent"))
         manager = services._require_run_manager()
         run = await manager.start_run(agent.id, "wait for resume")
+        await manager.suspend_run(run.run_id, reason="external work")
+        runtime.release_turn.set()
         assert (await manager.wait_execution(run.run_id)).status is RunStatus.WAITING
         assert manager.holds_agent_slot(run.run_id)
 

@@ -103,7 +103,9 @@ export function useConversationTimeline(conversationId: string, sessionId: strin
     // must queue even when a prior snapshot is still in flight.
     if (refreshScope.current === scope) refreshTail();
     refreshScope.current = scope;
-    const timer = window.setInterval(refreshTail, 3000);
+    // While the websocket is healthy, invalidations arrive as events; keep only
+    // a slow repair poll. Fall back to fast polling when the socket is down.
+    const timer = window.setInterval(refreshTail, socketLive ? 30000 : 3000);
     return () => window.clearInterval(timer);
   }, [refresh, socketLive, load, scope]);
 

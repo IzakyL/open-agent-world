@@ -1,6 +1,7 @@
 import type { CardType, NodeTypeCatalogItem, PluginCatalog, Relationship } from "../types/world";
 
 export const EMPTY_CATALOG: PluginCatalog = {
+  packs: [],
   plugins: [],
   node_types: [],
   relationships: [],

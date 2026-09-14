@@ -199,7 +199,7 @@ export function normalizeLegionInstantiation(input: unknown): LegionInstantiatio
 
 export function normalizeWorldSnapshot(input: unknown): WorldSnapshot {
   const source = asRecord(input);
-  const nodes = (source.nodes ?? source.cards ?? []) as unknown[];
+  const nodes = (source.nodes ?? []) as unknown[];
   const edges = (source.edges ?? []) as unknown[];
   return {
     nodes: nodes.map(normalizeCard),

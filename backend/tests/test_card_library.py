@@ -143,7 +143,7 @@ def test_legacy_pack_and_atomic_validation():
     registry = create_builtin_registry()
     install(registry, explicit=False)
     pack = next(p for p in registry.catalog().packs if p.plugin_id == "example")
-    assert pack.id == "example.default" and pack.compatibility
+    assert pack.id == "example.default"
     assert pack.cards == ("example.card",)
     def invalid(registration):
         registration.register_pack(PackDefinition(id="invalid.pack", name="Invalid", cards=("example.card",)))

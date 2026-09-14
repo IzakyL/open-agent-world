@@ -17,7 +17,7 @@ it("edits plugin-defined settings and shows detected runtime without exposing co
     runtime_provider_id: { type: "string", title: "Fixed provider", const: "vendor.runtime" },
   } } } as unknown as NodeTypeCatalogItem;
   const update = vi.fn().mockResolvedValue(undefined);
-  useWorldStore.setState({ catalog: { plugins: [], node_types: [definition], relationships: [] }, updateCard: update });
+  useWorldStore.setState({ catalog: { packs: [], plugins: [], node_types: [definition], relationships: [] }, updateCard: update });
   vi.spyOn(worldApi, "getAgentInfo").mockResolvedValue({ session_id: "thread-123", details: { source: "desktop", version: "codex-cli 0.153.4" } });
   render(<AgentSchemaSettings card={card} />);
   expect(await screen.findByText("codex-cli 0.153.4")).toBeTruthy();
