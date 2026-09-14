@@ -29,7 +29,7 @@ if [[ "${OPEN_AGENT_WORLD_MANUAL_DMG:-}" == "1" ]]; then
   mkdir -p "$dmg_dir"
   dmg="$dmg_dir/Open Agent World_${version}_x64.dmg"
   staging_dir="$(mktemp -d "${TMPDIR:-/tmp}/open-agent-world-dmg.XXXXXX")"
-  trap 'rm -rf "$staging_dir"' EXIT
+  trap "rm -rf -- \"$staging_dir\"" EXIT
   ditto "$app" "$staging_dir/Open Agent World.app"
   hdiutil create -volname "Open Agent World" -srcfolder "$staging_dir" -ov -format UDZO "$dmg"
   rm -rf "$staging_dir"
