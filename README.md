@@ -2,71 +2,56 @@
 
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="docs/assets/logo-dark.svg" />
-  <source media="(prefers-color-scheme: light)" srcset="docs/assets/logo.svg" />
-  <img src="docs/assets/logo.svg" alt="Open Agent World logo" width="160" />
+  <img src="docs/assets/logo.svg" alt="Open Agent World logo" width="120" />
 </picture>
 
 # Open Agent World
 
 **English** | [简体中文](README.zh-CN.md)
 
-**Build agents. Bring them together. Give them a world to work in.**
+**Your AI team, on one canvas.**
 
-A visual workspace where AI agents, tools, and resources become cards you can connect.
+Connect agents, files, and tools. Give each agent a role and a place to work together.
 
-[Download / 下载](https://github.com/theAfish/open-agent-world/releases) / [Install](docs/install.md) / [Documentation](docs/README.md) / [Plugins](docs/plugins.md)
+[Download](https://github.com/theAfish/open-agent-world/releases) · [Get started](docs/install.md) · [Documentation](docs/README.md)
 
 </div>
 
-> **World preview**: screenshot or short demo GIF coming soon.
-<!-- Replace this placeholder with a committed image showing a small working world. -->
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/assets/demos/world-overview-dark.png" />
+  <img src="docs/assets/demos/world-overview.png" alt="A research workspace with two agents, a project brief, shared conversation, and task board" width="1600" />
+</picture>
 
-## What can I do?
+## See it in action
 
-- **Build an Agent.** Choose a model, give it instructions, and connect the resources and tools it can use.
-- **Build a Team.** Connect agents, organize them into reusable Legions, and coordinate work with a Task Board.
-- **Build a World.** Arrange shared documents, toolboxes, and isolated Sandboxes on an open canvas. Add new kinds of cards through plugins.
+### Connect a team
 
-## Quick Start
+Give agents shared context and a way to collaborate. Drag a connection and choose what it allows: reading a document, using a tool, or talking to another agent.
 
-**Install the desktop app:** open [Releases](https://github.com/theAfish/open-agent-world/releases), expand **Assets**, and select the Windows `.exe` or the macOS preview `.dmg` matching your processor. See [installation and first use / 安装与使用](docs/install.md). Published installers include Python and application dependencies. **Source code** archives are for developers. If no release is listed, a public installer has not been published yet.
+![Connect two agents and choose two-way communication](docs/assets/demos/connect-cards.gif)
 
-### Run from source
+### Turn a plan into visible progress
 
-Clone this repository and run from its root. You need **Python 3.11+**, **uv**, and **Node.js 20+**.
+Keep tasks, dependencies, and progress together. Complete a prerequisite and the next task becomes ready; connected agents can also update the board.
 
-**Windows (PowerShell)**
+![Switch between tasks and dependencies, then complete a prerequisite to unlock the next task](docs/assets/demos/task-dependencies.gif)
 
-```powershell
-./scripts/setup.ps1
-./scripts/start.ps1
-```
+### Bring your tools into the workspace
 
-**Linux / WSL2**
+Add skill toolboxes, isolated Sandboxes, and specialized viewers through plugins. Here, opening a file in a Conversation updates a connected 3D structure viewer.
 
-```bash
-bash scripts/setup.sh
-python3 scripts/start.py
-```
+![Open a crystal file, rotate its structure, and switch to a molecule in the connected viewer](docs/assets/demos/structure-viewer.gif)
 
-Open the local URL printed by the launcher. In **Settings > Models**, add a connection and model, then choose a default. Open **Pack & Card Library** to collect cards and add them to your deck.
+*Captured from running OAW with sample data. [Still images and recording notes](docs/assets/demos/README.md).*
 
-See [Getting started](docs/getting-started.md) for setup details, macOS limitations, and trying the canvas without model credentials.
+## Try it
 
-For development, use `./scripts/dev.ps1` or `python3 scripts/dev.py`, then press **F3** for selective state resets and stress cards. Development uses a separate profile; existing daily-use data stays in its original location. See [Desktop installation and development](docs/desktop.md) for the Windows installer, release preview, profile locations, and recovery backups.
+1. [Download the desktop app](https://github.com/theAfish/open-agent-world/releases) and follow the [installation guide](docs/install.md).
+2. Add your model connection in **Settings → Models**.
+3. Follow the canvas tutorial to collect cards, place an Agent, and make your first connections.
 
-## The mental model
+Prefer running from source? See [Getting started](docs/getting-started.md).
 
-**Cards are things. Connections grant access. The canvas is your world.** An Agent can use the resources its connections allow; changing a connection changes that access. [Explore the concepts](docs/concepts.md)
+[Tutorial](docs/tutorial.md) · [Plugins](docs/plugins.md) · [Contributing](docs/getting-started.md#development-and-verification)
 
-## Learn and explore
-
-- **[Interactive Tutorial](docs/tutorial.md).** Start from the empty canvas with the OAW guide, or use the compass button to replay navigation, cards, connections, sticking, and the Minister.
-- **[Docs](docs/README.md)**: feature usage, configuration, and technical reference you can read as needed.
-- **[Plugins](docs/plugins.md)**: use bundled extensions or develop your own cards, capabilities, and runtime integrations.
-
-## Contributing and License
-
-Bug reports, documentation improvements, and focused changes are welcome. See [development and verification](docs/getting-started.md#development-and-verification) before submitting changes.
-
-OAW is a local experimental project. No repository license file is currently included.
+OAW is an experimental project. No repository license file is currently included.
