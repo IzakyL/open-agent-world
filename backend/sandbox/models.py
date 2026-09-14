@@ -12,6 +12,12 @@ from datetime import datetime, timezone
 from enum import Enum
 from pathlib import Path, PurePath
 from typing import Any, Mapping
+from contextvars import ContextVar
+
+
+# Follows a command through async tasks and native worker threads. WSL carries
+# the value explicitly across its process boundary.
+execution_command_id: ContextVar[str | None] = ContextVar("sandbox_command_id", default=None)
 
 
 class _StringEnum(str, Enum):
@@ -102,6 +108,8 @@ class CommandResult:
     duration_seconds: float
     timed_out: bool = False
     cancelled: bool = False
+    command_id: str | None = None
+    concurrent_commands: tuple[Mapping[str, Any], ...] = ()
 
 
 @dataclass(frozen=True, slots=True)
@@ -136,4 +144,8 @@ class SandboxNetworkError(SandboxSecurityError):
 
 class SandboxValidationError(SandboxError, ValueError):
     pass
+
+
+class SandboxBusyError(SandboxStateError, SandboxValidationError):
+    """A temporary shared-resource conflict that the caller can retry."""
 

@@ -214,7 +214,7 @@ def test_cancelled_skill_command_revokes_runtime_before_return(runtime_client, m
     client.portal.call(cancel)
     script = backend._sandboxes_root / sandbox["id"] / ".oaw/skills" / skill["id"] / "scripts/check.py"
     assert (script, True) in native.grants and script in native.revocations
-    assert client.portal.call(backend.get, sandbox["id"]).state == SandboxState.STOPPED
+    assert client.portal.call(backend.get, sandbox["id"]).state == SandboxState.READY
 
 
 def test_runtime_cache_rejects_hardlinks_before_reuse_or_cleanup(tmp_path):

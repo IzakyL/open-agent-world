@@ -130,7 +130,7 @@ class ArtifactStore:
     def reserve_source(self, services, sandbox_id, agent_id):
         self.check_source(services, sandbox_id, agent_id)
         services.summoning.assert_admission(sandbox_id)
-        if sandbox_id in services._sandbox_commands or sandbox_id in services._sandbox_stopping:
+        if any(r["sandbox_id"] == sandbox_id for r in services._sandbox_commands.values()) or sandbox_id in services._sandbox_stopping:
             raise ConflictError('Finalize files and wait for Sandbox execution and cleanup before transfer')
         self.assert_source_idle(sandbox_id)
         self.source_leases[sandbox_id] = 1

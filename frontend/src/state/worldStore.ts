@@ -1643,6 +1643,7 @@ export const useWorldStore = create<WorldState>()(persist((set, get) => ({
       const receivedOutput = (channel: "stdout" | "stderr") => get().events.some((event) => (
         !previousEventIds.has(event.id)
         && (event.sandbox_id ?? event.node_id) === id
+        && (!result.command_id || event.payload.command_id === result.command_id)
         && event.type.toLowerCase().includes(channel)
         && !!(event.payload.text ?? event.payload.output ?? event.message)
       ));
@@ -1792,13 +1793,15 @@ export const useWorldStore = create<WorldState>()(persist((set, get) => ({
               normalizedType.includes("error");
             const existing = Array.isArray(card.config.output) ? card.config.output : [];
             const output = shouldAppend && outputText
-              ? [...existing, `${normalizedType.includes("stderr") ? "! " : ""}${outputText}`].slice(-100)
+              ? [...existing, `${event.payload.command_id ? `[${String(event.payload.caller ?? "")} ${String(event.payload.command_id).slice(0, 8)}] ` : ""}${normalizedType.includes("stderr") ? "! " : ""}${outputText}`].slice(-100)
               : existing;
             return mergeCardPatch(card, {
               status,
               config: {
                 output,
-                active_command: normalizedType.includes("command_finished")
+                active_command: Array.isArray(event.payload.active_commands)
+                  ? event.payload.active_commands.map((item: { argv?: string[] }) => (item.argv ?? []).join(" ")).join(" · ")
+                  : normalizedType.includes("command_finished")
                   ? ""
                   : String(event.payload.command ?? card.config.active_command ?? ""),
               },

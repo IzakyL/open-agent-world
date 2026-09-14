@@ -347,9 +347,9 @@ async def sandbox_history(sandbox_id: str, services=Depends(get_services)):
 
 
 @router.post("/sandboxes/{sandbox_id}/cancel")
-async def sandbox_cancel(sandbox_id: str, services=Depends(get_services)):
+async def sandbox_cancel(sandbox_id: str, command_id: str | None = None, services=Depends(get_services)):
     from backend.sandbox.history import stop
-    return await stop(services, sandbox_id)
+    return await stop(services, sandbox_id, command_id=command_id)
 
 
 @router.get("/sandboxes/{sandbox_id}/files")
@@ -395,9 +395,9 @@ async def sandbox_skill(sandbox_id: str, skill_id: str, services=Depends(get_ser
     files = [("SKILL.md", skill.instructions.encode()), *[(path, base64.b64decode(value.data_base64) if isinstance(value, SkillAsset) else value.encode()) for path, value in skill.files.items()]]
     bundle = RuntimeBundle(f"skills/{skill_id}", tuple(files), tuple(skill.directories))
     cache = await services._require_sandbox_backend().bundle_status(sandbox_id, bundle)
-    current = services._sandbox_commands.get(sandbox_id)
+    active_commands = [r for r in services._sandbox_commands.values() if r["sandbox_id"] == sandbox_id]
     info = await services.get_sandbox(sandbox_id)
-    active = bool(current and current.get("skill_id") == skill_id and info.state.value == "running")
+    active = any(r.get("skill_id") == skill_id for r in active_commands)
     return {**cache, "revision": snapshot["revision"], "bundle_key": bundle.key, "files": [path for path, _ in files],
         "active_execution": active,
         "status": "active execution" if active else "bundle available",

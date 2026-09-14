@@ -11,7 +11,7 @@ import re
 import shutil
 import stat
 import threading
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from pathlib import Path, PureWindowsPath
 from typing import Any
 from collections.abc import Mapping
@@ -20,6 +20,7 @@ from .base import SandboxBackend, SandboxEventSink
 from .materialization import RuntimeMount, materialize_bundle, runtime_tree, cleanup_materializations
 from .environment import minimal_windows_environment
 from .models import (
+    SandboxBusyError,
     CommandResult,
     ResourceAccess,
     ResourceAttachment,
@@ -56,6 +57,11 @@ class _SandboxRecord:
     workspace_handle: int | None = None
     state: SandboxState = SandboxState.STOPPED
     attachments: dict[str, ResourceAttachment] = field(default_factory=dict)
+    execution_id: str | None = None
+    executions: dict[str, _SandboxRecord] = field(default_factory=dict)
+    finished: asyncio.Event = field(default_factory=asyncio.Event)
+    cleanup_failed: bool = False
+    exclusive_execution: bool = False
     active_command: tuple[str, ...] | None = None
     active_job: int | None = None
     cancel_event: threading.Event | None = None
@@ -162,8 +168,12 @@ class WindowsSandboxBackend(SandboxBackend):
     async def start(self, sandbox_id: str) -> SandboxInfo:
         record = await self._record(sandbox_id)
         async with record.lock:
-            if record.state == SandboxState.RUNNING:
+            if not record.stop_requested and not record.cleanup_failed and record.state in {SandboxState.READY, SandboxState.RUNNING}:
+                return self._info(record)
+            if record.executions or record.state == SandboxState.RUNNING:
                 raise SandboxStateError("cannot start a sandbox while a command is running")
+            if record.cleanup_failed:
+                raise SandboxStateError("Stop the Sandbox to resolve pending cleanup before starting")
             if record.state == SandboxState.READY:
                 return self._info(record)
             # Reassert the native ACL so external ACL removal cannot turn into
@@ -226,8 +236,82 @@ class WindowsSandboxBackend(SandboxBackend):
         await self._emit_state(record)
         return self._info(record)
 
-    async def execute(
-        self,
+    async def execute(self, sandbox_id, argv, **options):
+        from .models import execution_command_id
+        from uuid import uuid4
+        owner = await self._record(sandbox_id)
+        command_id = execution_command_id.get() or uuid4().hex
+        exclusive = options.get("runtime_mount") is not None or bool((options.get("execution_policy") or {}).get("network_enabled"))
+        if self.python_runtime is not None:
+            await self.python_runtime.prepare()
+        async with owner.lock:
+            if owner.stop_requested or owner.state not in {SandboxState.READY, SandboxState.RUNNING}:
+                raise SandboxStateError("sandbox must be ready before executing a command")
+            # Windows bundle ACLs and network filters belong to the shared
+            # AppContainer identity. Changing them needs exclusive admission.
+            if owner.executions and (exclusive or owner.exclusive_execution):
+                raise SandboxBusyError("Windows runtime bundle/network policy is in use; retry after active commands finish")
+            if not owner.executions:
+                try:
+                    self._revoke_runtime_access(owner)
+                    if self.python_runtime is not None:
+                        for path in (self.python_runtime.venv, self.python_runtime.base):
+                            self._native.grant_runtime_path(path, owner.profile.sid)
+                except BaseException:
+                    owner.state = SandboxState.ERROR
+                    if self.python_runtime is not None:
+                        for path in (self.python_runtime.venv, self.python_runtime.base):
+                            self._native.revoke_path(path, owner.profile.sid)
+                    self._write_manifest(owner)
+                    raise
+            record = replace(owner, state=SandboxState.READY, execution_id=command_id,
+                executions={}, lock=asyncio.Lock(), thread_lock=threading.Lock(),
+                command_done=asyncio.Event(), finished=asyncio.Event(), cancel_event=threading.Event(),
+                attachments=dict(owner.attachments))
+            owner.executions[command_id] = record
+            owner.exclusive_execution = exclusive
+            owner.state = SandboxState.RUNNING
+            if (options.get("execution_policy") or {}).get("network_enabled"):
+                owner.network_filters_installed = True
+            try:
+                self._write_manifest(owner)
+            except BaseException:
+                owner.executions.pop(command_id, None)
+                owner.state = SandboxState.ERROR
+                if not owner.executions and self.python_runtime is not None:
+                    for path in (self.python_runtime.venv, self.python_runtime.base):
+                        self._native.revoke_path(path, owner.profile.sid)
+                raise
+        token = execution_command_id.set(command_id)
+        try:
+            return await self._execute_record(record, sandbox_id, argv, **options)
+        finally:
+            async with owner.lock:
+                owner.executions.pop(command_id, None)
+                owner.state = (SandboxState.RUNNING if owner.executions else
+                    SandboxState.STOPPED if owner.stop_requested else SandboxState.READY)
+                if record.state == SandboxState.ERROR:
+                    owner.cleanup_failed = True
+                if owner.cleanup_failed:
+                    owner.state = SandboxState.ERROR
+                try:
+                    if not owner.executions:
+                        owner.exclusive_execution = False
+                        if self.python_runtime is not None:
+                            for path in (self.python_runtime.venv, self.python_runtime.base):
+                                self._native.revoke_path(path, owner.profile.sid)
+                    self._write_manifest(owner)
+                except BaseException:
+                    owner.cleanup_failed = True
+                    owner.state = SandboxState.ERROR
+                    raise
+                finally:
+                    record.finished.set()
+            execution_command_id.reset(token)
+            await self._emit_state(owner)
+
+    async def _execute_record(
+        self, record: _SandboxRecord,
         sandbox_id: str,
         argv: Any,
         *,
@@ -237,7 +321,6 @@ class WindowsSandboxBackend(SandboxBackend):
         runtime_mount: RuntimeMount | None = None,
         execution_policy: Mapping[str, Any] | None = None,
     ) -> CommandResult:
-        record = await self._record(sandbox_id)
         policy = execution_policy or {}
         network_enabled = policy.get("network_enabled", False)
         if type(network_enabled) is not bool:
@@ -258,6 +341,8 @@ class WindowsSandboxBackend(SandboxBackend):
             raise SandboxValidationError("timeout_seconds must be positive")
 
         async with record.lock:
+            if record.stop_requested:
+                return CommandResult(sandbox_id, command, -9, "", "", 0, cancelled=True)
             if record.state != SandboxState.READY:
                 raise SandboxStateError(
                     f"sandbox {sandbox_id} must be ready, not {record.state.value}"
@@ -282,8 +367,6 @@ class WindowsSandboxBackend(SandboxBackend):
             if network_enabled:
                 record.network_filters_installed = True
             record.active_command = command
-            record.cancel_event = threading.Event()
-            record.stop_requested = False
             record.command_done.clear()
             try:
                 self._write_manifest(record)
@@ -368,8 +451,6 @@ class WindowsSandboxBackend(SandboxBackend):
                 record.active_command = None
                 record.cancel_event = None
                 record.command_done.set()
-                if record.workspace_path is not None:
-                    await asyncio.to_thread(self._revoke_workspace, record)
                 self._write_manifest(record)
             await self._emit(
                 SandboxEvent(
@@ -429,32 +510,30 @@ class WindowsSandboxBackend(SandboxBackend):
             cleanup_materializations(record.root)
 
     async def cancel(self, sandbox_id):
-        record = await self._record(sandbox_id)
-        async with record.lock:
-            if record.cancel_event is not None:
-                record.cancel_event.set()
-            with record.thread_lock:
-                job = record.active_job
-        if job is not None:
-            await asyncio.to_thread(self._native.terminate_job, job)
-        await record.command_done.wait()
+        owner = await self._record(sandbox_id)
+        async with owner.lock:
+            active = list(owner.executions.values())
+            for record in active:
+                record.stop_requested = True
+                if record.cancel_event is not None:
+                    record.cancel_event.set()
+                with record.thread_lock:
+                    job = record.active_job
+                if job is not None:
+                    await asyncio.to_thread(self._native.terminate_job, job)
+        await asyncio.gather(*(record.finished.wait() for record in active))
 
     async def terminate(self, sandbox_id: str) -> None:
         record = await self._record(sandbox_id)
         async with record.lock:
             record.stop_requested = True
-            cancel = record.cancel_event
-            with record.thread_lock:
-                job = record.active_job
-            if cancel is not None:
-                cancel.set()
-
-        if job is not None:
-            await asyncio.to_thread(self._native.terminate_job, job)
-        if not record.command_done.is_set():
-            await record.command_done.wait()
+        await self.cancel(sandbox_id)
         interrupted = False
         async with record.lock:
+            self._revoke_runtime_access(record)
+            if self.python_runtime is not None:
+                for path in (self.python_runtime.venv, self.python_runtime.base):
+                    self._native.revoke_path(path, record.profile.sid)
             if record.workspace_path is not None:
                 try:
                     interrupted = await self._security_mutation(self._revoke_workspace, record)
@@ -463,6 +542,7 @@ class WindowsSandboxBackend(SandboxBackend):
                     self._write_manifest(record)
                     raise
             record.state = SandboxState.STOPPED
+            record.cleanup_failed = False
             self._write_manifest(record)
         await self._emit_state(record)
         if interrupted:
@@ -483,14 +563,17 @@ class WindowsSandboxBackend(SandboxBackend):
             except ValueError as exc:
                 raise SandboxValidationError(f"invalid resource access: {access}") from exc
         record = await self._record(sandbox_id)
-        if record.state == SandboxState.RUNNING:
-            await self.terminate(sandbox_id)
-
         validated_source = self._validate_source(Path(source), record)
         validated_relative = self._validate_relative_path(relative_path)
         target = self._safe_child(record.root / "workspace", *PureWindowsPath(validated_relative).parts)
 
         async with record.lock:
+            attachment = ResourceAttachment(sandbox_id, resource_id, validated_source, validated_relative, access)
+            if (not record.stop_requested and record.attachments.get(resource_id) == attachment
+                and target.is_file() and os.path.samefile(validated_source, target)):
+                return attachment
+            if record.executions or record.state == SandboxState.RUNNING:
+                raise SandboxBusyError("Resource mounts are in use; retry after active commands finish")
             if any(
                 attachment.source == validated_source
                 and existing_id != resource_id
@@ -568,7 +651,7 @@ class WindowsSandboxBackend(SandboxBackend):
 
     async def detach_resource(self, sandbox_id: str, resource_id: str) -> None:
         record = await self._record(sandbox_id)
-        if record.state == SandboxState.RUNNING:
+        if record.executions or record.state == SandboxState.RUNNING:
             await self.terminate(sandbox_id)
         async with record.lock:
             attachment = record.attachments.get(resource_id)
@@ -629,8 +712,10 @@ class WindowsSandboxBackend(SandboxBackend):
             raise SandboxSecurityError("Runtime bundle ACL revocation failed: " + "; ".join(errors[:3]))
 
     def _run_with_runtime_mount(self, record, mount_root, command, **options):
-        # Clear stale grants after an interrupted host process, including for
-        # ordinary commands which have no runtime mount at all.
+        if mount_root is None:
+            return self._native.run_appcontainer(record.profile, command, **options)
+        # Bundle commands have exclusive admission because these grants use
+        # the shared AppContainer identity. Ordinary commands skip this path.
         self._revoke_runtime_access(record)
         shared_paths = []
         try:
@@ -790,6 +875,8 @@ class WindowsSandboxBackend(SandboxBackend):
         return record
 
     def _write_manifest(self, record: _SandboxRecord) -> None:
+        if record.execution_id is not None:
+            return
         state = record.state
         # Persisting RUNNING is informative only; reload always becomes stopped.
         payload = {
@@ -834,7 +921,7 @@ class WindowsSandboxBackend(SandboxBackend):
             network_reason=self._network_reason,
             network_available=self._network_available,
             network_status="available" if self._network_available else "missing_component",
-            active_command=record.active_command,
+            active_command=(next(iter(record.executions.values())).active_command if len(record.executions) == 1 else record.active_command),
             runtime_id="windows",
             platform="windows",
             shell=(str(Path(os.environ.get("SystemRoot", r"C:\Windows")) / "System32" / "cmd.exe"), "/d", "/s", "/c"),
@@ -1055,6 +1142,9 @@ class WindowsSandboxBackend(SandboxBackend):
         )
 
     async def _emit(self, event: SandboxEvent) -> None:
+        from .models import execution_command_id
+        if command_id := execution_command_id.get():
+            event = replace(event, payload={**event.payload, "command_id": command_id})
         if self._event_sink is None:
             return
         result = self._event_sink(event)

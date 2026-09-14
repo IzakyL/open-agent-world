@@ -191,7 +191,7 @@ def test_skill_copy_uses_live_authorization_and_never_exposes_cache(runtime_clie
     assert (info.workspace / "report.md").read_text() == "# Report"
 
 
-def test_receipt_recovery_cancelled_waiter_and_configuration_snapshot(runtime_client, monkeypatch):
+def test_receipt_recovery_cancelled_peer_and_configuration_snapshot(runtime_client, monkeypatch):
     client, backend, native = runtime_client
     _, sandbox, _, _, _ = setup_skill(client)
     local(client, sandbox, {"REGION": "before"})
@@ -217,7 +217,7 @@ def test_receipt_recovery_cancelled_waiter_and_configuration_snapshot(runtime_cl
         with pytest.raises(asyncio.CancelledError):
             await queued
         assert not task.done()
-        assert services._sandbox_commands[sandbox["id"]]["state"] == "running"
+        assert any(r["sandbox_id"] == sandbox["id"] and r["state"] == "running" for r in services._sandbox_commands.values())
         release.set(); await task
     client.portal.call(scenario)
     assert native.last_environment["REGION"] == "before"
@@ -242,7 +242,7 @@ def test_manual_disconnect_preserves_admitted_command(runtime_client, monkeypatc
         monkeypatch.setattr(backend, "execute", delayed)
         task = asyncio.create_task(services.execute_sandbox(sandbox["id"], ["cmd.exe"], _keep_on_disconnect=True))
         await started.wait(); task.cancel(); await asyncio.sleep(0.02)
-        assert services._sandbox_commands[sandbox["id"]]["state"] == "running"
+        assert any(r["sandbox_id"] == sandbox["id"] and r["state"] == "running" for r in services._sandbox_commands.values())
         assert (await backend.get(sandbox["id"])).state.value == "ready"
         release.set()
         with pytest.raises(asyncio.CancelledError): await task
@@ -451,7 +451,8 @@ def test_agent_observes_live_output_and_cancels_only_matching_command(runtime_cl
         try:
             info = await provider.invoke_tool(agent["id"], "operation:inspect_sandbox", {"sandbox": sandbox["id"]})
             assert info["recent_commands"][-1]["stdout"] == "install progress"
-            with pytest.raises(SandboxStateError):
+            from backend.errors import ConflictError
+            with pytest.raises(ConflictError):
                 await provider.invoke_tool(agent["id"], "operation:cancel_command", {"sandbox": sandbox["id"], "command_id": "stale"})
             assert not release.is_set()
             await provider.invoke_tool(agent["id"], "operation:cancel_command", {"sandbox": sandbox["id"], "command_id": info["current_command_id"]})
@@ -470,7 +471,7 @@ def test_agent_observes_live_output_and_cancels_only_matching_command(runtime_cl
         client.portal.call(provider.invoke_tool, agent["id"], f"sandbox.cancel_command:{sandbox['id']}", {"command_id": "any"})
 
 
-def test_parallel_commands_wait_and_resolve_configuration_at_dispatch(runtime_client, monkeypatch):
+def test_parallel_commands_dispatch_without_waiting(runtime_client, monkeypatch):
     client, backend, native = runtime_client
     _, sandbox, _, _, _ = setup_skill(client)
     services = client.app.state.services
@@ -490,17 +491,17 @@ def test_parallel_commands_wait_and_resolve_configuration_at_dispatch(runtime_cl
         monkeypatch.setattr(backend, 'execute', delayed)
         first = asyncio.create_task(services.execute_sandbox(sandbox['id'], ['cmd.exe', 'first']))
         await asyncio.wait_for(started.wait(), 2)
-        second = asyncio.create_task(services.execute_sandbox(sandbox['id'], ['cmd.exe', 'second'], timeout_seconds=36000))
+        second = asyncio.create_task(services.execute_sandbox(sandbox['id'], ['cmd.exe', 'second'], timeout_seconds=3600))
         await asyncio.sleep(0)
         await asyncio.sleep(0)
-        assert len(calls) == 1 and not second.done()
+        assert len(calls) == 2
         from backend.node_documents import read_document, write_document
         document = read_document(services, sandbox['id'])
         write_document(services, sandbox['id'], {'variables': {'REGION': 'queued'}}, document['revision'])
         release.set()
         await asyncio.wait_for(asyncio.gather(first, second), 5)
-        assert calls == [(['cmd.exe', 'first'], 600), (['cmd.exe', 'second'], 36000)]
-        assert native.last_environment['REGION'] == 'queued'
-        assert sandbox['id'] not in services._sandbox_commands
+        assert calls == [(['cmd.exe', 'first'], 600), (['cmd.exe', 'second'], 3600)]
+        assert native.last_environment.get('REGION') != 'queued'
+        assert not any(r['sandbox_id'] == sandbox['id'] for r in services._sandbox_commands.values())
 
     client.portal.call(scenario)

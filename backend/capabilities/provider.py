@@ -230,7 +230,8 @@ class _CapabilityContext:
         info = await self.services.get_sandbox(sandbox_id)
         self.services.capabilities.require_sandbox_execute(agent_id, sandbox_id)
         from backend.execution_config import configuration_summary
-        current = self.services._sandbox_commands.get(sandbox_id)
+        active = [dict(r) for r in self.services._sandbox_commands.values() if r["sandbox_id"] == sandbox_id]
+        current = active[0] if len(active) == 1 else None
         from backend.sandbox.history import recent_summaries
         return {
             "sandbox_id": sandbox_id, "state": info.state.value,
@@ -243,6 +244,7 @@ class _CapabilityContext:
             "supported_network_modes": list(info.supported_network_modes),
             "network_reason": info.network_reason,
             "configuration": configuration_summary(self.services, sandbox_id),
+            "active_commands": [{key: item.get(key) for key in ("id", "caller", "run_id", "argv", "started_at")} for item in active],
             "current_caller": current["caller"] if current else None,
             "current_command_id": current["id"] if current else None,
             "recent_commands": recent_summaries(self.services, sandbox_id),
@@ -310,7 +312,7 @@ class WorldAgentCapabilityProvider:
                 from backend.capabilities.projection import authorize_invocation
                 capability = authorize_invocation(self.services, agent_id, capability_id, arguments)
         handler = self.services.plugins.capability_handler(capability.kind)
-        from backend.sandbox.models import SandboxValidationError
+        from backend.sandbox.models import SandboxValidationError, SandboxStateError
         try:
             return await handler(_CapabilityContext(self.services), capability, dict(arguments))
         except SandboxValidationError as exc:
@@ -318,6 +320,9 @@ class WorldAgentCapabilityProvider:
             # Validation can also fail during bundle construction/materialization,
             # after the handler has validated the initial request model.
             raise ResourceValidationError(str(exc)) from exc
+        except SandboxStateError as exc:
+            from backend.errors import ConflictError
+            raise ConflictError(f"{exc}. Inspect the Sandbox activity and retry when the conflicting operation finishes.") from exc
 
 
 def _python_type(schema_type: object) -> type[Any]:
