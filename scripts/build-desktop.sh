@@ -24,10 +24,9 @@ payload="$app/Contents/Resources/payload"
 PATH="$payload/tools:$PATH" "$payload/python/bin/python3" -I -B "$payload/launch.py" --self-test
 codesign --verify --deep --strict "$app"
 if [[ "${OPEN_AGENT_WORLD_MANUAL_DMG:-}" == "1" ]]; then
-  version="$(python3 -c 'import json, pathlib; print(json.loads(pathlib.Path("desktop/src-tauri/tauri.conf.json").read_text())["version"])')"
   dmg_dir="$PWD/desktop/src-tauri/target/release/bundle/dmg"
   mkdir -p "$dmg_dir"
-  dmg="$dmg_dir/Open Agent World_${version}_x64.dmg"
+  dmg="$dmg_dir/Open Agent World_x64.dmg"
   (
     staging_dir="$(mktemp -d "${TMPDIR:-/tmp}/open-agent-world-dmg.XXXXXX")"
     trap 'rm -rf -- "$staging_dir"' EXIT
