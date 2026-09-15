@@ -1,5 +1,11 @@
 .minister-presence { position: absolute; width: 290px; z-index: 1001; pointer-events: auto; color: var(--ink); --minister-accent: #557e69; transform: translateY(-100%); padding: 14px 0 0; }
 .minister-presence[hidden] { display: none; }
+.minister-presence .minister-reviews { padding: 0; max-height: 300px; overscroll-behavior: contain; }
+.minister-presence .minister-review { background: var(--surface-solid); border: 1px solid var(--minister-accent); border-radius: 18px 18px 18px 4px; padding: 12px; margin: 0 0 8px; box-shadow: 0 4px 14px #203a2920; }
+.minister-presence:has(.minister-review) { transform: none; }
+.minister-presence .minister-review button { min-height: 32px; padding: 6px 10px; border: 1px solid var(--line); border-radius: 8px; background: var(--surface-solid); color: var(--ink); cursor: pointer; }
+.minister-presence .minister-review button:last-child { border-color: var(--minister-accent); color: var(--minister-accent); font-weight: 600; }
+.minister-presence .minister-review button:disabled { opacity: .5; cursor: wait; }
 .minister-presence .minister-conversation { overflow: visible; }
 .minister-presence .minister-messages { overflow: visible; padding: 0; flex: none; display: flex; flex-direction: column; gap: 8px; }
 .minister-presence .minister-message, .minister-greeting { position: relative; background: var(--surface-solid); border: 1px solid var(--line); border-radius: 18px 18px 18px 4px; padding: 10px 13px; margin: 0; box-shadow: 0 4px 14px #203a2912; animation: minister-bubble-in .25s ease-out; }

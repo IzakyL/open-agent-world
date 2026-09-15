@@ -7,6 +7,7 @@ import { useNodeSurfaceStore } from '../state/nodeSurfaces';
 import type { WorldCard } from '../types/world';
 import type { MinisterChat } from '../types/minister';
 import { MinisterConversation } from './MinisterConversation';
+import { MinisterReviews } from './MinisterPermissions';
 import { openMinisterSettings } from '../state/ministerRole';
 
 // Presence is transient; the conversation API remains the history authority.
@@ -20,6 +21,7 @@ export function MinisterPresence({ card, active, setActive }: {
   const { screenToFlowPosition } = useReactFlow();
   const viewport = useViewport();
   const [left, setLeft] = useState<number>();
+  const [reviewTop, setReviewTop] = useState<number>();
   const [chat, setChat] = useState<MinisterChat>();
   const [error, setError] = useState<string>();
   const [greeting, setGreeting] = useState(false);
@@ -27,8 +29,10 @@ export function MinisterPresence({ card, active, setActive }: {
   const region = useRef<HTMLDivElement>(null);
   const draft = useNodeSurfaceStore(s => s.drafts[`minister:${card.id}`] ?? '');
   const [attempt, setAttempt] = useState(0);
+  const [pendingReview, setPendingReview] = useState(false);
+  const visible = active || pendingReview;
   useLayoutEffect(() => {
-    if (!active || !flowRoot || !region.current) return;
+    if (!visible || !flowRoot || !region.current) return;
     const owner = Array.from(flowRoot.querySelectorAll<HTMLElement>(`.world-card[data-card-id="${CSS.escape(card.id)}"]`))
       .find(element => element.closest('.react-flow') === flowRoot);
     if (!owner) return;
@@ -44,12 +48,17 @@ export function MinisterPresence({ card, active, setActive }: {
       const right = rightEdge + gap, alternative = leftEdge - gap - width;
       const x = right + width > canvas.right - gap && alternative >= canvas.left + gap ? alternative : right;
       setLeft(screenToFlowPosition({ x, y: bounds.top }, { snapToGrid: false }).x);
+      if (pendingReview) {
+        const height = region.current!.getBoundingClientRect().height;
+        const y = Math.max(canvas.top + gap, Math.min(bounds.top + 70 * viewport.zoom, canvas.bottom - gap - height));
+        setReviewTop(screenToFlowPosition({ x, y }, { snapToGrid: false }).y);
+      }
     };
     place();
     const observer = new ResizeObserver(place);
     [owner, ...controls, region.current, flowRoot].forEach(element => observer.observe(element));
     return () => observer.disconnect();
-  }, [active, card.id, origin.x, origin.y, node?.measured.width, node?.measured.height,
+  }, [visible, pendingReview, card.id, origin.x, origin.y, node?.measured.width, node?.measured.height,
     flowRoot, viewport.x, viewport.y, viewport.zoom, screenToFlowPosition]);
   useEffect(() => {
     if (!active || greeted.current) return;
@@ -88,13 +97,16 @@ export function MinisterPresence({ card, active, setActive }: {
     return () => { window.clearTimeout(timer); window.removeEventListener('pointermove', move); };
   }, [active, card.id, card.status, draft, setActive]);
   return <ViewportPortal><div ref={region} data-tutorial-card-id={card.id} className="minister-presence nodrag nopan nowheel"
-    hidden={!active} style={{ left: left ?? origin.x + (node?.measured.width ?? card.size.width) + 16, top: origin.y + 70 }}
+    hidden={!visible} style={{ left: left ?? origin.x + (node?.measured.width ?? card.size.width) + 16, top: pendingReview ? reviewTop ?? origin.y + 70 : origin.y + 70 }}
     onPointerDown={event => event.stopPropagation()} onDoubleClick={event => event.stopPropagation()}
     onKeyDown={event => { event.stopPropagation(); if (event.key === 'Escape') { (document.activeElement as HTMLElement)?.blur(); setActive(false); setGreeting(false); } }}>
+    <MinisterReviews card={card} presence onPendingChange={setPendingReview} />
+    <div hidden={!active}>
     {greeting && <div className="minister-greeting">{t("Hi! Need a hand with this part of your canvas?")}</div>}
     {chat ? <MinisterConversation card={card} chat={chat} presence /> : <div className="minister-presence-loading" role="status">
       {error ?? t("Getting ready…")}{error && <button onClick={() => setAttempt(value => value + 1)}>{t("Retry")}</button>}
     </div>}
     <button className="minister-presence-history" onClick={() => { setActive(false); openMinisterSettings(card.id); }}>{t('Minister settings')}</button>
+    </div>
   </div></ViewportPortal>;
 }

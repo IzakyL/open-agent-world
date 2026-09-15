@@ -34,7 +34,13 @@ Open the URL printed by the launcher (normally `http://127.0.0.1:5188`). It crea
 a **Codex** Agent, **Talk to Codex** Conversation, and **Codex notes** text card.
 Open the Conversation, mention `@Codex`, and send a task. You can also open the
 Agent workspace, select **Settings**, and run a prompt directly. Create more
-Codex Agent cards from the Agents library; set their Project folder before running.
+Codex Agent cards from the Agents library; their Project folder can be left blank.
+They share `codex-workspace` under **Settings → Sandbox → Default Workspace location**.
+The directory is created on first run. If that setting is blank, OAW uses
+`<application data directory>/codex-workspace`. Set an existing absolute Project
+folder on a card to override this default. Changing the default location affects
+blank cards on their next run; existing files are not moved. Connected Sandbox
+tools still use their own environments and directories.
 
 Try: “Read the connected note, inspect the project README, and describe how this
 project works.” Then ask for a small file change or a note edit.
@@ -59,8 +65,8 @@ until you send one. Normal Codex account usage applies.
 You can also stop it from another terminal with `./plugins/codex/try.ps1 -Stop`.
 
 Automatic discovery prefers the running Windows desktop App's native runtime,
-then installed desktop runtimes, then PATH. The Settings panel displays the actual
-source, executable and version. Discovery means the runtime is available, not that
+then installed desktop runtimes, then PATH. Advanced settings let you choose the
+source and a manual executable. Discovery means the runtime is available, not that
 an existing desktop chat is attached. Select `desktop` to require a desktop
 installation, `cli` for PATH, or `manual` and enter a native executable path.
 
@@ -84,7 +90,8 @@ Restart OAW normally after adding the plugin:
 ./scripts/dev.ps1
 ```
 
-Create a **Codex Agent** from the **Agents** deck and set its Project folder.
+Create a **Codex Agent** from the **Agents** deck. Leave Project folder blank to use
+the default workspace, or set it to an existing project.
 To optionally create the three demo cards in this world, use the **backend API URL
 printed by that script** in another terminal:
 
@@ -129,8 +136,10 @@ Conversations using the normal OAW edges.
 - `oaw_list_tools` discovers semantic operation tools and their complete input
   schemas, including currently authorized target aliases; `oaw_invoke_tool` goes through
   the OAW broker on every invocation. Removing a connection revokes access even
-  if the model remembers the old capability ID. Tool results are returned as JSON
-  text. This preview does not translate image results into visual input.
+  if the model remembers the old capability ID. Ordinary tool results use JSON
+  text; `VisualToolResult` returns metadata plus actual `inputImage` content to
+  Codex. Managed image views and the Minister's
+  `canvas_observe` use this path. Select a model that supports images and tools.
 - Native project commands/files use **Codex's sandbox**, not an OAW Sandbox card.
   `codex_sandbox` accepts `workspace-write` or `read-only`; approval policy is
   `never`, so operations requiring escalation cannot proceed. This setting governs

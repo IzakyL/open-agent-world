@@ -119,9 +119,11 @@ def _build_callable(
 ) -> Callable[..., Any]:
     async def scoped_tool(**arguments: Any) -> Any:
         try:
-            return await provider.invoke_tool(
+            result = await provider.invoke_tool(
                 agent_id, definition.capability_id, dict(arguments)
             )
+            from .media import adk_tool_result
+            return adk_tool_result(result)
         except DomainError as exc:
             return {
                 "ok": False,

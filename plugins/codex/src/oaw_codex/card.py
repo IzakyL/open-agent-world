@@ -10,7 +10,7 @@ class CodexCardConfig(BaseModel):
     client_source: Literal["auto", "desktop", "cli", "manual"] = Field(
         default="auto", title="Local Codex", description="Auto prefers the desktop App's native runtime, then CLI.")
     codex_command: str = Field(default="", title="Native executable", description="Used when Local Codex is manual. Select codex.exe, not a shell wrapper.")
-    workspace_path: str = Field(default="", title="Project folder", description="Absolute folder where Codex reads, edits and runs commands. Required before running.")
+    workspace_path: str = Field(default="", title="Project folder", description="Leave blank to use codex-workspace under Default Workspace location. Or enter an existing absolute project folder.")
     model: str = Field(default="default", title="Model", description="default inherits local Codex settings; or enter an explicit Codex model ID.")
     reasoning_effort: Literal["default", "minimal", "low", "medium", "high", "xhigh", "max"] = Field(
         default="default", title="Reasoning effort", description="Must be supported by the selected model. default inherits Codex settings.")
@@ -23,7 +23,7 @@ class CodexCardConfig(BaseModel):
 
 
 class CodexCardTemplate(AgentNodeTemplateHandler):
-    # Machine paths deliberately stay local. Restored cards need a project folder.
+    # Machine paths stay local. Restored cards use the host's default workspace.
     portable_config_fields = AgentNodeTemplateHandler.portable_config_fields | frozenset({
         "reasoning_effort", "session_mode", "codex_sandbox", "inherit_legion_model",
     })

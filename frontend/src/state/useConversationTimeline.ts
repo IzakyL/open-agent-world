@@ -43,13 +43,15 @@ export function useConversationTimeline(conversationId: string, sessionId: strin
     if (direction !== "refresh") setLoading(true);
     const current = pageRef.current;
     const cursor = direction === "before" ? { before: current.items[0]?.sequence }
-      : (direction === "after" || direction === "refresh") ? { after: current.items.at(-1)?.sequence } : {};
+      : direction === "after" ? { after: current.items.at(-1)?.sequence } : {};
+    // Refresh the tail itself: streaming snapshots update existing IDs and
+    // sequences, so an exclusive `after` cursor would never retrieve them.
     try {
       const incoming = await worldApi.getConversationTimeline(conversationId, sessionId, cursor);
       if (version !== generation.current || currentScope.current !== scope) return;
       if (direction === "refresh" && !follow.current) {
         const next = { ...current, active_agent_ids: incoming.active_agent_ids,
-          has_after: current.has_after || incoming.items.length > 0 };
+          has_after: current.has_after || (incoming.items.at(-1)?.sequence ?? 0) > (current.items.at(-1)?.sequence ?? 0) };
         pageRef.current = next;
         setState({ scope, page: next, activityBoundary });
         setError(undefined);
@@ -60,7 +62,9 @@ export function useConversationTimeline(conversationId: string, sessionId: strin
         .find((item) => item.getBoundingClientRect().bottom > node.getBoundingClientRect().top);
       anchor.current = visible ? { id: visible.dataset.messageId!, offset: visible.getBoundingClientRect().top - node!.getBoundingClientRect().top } : undefined;
       bottom.current = direction === "latest" || ((direction === "after" || direction === "refresh") && follow.current);
-      const merged = direction === "latest" ? incoming.items
+      const tailGap = direction === "refresh" && incoming.items.length > 0 && current.items.length > 0
+        && !incoming.items.some(item => current.items.some(existing => existing.id === item.id));
+      const merged = direction === "latest" || tailGap ? incoming.items
         : [...new Map([...current.items, ...incoming.items].map((item) => [item.id, item])).values()]
           .sort((a, b) => (a.sequence ?? 0) - (b.sequence ?? 0));
       const trimmed = merged.length > CONVERSATION_WINDOW_SIZE;
@@ -68,7 +72,7 @@ export function useConversationTimeline(conversationId: string, sessionId: strin
       const next = {
         active_agent_ids: incoming.active_agent_ids,
         items,
-        has_before: direction === "before" || direction === "latest" ? incoming.has_before : current.has_before || trimmed,
+        has_before: direction === "before" || direction === "latest" || tailGap ? incoming.has_before : current.has_before || trimmed,
         has_after: direction === "before" ? current.has_after || trimmed : incoming.has_after,
       };
       pageRef.current = next;

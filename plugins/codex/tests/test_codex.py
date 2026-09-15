@@ -89,6 +89,7 @@ async def test_stream_and_resume_across_provider_restart(tmp_path):
     await first.create_agent(cfg)
     events = await collect(first, cfg)
     assert [e.payload['text'] for e in events if e.type == AgentEventType.MESSAGE] == ['Hello ', 'Hello OAW', 'Hello OAW']
+    assert {e.payload['provider_message_id'] for e in events if e.type == AgentEventType.MESSAGE} == {'msg1'}
     assert events[-1].run_status == 'succeeded'
     assert not first.active
     second = runtime(tmp_path)
@@ -156,6 +157,20 @@ async def test_configuration_is_validated_before_launch(tmp_path):
         await provider.create_agent(replace(config(tmp_path), provider_config={'workspace_path': '.'}))
     with pytest.raises(AgentConfigurationError, match='max_concurrent_runs'):
         await provider.create_agent(replace(config(tmp_path), max_concurrent_runs=2))
+
+
+@pytest.mark.asyncio
+async def test_default_workspace_failure_does_not_launch_or_remove_existing_file(tmp_path):
+    provider = runtime(tmp_path)
+    provider.workspace_root = lambda: tmp_path
+    occupied = tmp_path / 'codex-workspace'
+    occupied.write_text('existing file')
+    cfg = replace(config(tmp_path), provider_config={'workspace_path': ''})
+    await provider.create_agent(cfg)
+    with pytest.raises(AgentConfigurationError, match='Cannot create the default Codex workspace'):
+        await collect(provider, cfg)
+    assert occupied.read_text() == 'existing file'
+    assert not (tmp_path / 'protocol.jsonl').exists()
 
 
 @pytest.mark.asyncio

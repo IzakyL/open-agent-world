@@ -1,5 +1,75 @@
 import { expect, test, type Page } from "@playwright/test";
 
+test('Minister streaming updates stay in one bubble', async ({ page, request }) => {
+  const created = await request.post('/api/nodes', { data: {
+    type: 'agent', minister: {}, name: 'Stream check', position: { x: 350, y: 350 }, size: { width: 96, height: 96 },
+  } });
+  expect(created.ok()).toBeTruthy();
+  await page.goto('/');
+  await openChat(page, 'Stream check');
+  await page.getByRole('textbox', { name: 'Message Stream check', exact: true }).fill('stream');
+  await page.getByRole('button', { name: 'Send to Stream check', exact: true }).click();
+  const bubbles = page.locator('.minister-bubble-slot .minister-message.is-agent');
+  await expect(bubbles).toHaveCount(1);
+  const id = await bubbles.first().getAttribute('data-message-id');
+  await expect(bubbles).toHaveText('Stream checkInspecting local resources.');
+  await expect(page.getByText('Minister is working…', { exact: true })).toHaveCount(0);
+  await expect(bubbles).toHaveCount(1);
+  await expect(bubbles).toHaveAttribute('data-message-id', id!);
+  await page.screenshot({ path: 'test-results/minister-stream-single-bubble.png' });
+});
+
+test('Minister visual observation returns real masked pixels without moving the viewport', async ({ page, request }) => {
+  const minister = await (await request.post('/api/nodes', { data: {
+    type: 'agent', minister: { control_radius: 500 }, name: 'Observer', position: { x: 350, y: 300 }, size: { width: 96, height: 96 },
+  } })).json();
+  const note = await (await request.post('/api/nodes', { data: {
+    type: 'text', name: 'Visible note', content: 'PRIVATE BODY MUST NOT BE CAPTURED', position: { x: 500, y: 300 }, size: { width: 220, height: 140 },
+  } })).json();
+  let capture: { data_base64: string; captured_ids: string[] } | undefined;
+  page.on('websocket', socket => {
+    if (!socket.url().endsWith('/ws/visual')) return;
+    socket.on('framesent', frame => {
+      const data = JSON.parse(String(frame.payload));
+      if (data.data_base64) capture = data;
+    });
+  });
+  await page.goto('/');
+  const node = page.locator(`.world-card[data-card-id="${note.id}"]`);
+  await expect(node).toBeVisible();
+  await node.evaluate(element => {
+    const secret = document.createElement('div');
+    secret.dataset.observationPrivate = 'true';
+    secret.style.cssText = 'position:absolute;inset:0;background:rgb(255,0,0)';
+    secret.textContent = 'PRIVATE';
+    element.appendChild(secret);
+  });
+  const before = await page.locator('.react-flow__viewport').first().getAttribute('style');
+  await openChat(page, 'Observer');
+  await page.getByRole('textbox', { name: 'Message Observer', exact: true }).fill('observe');
+  await page.getByRole('button', { name: 'Send to Observer', exact: true }).click();
+  await expect.poll(() => capture?.captured_ids, { timeout: 20000 }).toContain(note.id);
+  await expect(page.getByText(/Observed canvas image:/)).toBeVisible();
+  expect(await page.locator('.react-flow__viewport').first().getAttribute('style')).toBe(before);
+  const pixels = await page.evaluate(async encoded => {
+    const image = new Image(); image.src = 'data:image/png;base64,' + encoded; await image.decode();
+    const canvas = document.createElement('canvas'); canvas.width = image.width; canvas.height = image.height;
+    const context = canvas.getContext('2d')!; context.drawImage(image, 0, 0);
+    const data = context.getImageData(0, 0, canvas.width, canvas.height).data;
+    const colors = new Set<string>(); let red = 0;
+    for (let i = 0; i < data.length; i += 4) {
+      colors.add(`${data[i]},${data[i+1]},${data[i+2]}`);
+      if (data[i] === 255 && data[i+1] === 0 && data[i+2] === 0) red++;
+    }
+    return { width: image.width, colors: colors.size, red };
+  }, capture!.data_base64);
+  expect(pixels.width).toBe(1600); expect(pixels.colors).toBeGreaterThan(10); expect(pixels.red).toBe(0);
+  const { writeFile } = await import('node:fs/promises');
+  await writeFile('test-results/minister-observation.png', Buffer.from(capture!.data_base64, 'base64'));
+  await page.screenshot({ path: 'test-results/minister-observation-source.png' });
+  await request.delete(`/api/nodes/${minister.id}`);
+});
+
 async function openChat(page: Page, name: string) {
   const close = page.getByRole('button', { name: `Close ${name} inspector`, exact: true });
   if (await close.isVisible()) {
@@ -325,8 +395,16 @@ test('local administration shares glue and resize, and deletion waits for a real
     await expect.poll(async () => (await (await request.get('/api/canvas/glue')).json()).bonds.length).toBe(1);
     await expect(observer.locator('.glue-seam:not(.is-preview)')).toHaveCount(1);
     await send(`delete:${note.id}`);
-    await openPermissions(page, 'Local administrator');
-    const review = page.getByRole('region', { name: 'Review canvas changes' });
+    const review = page.locator('.minister-presence').getByRole('region', { name: 'Review canvas changes' });
+    await expect(review).toBeVisible();
+    await page.getByRole('textbox', { name: 'Message Local administrator', exact: true }).press('Escape');
+    await page.mouse.move(20, 20);
+    await page.clock.install();
+    await page.clock.fastForward(61000);
+    await expect(review).toBeVisible();
+    await page.reload();
+    await expect(review).toBeVisible();
+    await page.clock.setSystemTime(new Date());
     await expect(review).toContainText('Working notes');
     await expect(review).toContainText('Worker');
     expect((await request.get(`/api/nodes/${note.id}`)).status()).toBe(200);
@@ -335,7 +413,6 @@ test('local administration shares glue and resize, and deletion waits for a real
     await expect(review).toHaveCount(0);
     expect((await request.get(`/api/nodes/${note.id}`)).status()).toBe(200);
     await send(`delete:${note.id}`);
-    await openPermissions(page, 'Local administrator');
     await expect(review).toBeVisible();
     await review.getByRole('button', { name: 'Confirm changes', exact: true }).click();
     await expect.poll(async () => (await request.get(`/api/nodes/${note.id}`)).status()).toBe(404);

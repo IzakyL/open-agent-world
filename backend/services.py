@@ -12,7 +12,7 @@ from dataclasses import dataclass, field, replace
 from datetime import UTC, datetime
 from pathlib import Path, PureWindowsPath, PurePosixPath
 from typing import TYPE_CHECKING, Any, TypeVar
-from uuid import uuid4
+from uuid import uuid4, uuid5, NAMESPACE_URL
 
 if TYPE_CHECKING:
     from backend.skill_runtime import RunSkillScript
@@ -26,6 +26,7 @@ from backend.agents import (
 )
 from backend.capabilities.broker import CapabilityBroker
 from backend.card_library import CardLibraryStore
+from backend.visual_observation import VisualObservers
 from backend.config import Settings
 from backend.sandbox.settings import SandboxSettingsStore
 from backend.security import LlmPublicSettings, LlmSettingsStore
@@ -539,6 +540,7 @@ class ApplicationServices:
     # Short-lived desktop review requests. Restart expires them; approval never
     # becomes a durable grant or an Agent tool argument.
     _minister_proposals: dict[str, dict] = field(default_factory=dict, init=False, repr=False)
+    visual_observers: VisualObservers = field(default_factory=VisualObservers, init=False, repr=False)
     _execution_secrets: ContextVar[tuple[str, ...]] = field(
         default_factory=lambda: ContextVar("execution_secrets", default=()), init=False, repr=False)
     run_manager: RunManager | None = None
@@ -3262,10 +3264,18 @@ class ApplicationServices:
                 content += "\n\n" + json.dumps(detail, ensure_ascii=False, indent=2, default=str)
         else:
             return None
-        message = self.conversations.add_message(conversation_id, session_id,
-            sender_kind="agent", sender_id=record.agent_id,
-            sender_name=self._conversation_agent_name(record.agent_id), content=content,
-            run_id=record.run_id, kind=kind, is_final=False)
+        provider_message_id = event.payload.get('provider_message_id') if kind == 'text' else None
+        if isinstance(provider_message_id, str) and provider_message_id:
+            message_id = str(uuid5(NAMESPACE_URL, json.dumps([
+                'oaw:provider-message', conversation_id, session_id, record.run_id, provider_message_id])))
+            message = self.conversations.update_provider_message(conversation_id, session_id,
+                message_id=message_id, run_id=record.run_id, sender_id=record.agent_id,
+                sender_name=self._conversation_agent_name(record.agent_id), content=content)
+        else:
+            message = self.conversations.add_message(conversation_id, session_id,
+                sender_kind="agent", sender_id=record.agent_id,
+                sender_name=self._conversation_agent_name(record.agent_id), content=content,
+                run_id=record.run_id, kind=kind, is_final=False)
         await self._publish_conversation_message(message)
         return message.id
 
@@ -3707,7 +3717,12 @@ def create_services(
             if default_runtime_provider_id is not None
             else settings.agent_runtime
         ),
-        provider_options={"google.adk": {"app_name": "open-agent-world", "model_connections": ModelConnectionStore(services.llm_settings)}},
+        provider_options={
+            "google.adk": {"app_name": "open-agent-world", "model_connections": ModelConnectionStore(services.llm_settings)},
+            "openai.codex": {
+                "workspace_root": SandboxSettingsStore(database, settings.data_root).resolve_workspace_root,
+            },
+        },
         inactivity_timeout_seconds=settings.run_inactivity_timeout_seconds,
         execution_deadline_seconds=settings.run_execution_deadline_seconds,
         cleanup_timeout_seconds=settings.run_cleanup_timeout_seconds,

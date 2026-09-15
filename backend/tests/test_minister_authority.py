@@ -1,5 +1,6 @@
 """Real services and scoped runtime tools; no production model calls."""
 import pytest
+from datetime import UTC, datetime, timedelta
 
 from backend.errors import PermissionDeniedError, RevisionConflictError, ResourceValidationError
 from backend.minister import INSTRUCTION, PREVIOUS_INSTRUCTION, runtime_instruction
@@ -40,7 +41,8 @@ def test_normal_agent_administration_and_batch_are_autonomous(client):
     assert 'You cannot change your own' in PREVIOUS_INSTRUCTION
 
 
-def test_delete_requires_actual_effect_review_and_one_use_approval(client):
+@pytest.mark.parametrize('aged', [False, True])
+def test_delete_requires_actual_effect_review_and_one_use_approval(client, aged):
     minister = create_minister(client)
     agent = create_node(client, 'agent', size={'width': 96, 'height': 96})
     note = create_node(client, 'text', name='Attached notes', size={'width': 96, 'height': 96},
@@ -52,6 +54,10 @@ def test_delete_requires_actual_effect_review_and_one_use_approval(client):
     assert {item['name'] for item in proposal['changes']} == {agent['name'], note['name']}
     assert any(item['target'] == chat['id'] for item in proposal['connections'])
     assert client.get(f"/api/nodes/{agent['id']}").status_code == 200
+    if aged:
+        client.app.state.services._minister_proposals[proposal['proposal_id']]['expires_at'] = datetime.now(UTC) - timedelta(days=1)
+        reviews = client.get(f"/api/ministers/{minister['id']}/proposals").json()
+        assert any(item['id'] == proposal['proposal_id'] and item['status'] == 'pending' for item in reviews)
     approve(client, minister, proposal)
     assert client.get(f"/api/nodes/{agent['id']}").status_code == 404
     assert client.get(f"/api/nodes/{note['id']}").status_code == 404

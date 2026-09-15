@@ -94,6 +94,8 @@ def create_app(
     application.include_router(api_router)
     application.include_router(application_router)
     application.add_api_websocket_route("/ws/events", websocket_route)
+    from backend.visual_observation import visual_websocket
+    application.add_api_websocket_route("/ws/visual", visual_websocket)
     application.state.clean_shutdown = False
     if development is not None:
         if selected_settings.application_mode != "development":

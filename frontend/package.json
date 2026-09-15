@@ -15,6 +15,7 @@
   },
   "dependencies": {
     "@xyflow/react": "^12.8.5",
+    "html-to-image": "1.11.13",
     "lucide-react": "^0.468.0",
     "matterviz": "0.7.0",
     "pdfjs-dist": "^5.4.624",

@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import base64
 from collections.abc import Mapping, Sequence
 from dataclasses import asdict
 from dataclasses import dataclass
@@ -174,16 +173,16 @@ class _CapabilityContext:
         )
         return document.model_dump(mode="json")
 
-    def view_image(self, agent_id: str, resource_id: str) -> dict[str, Any]:
+    def view_image(self, agent_id: str, resource_id: str):
+        from backend.agents.media import ToolImage, VisualToolResult
         record, path = self.services.capabilities.view_image(agent_id, resource_id)
-        return {
+        return VisualToolResult({
             "filename": record.filename,
             "media_type": record.media_type,
             "width": record.width,
             "height": record.height,
             "size_bytes": record.size_bytes,
-            "data_base64": base64.b64encode(path.read_bytes()).decode("ascii"),
-        }
+        }, (ToolImage(path.read_bytes(), record.media_type),))
 
     async def execute_sandbox(
         self, agent_id: str, sandbox_id: str, argv: list[str], *, environment_id: str | None = None, target_id: str | None = None, timeout_seconds: float | None = None

@@ -155,6 +155,7 @@ function WorldCardNodeComponent({ data, selected, dragging }: NodeProps<CanvasNo
       style={{ "--card-kind": definition?.color, borderRadius: NODE_SURFACE_RADIUS[visualLevel] } as CSSProperties}
       aria-label={`${label} ${card.name}`}
       data-card-id={card.id}
+      data-card-revision={card.revision}
       data-card-type={card.type}
       data-card-expanded={visualLevel === "inspector" || visualLevel === "workspace" ? "true" : "false"}
       data-surface-level={level}

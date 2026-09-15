@@ -8,7 +8,9 @@ import type { MinisterWorldView, MinisterProposal } from '../types/minister';
 import type { WorldCard } from '../types/world';
 
 /** Role controls embedded in the ordinary Agent surfaces. */
-export function MinisterReviews({ card }: { card: WorldCard }) {
+export function MinisterReviews({ card, presence = false, onPendingChange }: {
+  card: WorldCard; presence?: boolean; onPendingChange?: (pending: boolean) => void;
+}) {
   useLocale();
   const [proposals, setProposals] = useState<MinisterProposal[]>([]);
   const [error, setError] = useState<string>();
@@ -20,7 +22,7 @@ export function MinisterReviews({ card }: { card: WorldCard }) {
     const refresh = () => void worldApi.getMinisterProposals(card.id).then(result => { if (active) setProposals(result); })
       .catch(reason => { if (active) setError(apiErrorMessage(reason)); });
     refresh();
-    const timer = window.setInterval(refresh, 15000); // Also expire reviews while idle/offline.
+    const timer = window.setInterval(refresh, 15000); // Recover reviews while idle/offline.
     return () => { active = false; window.clearInterval(timer); };
   }, [card.id, event, live]);
   const decide = async (proposal: MinisterProposal, approve: boolean) => {
@@ -45,9 +47,11 @@ export function MinisterReviews({ card }: { card: WorldCard }) {
     finally { setBusy(undefined); }
   };
   const pending = proposals.filter(item => item.status === 'pending');
+  useEffect(() => { onPendingChange?.(pending.length > 0 || !!error || !!busy); }, [pending.length, error, busy, onPendingChange]);
   const latest = proposals.at(-1);
+  if (presence && !pending.length && !error && !busy) return null;
   if (!pending.length && !error && !latest) return null;
-  return <div className="minister-reviews" aria-label={t("Minister confirmations")}>
+  return <div className="minister-reviews nowheel" aria-label={t("Minister confirmations")} aria-live="polite">
     {pending.map(proposal => <section key={proposal.id} className="minister-review" aria-label={t("Review canvas changes")}>
       <strong>{t("Confirm these changes")}</strong>
       {proposal.reasons.map(reason => <p key={reason}>{reason}</p>)}

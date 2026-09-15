@@ -238,6 +238,10 @@ class InspectRequest(BaseModel):
     target_id: str = Field(default="", description="Optional connection preflight target; supply source_id too.")
 
 
+class ObserveRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+
 class CreateRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
     type: str = Field(description="A creatable card type returned by inspection, including agent.")
@@ -309,6 +313,7 @@ class OrganizeRequest(BaseModel):
 
 # The existing registry and projection build ordinary scoped runtime tools.
 TOOLS = {
+    "observe": (ObserveRequest, "See a current screenshot of your jurisdiction in the connected OAW canvas. Requires an image-capable model. Returns actual image input, card IDs, scope and versions; missing/unmounted cards and masked content are reported. Use canvas_inspect for complete state, existing scoped tools to act, then observe again to verify. Requires OAW to be open."),
     "inspect": (InspectRequest, "Inspect/search the local world and your controller identity. Returns current permission, relationship types, version tokens and Conversation readiness. Supply source_id and target_id to preflight a connection before acting. Empty query lists cards; paginate with offset/limit."),
     "create": (CreateRequest, "Create a normal card, including an Agent, inside your circle. Use catalog types and config fields from inspection. Sensitive creation returns a proposal awaiting human confirmation. Coordinates are absolute canvas coordinates. Inspect first."),
     "move": (MoveRequest, "Move an card to absolute canvas coordinates. Its whole saved rectangle and all affected cards must stay inside your circle. Supply inspected versions."),
@@ -324,7 +329,7 @@ TOOLS = {
 def capabilities(broker, card):
     result = []
     for action in TOOLS:
-        if action != "inspect" and not card.minister.allow_canvas_edits:
+        if action not in {"inspect", "observe"} and not card.minister.allow_canvas_edits:
             continue
         definition = broker.plugins.capability_definition(f"minister.{action}")
         result.append(Capability(id=f"minister.{action}:{card.id}", kind=definition.kind,
@@ -381,7 +386,7 @@ async def inspect(services, node_id, request):
                     if card.minister.allow_canvas_edits else "I currently only have permission to inspect this area.",
                 "relationship_types": [{"id": kind, "description": services.plugins.relationship(kind).description}
                                        for kind in sorted(control(services, node_id)._scope().relationships)],
-                "allowed_operations": list(TOOLS) if card.minister.allow_canvas_edits else ["inspect"], **preflight}
+                "allowed_operations": list(TOOLS) if card.minister.allow_canvas_edits else ["inspect", "observe"], **preflight}
 
 
 def chat_readiness(services, conversation_id, visible_ids):
@@ -411,6 +416,9 @@ async def invoke(services, capability, arguments):
     except ValidationError:
         raise ResourceValidationError("Invalid canvas tool arguments; follow its schema and copy versions from canvas_inspect") from None
     node_id = capability.agent_id
+    if action == "observe":
+        from backend.visual_observation import observe
+        return await observe(services, node_id)
     # Hold the existing barrier across the policy check and the facade call.
     async with services._node_mutation(read_only=action == "inspect"):
         minister_card(services, node_id)

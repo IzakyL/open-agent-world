@@ -177,6 +177,7 @@ export function SettingsPanel() {
               value={sandbox.workspace_root ?? ""} disabled={!loaded || busy} placeholder={t("System-managed location")}
               onChange={(path) => setSandbox((current) => ({ ...current, workspace_root: path }))} onPickingChange={setPicking} />
             <small id="sandbox-default-workspace-help">{t("Enter an existing absolute folder on the backend computer, for example D:\\Workspaces. Each new Sandbox gets its own subfolder. Leave blank to use the system-managed location.")}</small>
+            <small>{t("Codex Agents without a custom project folder use the shared codex-workspace subfolder here. Changes apply on their next run; existing files stay in the old location.")}</small>
           </div>
           <label className="field-label">
             <span id="sandbox-default-runtime-label">{t("Default runtime")}</span>

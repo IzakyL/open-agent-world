@@ -6524,5 +6524,101 @@
   "Remove {card} from {deck}": [
     "Remove {card} from {deck}",
     "从{deck}移除{card}"
+  ],
+  "Project folder": [
+    "Project folder",
+    "项目目录"
+  ],
+  "Required before running": [
+    "Required before running",
+    "运行前必填"
+  ],
+  "Use an existing absolute folder path. Codex reads project files and runs commands here; file access below controls editing.": [
+    "Use an existing absolute folder path. Codex reads project files and runs commands here; file access below controls editing.",
+    "填写已存在文件夹的绝对路径。Codex 会在这里读取项目文件、执行命令；能否修改文件由下方的文件权限控制。"
+  ],
+  "Default uses your local Codex settings.": [
+    "Default uses your local Codex settings.",
+    "默认沿用本机 Codex 的模型与推理设置。"
+  ],
+  "Continue keeps context per conversation; fresh starts over each run. File access applies to this local project, independently of OAW Sandbox cards.": [
+    "Continue keeps context per conversation; fresh starts over each run. File access applies to this local project, independently of OAW Sandbox cards.",
+    "继续会话会保留各对话的上下文；每次新建则重新开始。文件权限作用于本机项目目录，与 OAW Sandbox 卡片独立。"
+  ],
+  "Advanced settings": [
+    "Advanced settings",
+    "高级设置"
+  ],
+  "Local Codex": [
+    "Local Codex",
+    "程序来源"
+  ],
+  "Native executable": [
+    "Native executable",
+    "程序路径"
+  ],
+  "Reasoning effort": [
+    "Reasoning effort",
+    "推理强度"
+  ],
+  "Session mode": [
+    "Session mode",
+    "会话模式"
+  ],
+  "Native file access": [
+    "Native file access",
+    "文件权限"
+  ],
+  "Additional instructions": [
+    "Additional instructions",
+    "补充指令"
+  ],
+  "Auto prefers the desktop App's native runtime, then CLI.": [
+    "Auto prefers the desktop App's native runtime, then CLI.",
+    "自动优先使用桌面应用的运行程序，其次使用 CLI。"
+  ],
+  "Used when Local Codex is manual. Select codex.exe, not a shell wrapper.": [
+    "Used when Local Codex is manual. Select codex.exe, not a shell wrapper.",
+    "手动指定时，填写 codex.exe 的路径。"
+  ],
+  "continue": [
+    "continue",
+    "继续会话"
+  ],
+  "fresh": [
+    "fresh",
+    "每次新建"
+  ],
+  "workspace-write": [
+    "workspace-write",
+    "允许修改项目"
+  ],
+  "manual": [
+    "manual",
+    "手动指定"
+  ],
+  "desktop": [
+    "desktop",
+    "桌面应用"
+  ],
+  "Uses default workspace": [
+    "Uses default workspace",
+    "使用默认工作目录"
+  ],
+  "Default Workspace location / codex-workspace": [
+    "Default Workspace location / codex-workspace",
+    "默认工作目录 / codex-workspace"
+  ],
+  "Leave blank to share codex-workspace under Default Workspace location, created on first run. Or enter an existing absolute project folder.": [
+    "Leave blank to share codex-workspace under Default Workspace location, created on first run. Or enter an existing absolute project folder.",
+    "留空则共用“默认工作目录”下的 codex-workspace，首次运行时自动创建。也可填写已有项目文件夹的绝对路径。"
+  ],
+  "Leave blank to use codex-workspace under Default Workspace location. Or enter an existing absolute project folder.": [
+    "Leave blank to use codex-workspace under Default Workspace location. Or enter an existing absolute project folder.",
+    "留空使用“默认工作目录”下的 codex-workspace，或填写已有项目文件夹的绝对路径。"
+  ],
+  "Codex Agents without a custom project folder use the shared codex-workspace subfolder here. Changes apply on their next run; existing files stay in the old location.": [
+    "Codex Agents without a custom project folder use the shared codex-workspace subfolder here. Changes apply on their next run; existing files stay in the old location.",
+    "未指定项目目录的 Codex Agent 共用这里的 codex-workspace 子文件夹。更改后下次运行生效，已有文件保留在原位置。"
   ]
 }

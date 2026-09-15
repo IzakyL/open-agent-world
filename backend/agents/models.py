@@ -58,6 +58,9 @@ class AgentInfo:
 
 @dataclass(frozen=True, slots=True)
 class AgentEvent:
+    """MESSAGE may carry provider_message_id for successive full-text snapshots
+    of one message within a Run. Without it, each event is a distinct message.
+    """
     agent_id: str
     run_id: str
     type: AgentEventType

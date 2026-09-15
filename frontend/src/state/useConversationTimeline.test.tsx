@@ -18,6 +18,30 @@ function Harness({ session = "a", refresh = "", events = [] }: { session?: strin
     <span>{history.loading ? "busy" : "ready"}</span></>;
 }
 afterEach(() => { cleanup(); vi.restoreAllMocks(); });
+it('refreshes the same stream ID and sequence without adding a second message', async () => {
+  const first = { ...messages[0], content: 'Inspecting', is_final: false };
+  const fetch = vi.spyOn(worldApi, 'getConversationTimeline').mockResolvedValue({ items: [first], has_before: false, has_after: false });
+  const { container, rerender } = render(<Harness />);
+  await screen.findByText('Inspecting');
+  const original = container.querySelector('[data-message-id="1"]');
+  fetch.mockResolvedValue({ items: [{ ...first, content: 'Inspecting local resources.', is_final: true }], has_before: false, has_after: false });
+  rerender(<Harness refresh="stream-update" />);
+  await screen.findByText('Inspecting local resources.');
+  expect(fetch).toHaveBeenLastCalledWith('room', 'a', {});
+  expect(container.querySelectorAll('[data-message-id]')).toHaveLength(1);
+  expect(container.querySelector('[data-message-id="1"]')).toBe(original);
+});
+
+it('does not bridge a missing interval when refreshing after many missed events', async () => {
+  const fetch = vi.spyOn(worldApi, 'getConversationTimeline').mockResolvedValue({ items: messages.slice(0, 50), has_before: false, has_after: false });
+  const { container, rerender } = render(<Harness />);
+  await screen.findByText('Message 50');
+  fetch.mockResolvedValue({ items: messages.slice(350, 400), has_before: true, has_after: false });
+  rerender(<Harness refresh="reconnected" />);
+  await screen.findByText('Message 400');
+  expect(screen.queryByText('Message 50')).toBeNull();
+  expect(container.querySelectorAll('[data-message-id]')).toHaveLength(50);
+});
 it("preserves events arriving during a snapshot request, then lets a later snapshot repair missed stops", async () => {
   let finish!: (page: ConversationMessagePage) => void;
   const fetch = vi.spyOn(worldApi, "getConversationTimeline").mockImplementation(() => new Promise((resolve) => { finish = resolve; }));

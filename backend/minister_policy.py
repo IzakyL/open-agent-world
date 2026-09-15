@@ -151,7 +151,9 @@ def summarize(services, actor_id, effect):
 def pending_proposals(services, node_id):
     now = datetime.now(UTC)
     for key, proposal in list(services._minister_proposals.items()):
-        if proposal['expires_at'] < now:
+        # Unanswered reviews stay visible; approval still revalidates authority
+        # and the exact effects against current state.
+        if proposal['status'] != 'pending' and proposal['expires_at'] < now:
             del services._minister_proposals[key]
     return [dict(id=key, status=p['status'], expires_at=p['expires_at'].isoformat(), **p['review'])
             for key, p in services._minister_proposals.items() if p['node_id'] == node_id]
@@ -231,7 +233,7 @@ async def execute_or_propose(services, node_id, action, request):
             expires_at=datetime.now(UTC) + timedelta(minutes=15))
         await services.events.publish(EventType.MINISTER_REVIEW, node_id=node_id, payload={'proposal_id': key, 'status': 'pending'})
         return dict(status='confirmation_required', proposal_id=key, **pending.review,
-                    message='Nothing has changed. The user can review and confirm these effects in the Minister panel.')
+                    message='Nothing has changed. The user can review and confirm these effects beside the Minister on the canvas.')
 
 
 async def decide(services, node_id, proposal_id, approve):

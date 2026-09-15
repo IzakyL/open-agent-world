@@ -44,7 +44,7 @@ def test_circle_queries_protect_secrets_search_and_reject_corner_cards(client):
     assert inside["id"] in {node["id"] for node in view["nodes"]}
     assert corner["id"] not in {node["id"] for node in view["nodes"]}
     assert "private-test-secret" not in str(view)
-    assert view["allowed_operations"] == ["inspect"]
+    assert view["allowed_operations"] == ["inspect", "observe"]
     assert invoke(client, minister, "inspect", query="HELPER")["total"] == 1
     assert client.get(f"/api/ministers/{minister['id']}/world", params={"query": "Corner"}).json()["total"] == 0
     with pytest.raises(PermissionDeniedError):
@@ -136,7 +136,7 @@ def test_minister_keeps_host_granted_tools_but_cannot_reconfigure_other_scopes(c
     client.post("/api/edges", json={"source": minister["id"], "target": sandbox["id"], "relationship": "execute"})
     provider = WorldAgentCapabilityProvider(client.app.state.services)
     tools = call(client, provider.list_tools, minister["id"])
-    assert {tool.name for tool in tools if tool.name.startswith("canvas_")} == {"canvas_inspect", "canvas_create", "canvas_move", "canvas_rename", "canvas_connect", "canvas_disconnect", "canvas_update", "canvas_delete", "canvas_organize"}
+    assert {tool.name for tool in tools if tool.name.startswith("canvas_")} == {"canvas_observe", "canvas_inspect", "canvas_create", "canvas_move", "canvas_rename", "canvas_connect", "canvas_disconnect", "canvas_update", "canvas_delete", "canvas_organize"}
     assert next(p for t in tools if t.name == "canvas_move" for p in t.parameters if p.name == "position").python_type is dict
     assert next(p for t in tools if t.name == "canvas_move" for p in t.parameters if p.name == "versions").python_type is dict
     with pytest.raises(PermissionDeniedError):

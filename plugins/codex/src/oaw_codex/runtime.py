@@ -10,7 +10,7 @@ import sqlite3
 import time
 from dataclasses import replace
 from pathlib import Path
-from typing import Any, AsyncIterator
+from typing import Any, AsyncIterator, Callable
 
 from pydantic import TypeAdapter
 
@@ -18,6 +18,7 @@ from open_agent_world.plugin_api import (
     AgentCapabilityProvider, AgentConfig, AgentConfigurationError, AgentEvent,
     AgentEventType, AgentInfo, AgentNotFoundError, AgentRuntimeError, AgentStateError, AgentStatus,
     InvocationContext, RuntimeInput, RuntimeProvider,
+    codex_tool_content,
 )
 
 from .transport import AppServer
@@ -50,6 +51,7 @@ DYNAMIC_TOOLS = [
 class CodexRuntime(RuntimeProvider):
     def __init__(self, capability_provider: AgentCapabilityProvider, *,
                  state_directory: str | Path | None = None,
+                 workspace_root: Callable[[], Path] | None = None,
                  server_command: list[str] | None = None) -> None:
         self.capabilities = capability_provider
         self.records: dict[str, AgentInfo] = {}
@@ -60,15 +62,21 @@ class CodexRuntime(RuntimeProvider):
         if root is None:
             root = Path(os.environ.get("OPEN_AGENT_WORLD_DATA_ROOT", ".open-agent-world")) / "codex"
         self.database = Path(root).resolve() / "sessions.sqlite3"
+        self.workspace_root = workspace_root or (lambda: self.database.parent)
 
-    @staticmethod
-    def _settings(config: AgentConfig, *, require_workspace: bool = True) -> tuple[str, str]:
+    def _settings(self, config: AgentConfig, *, require_workspace: bool = True) -> tuple[str, str]:
         raw = config.provider_config.get("workspace_path", "")
-        if not isinstance(raw, str) or (raw and not Path(raw).is_absolute()) or (require_workspace and not raw.strip()):
-            raise AgentConfigurationError("Codex requires an absolute workspace_path on its Agent card")
+        if not isinstance(raw, str) or (raw.strip() and not Path(raw.strip()).is_absolute()):
+            raise AgentConfigurationError("Codex Project folder must be an absolute path, or blank to use the default workspace")
+        raw = raw.strip()
         path = Path(raw).resolve() if raw else None
-        if path and not path.is_dir():
+        if raw and not path.is_dir():
             raise AgentConfigurationError(f"Codex workspace does not exist: {path}")
+        if not raw and require_workspace:
+            try:
+                path = (self.workspace_root() / "codex-workspace").resolve()
+            except (OSError, ValueError) as exc:
+                raise AgentConfigurationError(f"Cannot resolve the default Codex workspace: {exc}") from exc
         sandbox = config.provider_config.get("codex_sandbox", "workspace-write")
         if sandbox not in {"read-only", "workspace-write"}:
             raise AgentConfigurationError("codex_sandbox must be read-only or workspace-write")
@@ -112,7 +120,7 @@ class CodexRuntime(RuntimeProvider):
             raise AgentNotFoundError(f"agent not found: {agent_id}") from exc
         try:
             connection = await self._discover(record.config)
-            details = {**connection, "available": True, "workspace": record.config.provider_config.get("workspace_path", "")}
+            details = {**connection, "available": True, "workspace": self._settings(record.config)[0]}
         except AgentRuntimeError as exc:
             details = {"available": False, "error": str(exc)}
         return replace(record, details=details)
@@ -169,6 +177,11 @@ class CodexRuntime(RuntimeProvider):
                       runtime_input: RuntimeInput) -> AsyncIterator[AgentEvent]:
         await self.get_agent(config.agent_id)
         cwd, sandbox = self._settings(config)
+        if not str(config.provider_config.get("workspace_path", "")).strip():
+            try:
+                Path(cwd).mkdir(parents=True, exist_ok=True)
+            except OSError as exc:
+                raise AgentConfigurationError(f"Cannot create the default Codex workspace {cwd}: {exc}") from exc
         if not runtime_input.prompt.strip():
             raise AgentStateError("prompt must not be empty")
         if any(owner == config.agent_id for owner, _ in self.active.values()):
@@ -191,14 +204,16 @@ class CodexRuntime(RuntimeProvider):
             })})
             try:
                 result = await self._tool(agent_id, name, arguments)
-                text = json.dumps(result, ensure_ascii=False)
+                content = codex_tool_content(result)
+                text = content[0]["text"]
                 success = True
             except Exception as exc:
                 text, success = str(exc), False
+                content = [{"type": "inputText", "text": text}]
             await server.events.put({"oaw_event": event(AgentEventType.TOOL_COMPLETED, {
                 "name": name, "call_id": call_id, "response": text[:16000], "success": success,
             })})
-            return {"contentItems": [{"type": "inputText", "text": text}], "success": success}
+            return {"contentItems": content, "success": success}
 
         server = AppServer(await self._command(config), cwd, handle)
         self.active[run_id] = (agent_id, server)
@@ -256,13 +271,13 @@ class CodexRuntime(RuntimeProvider):
                 if method == "item/agentMessage/delta":
                     item_id = data["itemId"]
                     texts[item_id] = texts.get(item_id, "") + data["delta"]
-                    yield event(AgentEventType.MESSAGE, {"text": texts[item_id], "final": False})
+                    yield event(AgentEventType.MESSAGE, {"text": texts[item_id], "final": False, "provider_message_id": item_id})
                 elif method in {"item/started", "item/completed"}:
                     item = data.get("item", {})
                     kind = item.get("type")
                     if kind == "agentMessage" and method == "item/completed":
                         final_text = item.get("text", "")
-                        yield event(AgentEventType.MESSAGE, {"text": final_text, "final": True})
+                        yield event(AgentEventType.MESSAGE, {"text": final_text, "final": True, "provider_message_id": item.get("id")})
                     elif kind in {"commandExecution", "fileChange", "mcpToolCall", "webSearch"}:
                         started = method == "item/started"
                         yield event(AgentEventType.TOOL_STARTED if started else AgentEventType.TOOL_COMPLETED, {
