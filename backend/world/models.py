@@ -64,7 +64,7 @@ class AgentConfig(BaseModel):
     model_config = ConfigDict(extra="allow")
 
     system_instruction: str = Field(default="You are a helpful agent in Open Agent World.", json_schema_extra={"agentReadable": True, "agentWritable": True})
-    model: str = Field(default="gemini-3.7-flash", json_schema_extra={"agentReadable": True, "privileged": True})
+    model: str = Field(default="oaw:default", json_schema_extra={"agentReadable": True, "privileged": True})
     status: AgentStatus = AgentStatus.IDLE
     runtime_provider_id: str | None = None
     max_concurrent_runs: Annotated[int, Field(ge=1, le=64)] = 1

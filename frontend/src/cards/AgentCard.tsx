@@ -21,12 +21,12 @@ export function AgentCardBody({ card, level }: { card: WorldCard; level: NodeSur
   const runAgent = useWorldStore((state) => state.runAgent);
   const stopAgent = useWorldStore((state) => state.stopAgent);
   const [instruction, setInstruction] = useState(String(card.config.system_instruction ?? ""));
-  const [model, setModel] = useState(String(card.config.model ?? "gemini-3.7-flash"));
+  const [model, setModel] = useState(String(card.config.model ?? "oaw:default"));
   const prompt = useNodeSurfaceStore((state) => state.drafts[card.id] ?? String(card.config.prompt ?? ""));
   const setDraft = useNodeSurfaceStore((state) => state.setDraft);
 
   useEffect(() => setInstruction(String(card.config.system_instruction ?? "")), [card.config.system_instruction]);
-  useEffect(() => setModel(String(card.config.model ?? "gemini-3.7-flash")), [card.config.model]);
+  useEffect(() => setModel(String(card.config.model ?? "oaw:default")), [card.config.model]);
 
   const [capabilities, setCapabilities] = useState<{ id: string; target_name: string; description: string; kind: string }[]>([]);
   const [capabilityError, setCapabilityError] = useState("");

@@ -113,7 +113,7 @@ def test_conversation_contact_roster_is_not_limited_to_loaded_canvas_chunks(
         "id": agent["id"],
         "name": "Far Agent",
         "status": "idle",
-        "model": "gemini-3.7-flash",
+        "model": "oaw:default",
         "connected": True,
     }]
 

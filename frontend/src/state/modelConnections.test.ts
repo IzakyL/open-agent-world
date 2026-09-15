@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { availableModels, importLegacyModels, type ModelCatalog } from "./modelConnections";
+import { availableModels, hasDefaultModelConfiguration, importLegacyModels, type ModelCatalog } from "./modelConnections";
 import { DEFAULT_MODEL_SETTINGS } from "./modelSettings";
 
 describe("model connection migration", () => {
@@ -14,7 +14,7 @@ describe("model connection migration", () => {
   });
 
   it("keeps identical model names in different connections distinct and excludes disabled entries", () => {
-    const draft = importLegacyModels({ revision: 0, connections: [], default_model: null }, DEFAULT_MODEL_SETTINGS);
+    const draft = importLegacyModels({ revision: 0, connections: [], default_model: null }, { ...DEFAULT_MODEL_SETTINGS, models: ["openai/custom"] });
     const c = draft.connections[0];
     expect(c.auth_mode).toBe("api_key");
     draft.connections.push({ ...c, id: "second", name: "Second", models: c.models.map(m => ({ ...m, id: "second-" + m.id })) });
@@ -22,4 +22,19 @@ describe("model connection migration", () => {
     c.enabled = false;
     expect(availableModels(draft)).toHaveLength(c.models.length);
   });
+});
+
+it("leaves a fresh profile empty", () => {
+  const catalog: ModelCatalog = { revision: 0, connections: [], default_model: null };
+  expect(importLegacyModels(catalog, DEFAULT_MODEL_SETTINGS)).toBe(catalog);
+});
+
+it("requires an enabled default model with saved authentication", () => {
+  const draft = importLegacyModels({ revision: 0, connections: [], default_model: null }, { ...DEFAULT_MODEL_SETTINGS, models: ["custom"] });
+  draft.default_model = availableModels(draft)[0].value;
+  expect(hasDefaultModelConfiguration(draft)).toBe(false);
+  draft.connections[0].api_key_configured = true;
+  expect(hasDefaultModelConfiguration(draft)).toBe(true);
+  draft.connections[0].enabled = false;
+  expect(hasDefaultModelConfiguration(draft)).toBe(false);
 });

@@ -25,6 +25,7 @@ beforeEach(() => {
   useCardLibrary.setState({ snapshot: null, open: false, busy: false, tab: "packs", selectedDeckId: "" });
   useTutorialStore.setState({ status: 'new', view: 'hidden', session: undefined, error: undefined, busy: false, ready: false });
   useWorldStore.setState({ cards: [], edges: [], catalog: TEST_CATALOG, syncState: 'online', stressCards: [], viewport,
+    modelCatalog: { revision: 0, connections: [], default_model: null }, settingsOpen: false,
     historyBusy: false, positionCommitBusy: false, undoStack: [], redoStack: [], cardTombstones: {}, toasts: [], selectedCardIds: [] });
   useNodeSurfaceStore.setState({ surfaceLevels: {}, dragging: false });
   useGlueStore.setState({ boxes: {}, bonds: [], activeEdits: 0 });
@@ -248,4 +249,22 @@ describe('first-run persistence and ownership', () => {
     expect(useTutorialStore.getState().session?.demos).toHaveLength(1);
     expect(useTutorialStore.getState().status).toBe('started');
   });
+});
+
+it('opens settings after finishing without a configured default model', async () => {
+  vi.spyOn(worldApi, 'getWorld').mockResolvedValue(snapshot());
+  await tutorial.exit('completed');
+  expect(useTutorialStore.getState().status).toBe('completed');
+  expect(useWorldStore.getState().settingsOpen).toBe(true);
+  expect(useWorldStore.getState().toasts.at(-1)?.title).toBe('Set up your default model');
+});
+
+it('keeps settings closed after finishing with a configured default model', async () => {
+  vi.spyOn(worldApi, 'getWorld').mockResolvedValue(snapshot());
+  useWorldStore.setState({ modelCatalog: { revision: 1, default_model: 'oaw:model:user', connections: [{
+    id: 'user', name: 'User', adapter: 'openai', enabled: true, base_url: 'https://example.test/v1',
+    auth_mode: 'api_key', api_key_configured: true, models: [{ id: 'user', name: 'User', model_id: 'custom', enabled: true }],
+  }] } });
+  await tutorial.exit('completed');
+  expect(useWorldStore.getState().settingsOpen).toBe(false);
 });

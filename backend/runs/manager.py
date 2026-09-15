@@ -889,7 +889,7 @@ class RunManager:
             agent_id=card.id,
             name=card.name,
             system_instruction=instruction,
-            model=str(card.config.get("model", "gemini-3.7-flash")),
+            model=str(card.config.get("model", "oaw:default")),
             runtime_provider_id=(
                 str(card.config["runtime_provider_id"])
                 if card.config.get("runtime_provider_id")

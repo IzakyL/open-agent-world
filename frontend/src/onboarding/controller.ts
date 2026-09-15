@@ -3,6 +3,8 @@ import { createJSONStorage, persist } from 'zustand/middleware';
 import { profileStorage } from '../state/profileStorage';
 import { worldApi, apiErrorMessage } from '../api/client';
 import { useWorldStore, mergeCards } from '../state/worldStore';
+import { t } from '../i18n';
+import { hasDefaultModelConfiguration } from '../state/modelConnections';
 import { useCardLibrary } from '../state/cardLibrary';
 import { NODE_SURFACE_SIZE, useNodeSurfaceStore } from '../state/nodeSurfaces';
 import { beginGlueEdit, persistGlue, useGlueStore, type GlueBox } from '../state/glue';
@@ -410,6 +412,11 @@ export const tutorial = {
     try {
       await cleanup();
       useTutorialStore.setState({ status, session: undefined, view: 'hidden', target: undefined, ready: false });
+      if (!hasDefaultModelConfiguration(world().modelCatalog)) {
+        useWorldStore.setState({ settingsOpen: true });
+        world().pushToast({ tone: 'neutral', title: t('Set up your default model'),
+          detail: t('Add your API key, check the Base URL, and choose a default model in Settings before using your agents.') });
+      }
     } catch (error) { useTutorialStore.setState({ view: 'paused', error: apiErrorMessage(error) }); }
     finally { stopping = false; useTutorialStore.setState({ busy: false }); }
   },

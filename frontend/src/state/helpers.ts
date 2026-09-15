@@ -10,7 +10,7 @@ import {
 const DEFAULT_CONFIG: Record<CardType, CardConfig> = {
   agent: {
     system_instruction: "You are a careful research agent. Use only capabilities connected in this world.",
-    model: "gemini-3.7-flash",
+    model: "oaw:default",
     prompt: "",
     output: [],
   },

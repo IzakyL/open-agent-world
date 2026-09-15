@@ -287,6 +287,10 @@ class GoogleAdkAgentRuntime(RuntimeProvider):
         """Return a configured LiteLlm object only when ADK selects that adapter."""
 
         from backend.security.model_connections import MODEL_REF_PREFIX
+        if configured_model == "oaw:default":
+            configured_model = self.model_connections.read().default_model if self.model_connections else None
+            if not configured_model:
+                raise AgentStateError("Choose a default model and configure its connection in Settings / Models.")
         if configured_model.startswith(MODEL_REF_PREFIX):
             if self.model_connections is None:
                 raise AgentStateError("Model connections are not configured on this runtime")

@@ -1,4 +1,8 @@
 {
+  "Use default model": ["Use default model", "??????"],
+  "Choose a default model": ["Choose a default model", "??????"],
+  "Set up your default model": ["Set up your default model", "???????"],
+  "Add your API key, check the Base URL, and choose a default model in Settings before using your agents.": ["Add your API key, check the Base URL, and choose a default model in Settings before using your agents.", "?????????????? API Key??? Base URL?????????"],
   "Continue": ["Continue", "继续"],
   "The Text card is here. Take a moment to look; when you are ready, we will place yours.": ["The Text card is here. Take a moment to look; when you are ready, we will place yours.", "文本卡已经放好了。先看一看，准备好后点继续，再来放置你的卡片。"],
   "Both cards are now connected with Participate. Follow the line from the Agent to the Conversation, then continue when you are ready.": ["Both cards are now connected with Participate. Follow the line from the Agent to the Conversation, then continue when you are ready.", "两张卡已通过“参与”连接。沿着连线看看智能体与对话的关系，准备好了再继续。"],

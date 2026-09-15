@@ -44,7 +44,7 @@ export function ModelConnectionsEditor({ value, onChange, saved, busy }: {
     <div className="settings-page-heading"><h3>{t("Models & connections")}</h3><p>{t("Connect your accounts, then choose the models your agents can use.")}</p></div>
     <label className="field-label"><span>{t("Default for new agents")}</span>
       <select value={value.default_model ?? ""} onChange={e => onChange({ ...value, default_model: e.target.value || null })}>
-        <option value="">{t("Use agent template default")}</option>
+        <option value="">{t("Choose a default model")}</option>
         {availableModels(value).map(m => <option key={m.value} value={m.value}>{m.connection} / {m.label}</option>)}
       </select>
     </label>

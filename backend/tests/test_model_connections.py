@@ -232,3 +232,16 @@ async def test_adk_sends_each_connection_key_to_its_own_endpoint(tmp_path):
         server.shutdown()
         server.server_close()
         thread.join(timeout=2)
+
+
+def test_agent_defaults_follow_saved_model(client):
+    from backend.world.models import AgentConfig as WorldAgentConfig
+    from backend.agents.models import AgentConfig
+    from backend.agents.models import AgentStateError
+    assert WorldAgentConfig().model == AgentConfig(agent_id="test", name="Test").model == "oaw:default"
+    store = ModelConnectionStore(client.app.state.services.llm_settings)
+    runtime = GoogleAdkAgentRuntime(capability_provider=None, model_connections=store)
+    with pytest.raises(AgentStateError, match="default model"):
+        runtime._adk_model("oaw:default")
+    store.save(CatalogEdit(revision=0, connections=[connection()], default_model="oaw:model:work"))
+    assert runtime._adk_model("oaw:default").model == "openai/same-model"

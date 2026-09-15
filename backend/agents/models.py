@@ -32,7 +32,7 @@ class AgentConfig:
     agent_id: str
     name: str
     system_instruction: str = "You are a helpful agent in Open Agent World."
-    model: str = "gemini-3.7-flash"
+    model: str = "oaw:default"
     runtime_provider_id: str | None = None
     max_concurrent_runs: int = 1
     provider_config: Mapping[str, Any] = field(
