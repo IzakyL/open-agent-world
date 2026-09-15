@@ -6,6 +6,8 @@ import { useWorldStore } from "../state/worldStore";
 import type { WorldCard } from "../types/world";
 import { PluginSurface } from "../plugins/PluginSurface";
 import { modelRef } from "../state/modelConnections";
+import { MINISTER_ROLE_CARD } from '../state/ministerRole';
+import { MinisterRoleCardPreview } from './MinisterRoleCard';
 
 function compactText(value: unknown, fallback: string): string {
   const text = String(value ?? "").replace(/\s+/g, " ").trim();
@@ -23,6 +25,7 @@ function DefaultNodePreview({ card }: { card: WorldCard }) {
   const sandboxError = useWorldStore(s => s.sandboxErrors[card.id]);
   const catalog = useWorldStore((state) => state.catalog);
   const modelCatalog = useWorldStore((state) => state.modelCatalog);
+  if (card.type === MINISTER_ROLE_CARD) return <MinisterRoleCardPreview />;
 
 
   if (catalog.node_types.find((definition) => definition.id === card.type)?.traits.includes("ui.skill-package.v1")) return <SkillToolboxPreview card={card} />;

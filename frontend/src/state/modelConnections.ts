@@ -28,7 +28,13 @@ export function importLegacyModels(catalog: ModelCatalog, legacy: ModelSettings)
 
 /** Checks saved configuration, without claiming provider connectivity. */
 export function hasDefaultModelConfiguration(catalog: ModelCatalog): boolean {
+  return hasModelConfiguration(catalog, catalog.default_model);
+}
+
+/** An existing Agent can select a saved model independently of the global default. */
+export function hasModelConfiguration(catalog: ModelCatalog, selected: unknown): boolean {
+  const reference = !selected || selected === 'oaw:default' ? catalog.default_model : selected;
   return catalog.connections.some(c => c.enabled
-    && c.models.some(m => m.enabled && modelRef(m.id) === catalog.default_model)
+    && c.models.some(m => m.enabled && modelRef(m.id) === reference)
     && (c.auth_mode === "environment" || (c.auth_mode === "none" ? !!c.base_url : c.api_key_configured)));
 }

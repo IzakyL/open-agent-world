@@ -105,6 +105,26 @@ def test_new_install_open_deck_remove_restart(tmp_path):
     db.close()
 
 
+def test_legacy_minister_inventory_becomes_role_card_in_same_deck(tmp_path):
+    db = Database(tmp_path / 'world.db')
+    store = CardLibraryStore(db, create_builtin_registry())
+    pack = next(pack for pack in store.read().packs.values() if 'core.minister-role' in pack.definition.cards)
+    edit(store, 'open_pack', id=pack.definition.id)
+    state = edit(store, 'update_deck', id='starter', entries=[{'id': 'text'}, {'id': 'core.minister-role'}, {'id': 'agent'}])
+    payload = state.model_dump(mode='json')
+    collected = payload['collection'].pop('core.minister-role')
+    payload['collection']['core.minister'] = {**collected, 'card_id': 'core.minister'}
+    payload['decks'][0]['entries'][1]['id'] = 'core.minister'
+    with db.transaction(immediate=True) as connection:
+        connection.execute('UPDATE application_settings SET value_json=? WHERE key=?', (json.dumps(payload), KEY))
+    restored = CardLibraryStore(db, create_builtin_registry()).read()
+    assert restored.decks == state.decks
+    assert restored.active_deck_id == state.active_deck_id
+    assert restored.collection == state.collection
+    assert store.read().revision == restored.revision  # idempotent
+    db.close()
+
+
 def test_disable_uninstall_reinstall_preserves_references(tmp_path):
     path = tmp_path / "world.db"
     registry = create_builtin_registry()

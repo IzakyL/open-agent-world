@@ -12,6 +12,8 @@ import { OawGuide, type GuideMotion } from './OawGuide';
 import { CHAPTERS, STEPS, STARTER_CARDS, starterPack, type Role, type Target } from './steps';
 import { tutorial, useTutorialStore, type GuideVisuals } from './controller';
 import './onboarding.css';
+import { useMinisterRole } from '../state/ministerRole';
+import { QuickStartGuide } from './QuickStartGuide';
 import { installTutorialInteractionGuard } from './interactionGuard';
 import { Spotlight, type SpotlightHandle } from './Spotlight';
 import { relationshipPath } from '../edges/geometry';
@@ -85,9 +87,10 @@ export function Onboarding() {
   travel.current ??= new GuideTravel(position);
   const anchor = useRef<{ key: string; x: number; y: number } | undefined>(undefined);
   const guideArrived = useRef(false);
+  const ministerPanelId = useMinisterRole(state => state.settingsCardId);
   const origin = useRef(flow.screenToFlowPosition({ x: window.innerWidth * .72, y: window.innerHeight * .42 }));
 
-  const focusSubjects = useCallback(async (ids: string[]) => {
+  const focusSubjects = useCallback(async (ids: string[], reserveCardSpace = false) => {
     const sequence = ++focusSequence.current;
     const deadline = performance.now() + 6000;
     let previous = '', stableFrames = 0;
@@ -95,7 +98,7 @@ export function Onboarding() {
       await new Promise<void>(resolve => requestAnimationFrame(() => resolve()));
       const nodes = ids.flatMap(id => { const node = flow.getNode(id); return node ? [node] : []; });
       const levels = useNodeSurfaceStore.getState().surfaceLevels;
-      if (nodes.length !== ids.length || nodes.some(node => node.type !== 'minister' && node.data.surfaceLevel !== (levels[node.id] ?? 'preview'))) continue;
+      if (nodes.length !== ids.length || nodes.some(node => node.data.surfaceLevel !== (levels[node.id] ?? 'preview'))) continue;
       const signature = JSON.stringify(nodes.map(node => [node.position, node.style?.width, node.style?.height]));
       stableFrames = signature === previous ? stableFrames + 1 : 0;
       previous = signature;
@@ -106,6 +109,17 @@ export function Onboarding() {
       const bounds = getNodesBounds(nodes.map(node => ({ ...node, measured: {
         width: Number(node.style?.width ?? node.width), height: Number(node.style?.height ?? node.height),
       } })));
+      if (reserveCardSpace) {
+        const size = { width: 224, height: 300 };
+        const obstacles = flow.getNodes().filter(node => !node.hidden).map(node => ({
+          ...(flow.getInternalNode(node.id)?.internals.positionAbsolute ?? node.position),
+          width: Number(node.style?.width ?? node.measured?.width ?? 96), height: Number(node.style?.height ?? node.measured?.height ?? 96),
+        }));
+        const space = vacantPosition({ x: bounds.x + bounds.width + 100, y: bounds.y, ...size }, obstacles, 80);
+        const right = Math.max(bounds.x + bounds.width, space.x + size.width), bottom = Math.max(bounds.y + bounds.height, space.y + size.height);
+        bounds.x = Math.min(bounds.x, space.x); bounds.y = Math.min(bounds.y, space.y);
+        bounds.width = right - bounds.x; bounds.height = bottom - bounds.y;
+      }
       const { width, height } = useWorldStore.getState().viewport;
       const gutter = width >= 900 ? 290 : 0;
       const viewport = getViewportForBounds(bounds, width - gutter - 20, Math.max(280, height - 150), .3, .85, .25);
@@ -308,12 +322,13 @@ export function Onboarding() {
 
   useEffect(() => {
     if (!active || s.busy || useNodeSurfaceStore.getState().dragging) return;
-    const ids = step.id === 'sandbox-connect' ? [s.session?.refs.agent, s.session?.refs.sandbox]
+    const ids = step.target === 'minister' && ministerPanelId === s.session?.refs.minister ? [ministerPanelId]
+      : step.id === 'sandbox-connect' ? [s.session?.refs.agent, s.session?.refs.sandbox]
       : step.role && ['inspector', 'workspace'].includes(surfaces[s.session?.refs[step.role] ?? ''] ?? '') ? [s.session?.refs[step.role]] : [];
     if (!ids.length) return;
     void focusSubjects(ids.filter((id): id is string => Boolean(id)));
     return () => { focusSequence.current++; };
-  }, [active, step.id, surfaces, focusSubjects]);
+  }, [active, step.id, surfaces, ministerPanelId, focusSubjects]);
 
   useLayoutEffect(() => {
     if (s.view === 'hidden') return;
@@ -323,13 +338,16 @@ export function Onboarding() {
     let modelTargetHeight = 0;
     function place() {
       const placement = s.view === 'active' && target === 'deck';
-      const placementType = step.role === 'agent' ? 'agent' : step.role === 'conversation' ? 'conversation' : step.role === 'sandbox' ? 'sandbox' : 'text';
+      const placementType = step.role === 'ministerRole' ? 'core.minister-role' : step.role === 'agent' ? 'agent' : step.role === 'conversation' ? 'conversation' : step.role === 'sandbox' ? 'sandbox' : 'text';
       const placementCard = placement ? document.querySelector<HTMLElement>(`[data-palette-card="${placementType}"]`) : null;
       const element = placementCard ?? targetElement(target);
       const participants = (step.participants ?? []).flatMap(role => {
         const element = targetElement(role); return element ? [{ id: role, element }] : [];
       });
       const subjects = [...participants, ...(element && !participants.some(item => item.element === element) ? [{ id: target, element }] : [])];
+      const ministerControls = target === 'minister' && s.session?.refs.minister
+        ? [...document.querySelectorAll<HTMLElement>(`[data-minister-for="${CSS.escape(s.session.refs.minister)}"], [data-tutorial-card-id="${CSS.escape(s.session.refs.minister)}"]`)]
+          .filter(control => !control.hidden).map((element, i) => ({ id: `minister-control-${i}`, element })) : [];
       const library = useCardLibrary.getState();
       const deck = library.snapshot?.decks.find(item => item.id === (library.selectedDeckId || library.snapshot?.active_deck_id));
       const candidates = s.view === 'active' && step.id === 'deck-build' && library.open && library.tab === 'cards'
@@ -338,7 +356,7 @@ export function Onboarding() {
           return card ? [{ id: `library-card-${id}`, element: card.closest<HTMLElement>('.library-card') ?? card }] : [];
         }) : [];
       const chooser = participants.length ? document.querySelector<HTMLElement>('.connection-dialog') : null;
-      const regions = [...subjects, ...candidates, ...(chooser ? [{ id: 'capability-chooser', element: chooser }] : [])];
+      const regions = [...subjects, ...ministerControls, ...candidates, ...(chooser ? [{ id: 'capability-chooser', element: chooser }] : [])];
       const elements = regions.map(item => item.element);
       for (const old of highlighted) if (!elements.includes(old)) old.removeAttribute('data-tutorial-highlight');
       for (const next of elements) if (!highlighted.includes(next)) {
@@ -457,7 +475,7 @@ export function Onboarding() {
     return () => { cancelAnimationFrame(frame); highlighted.forEach(element => element.removeAttribute('data-tutorial-highlight')); };
   }, [welcome, libraryOpen, s.view, target, step.id, step.participants, targetElement, flow, connectionGeometry, cards.length]);
 
-  if (s.view === 'hidden') return null;
+  if (s.view === 'hidden') return <QuickStartGuide />;
   const motion: GuideMotion = welcome || s.view === 'paused' ? 'idle' : s.busy ? 'think' : step.id === 'enter' ? 'enter' : step.expects ? 'indicate' : 'speak';
   const role = step.role;
   const settingsStep = step.target.startsWith('model-');
@@ -485,9 +503,9 @@ export function Onboarding() {
       <h1>{t("Open Agent World")}</h1>
       <p>{t("A little space. A few cards. Something entirely yours.")}</p>
       <div className="onboarding-actions">
-        <button className="primary-button onboarding-start" disabled={s.busy || sync === 'offline'} onClick={() => void tutorial.start()}><span>{t("Start Tutorial")}<small>{t("A guided walk through your first world")}</small></span><ArrowRight size={19} /></button>
-        <button className="secondary-button" disabled={s.busy || sync === 'offline'} onClick={() => void tutorial.minister()}>{t("Place Minister Card")}</button>
-        <button className="onboarding-text-button" disabled={s.busy} onClick={() => void tutorial.directly()}>{t("Start Directly")}</button>
+        <button className="primary-button onboarding-start" disabled={s.busy || sync === 'offline'} onClick={() => void tutorial.start()}><span>{t("Start Tutorial")}<small>{t("Recommended · A guided walk through your first world")}</small></span><ArrowRight size={19} /></button>
+        <button className="secondary-button" disabled={s.busy || sync === 'offline'} onClick={() => void tutorial.quickStart()}>{t("Quick Start")}</button>
+        <button className="onboarding-text-button" disabled={s.busy} onClick={() => void tutorial.directly()}>{t("Start Empty")}</button>
       </div>
       {s.error && <p className="onboarding-error" role="alert">{s.error}</p>}
     </section>}
@@ -504,13 +522,16 @@ export function Onboarding() {
           <p key={`${step.id}-${reviewing}`} className="tutorial-dialogue" aria-live="polite" aria-atomic="true">{s.view === 'paused' ? t("Pick up where you left off, or start a new walk. Your own cards stay with you.") : missing ? t("Looks like that card moved away or was removed. I can help you find it or return to placing one.") : t(dialogue)}</p>
           {s.error ? <p className="onboarding-error" role="alert">{s.error}</p> : sync === 'offline' ? <small role="status">{t("Waiting for the world service to reconnect. Your progress is saved.")}</small> : step.hint && <small>{t(step.hint)}</small>}
           {active && <small className="tutorial-lock-hint">{t("Other controls are locked. Pause to explore freely.")}</small>}
+          {active && step.id === 'minister' && s.session?.refs.agent && <>
+            <div className="minister-promotion-equation"><span>{t('Agent')}</span><b>+</b><span>{t('Minister role')}</span><b>=</b><span>{t('Minister Agent')}</span></div>
+          </>}
           <footer>
             {s.view === 'paused' ? <>
               <button className="tutorial-next" disabled={s.busy} onClick={() => tutorial.resume()}>{t("Resume")}</button>
               <button className="onboarding-icon-button" disabled={s.busy} onClick={() => void tutorial.replay()} aria-label={t("Restart tutorial")}><RotateCcw size={14} /></button>
               {s.error && <button className="onboarding-text-button" disabled={s.busy} onClick={() => void tutorial.exit('skipped')}>{t("Retry cleanup")}</button>}
             </> : <>
-              {step.button && <button className="tutorial-next" disabled={s.busy || sync === 'offline' || waitingForTarget || (step.id === 'deck-build' && !s.ready)} onClick={() => void tutorial.continue()}>{s.busy ? t("One moment…") : t(reviewing ? "Continue" : step.button)}<ArrowRight size={13} /></button>}
+              {step.button && <button className="tutorial-next" disabled={s.busy || sync === 'offline' || waitingForTarget || (['deck-build', 'minister'].includes(step.id) && !s.ready)} onClick={() => void tutorial.continue()}>{s.busy ? t("One moment…") : t(reviewing ? "Continue" : step.button)}<ArrowRight size={13} /></button>}
               {!step.button && <span className="tutorial-waiting"><i />{s.busy ? t("One moment…") : s.ready ? t("Settings saved") : t("Your turn")}</span>}
               {((step.expects && !settingsStep && step.id !== 'model-settings') || s.error) && <button className="onboarding-icon-button" aria-label={t("Recover this step")} title={t("Find the card, or recover a missing card")} disabled={s.busy} onClick={() => void tutorial.recover()}><Compass size={15} /></button>}
             </>}

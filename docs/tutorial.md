@@ -2,7 +2,9 @@
 
 **English** | [简体中文](tutorial.zh-CN.md)
 
-An empty world opens with the OAW logo and three choices: **Start Tutorial**, **Place Minister Card**, and **Start Directly**. The tutorial takes place on the real canvas. It covers navigation, cards, an Agent–Conversation–Sandbox workflow, sticking cards together, and the Minister. The compass button in the world controls replays it.
+An empty world opens with the OAW logo and three choices: **Start Tutorial** (recommended), **Quick Start**, and **Start Empty**. Quick Start opens the necessary pack, prepares a deck and connects an Agent with a Conversation. Missing model setup opens the existing Settings flow with a small resumable guide; existing plugin Agents use their own settings. It never appoints a Minister. Start Empty adds nothing. The tutorial takes place on the real canvas. It covers navigation, cards, an Agent–Conversation–Sandbox workflow, sticking cards together, and finally promotion of the tutorial's existing Agent into a Minister. The compass button in the world controls replays it.
+
+The Minister chapter displays `Agent + Minister role = Minister Agent`. It adds the real Minister role card to the active deck, then guides the user to place it beside their Agent and drag it onto that Agent. The role card is absorbed as the Agent is promoted and contracts to a circular node with a small crown. The user then explores canvas chat and the Minister tab inside the Agent card, where permissions and confirmations live. History remains in the existing Agent workspace. Progress observes the persisted role and actual interactions. Users who skip the tutorial can find the same role card in the Core essentials pack and add it to any deck.
 
 The guide waits for your actions. Its small compass button finds the current subject or recovers a missing card. Minimize the bubble to clear some space; × skips the tutorial. After a reload, choose Resume or restart. Model setup uses the ordinary Agent settings and **Manage models**. Sending to a model is optional; a real provider must be configured to receive a useful reply. The guide does not generate a simulated response or start a Sandbox for you.
 

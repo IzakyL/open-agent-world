@@ -12,6 +12,8 @@ let currentScope: (() => InteractionScope) | undefined;
 export function tutorialAllowsCanvasTarget(id: string, action: 'connect' | 'glue' | 'transform'): boolean {
   const scope = currentScope?.();
   if (!scope?.active) return true;
+  if (!scope.busy && action === 'transform' && scope.step.expects === 'promotion')
+    return (scope.step.participants ?? []).some(role => scope.refs[role] === id);
   if (scope.busy || scope.step.expects !== action) return false;
   return (scope.step.participants ?? []).some(role => scope.refs[role] === id);
 }
@@ -25,11 +27,12 @@ export function tutorialAllows(target: Element, scope: InteractionScope, kind = 
   const { step, refs } = scope;
   const within = (selector: string) => Boolean(target.closest(selector));
   const isCanvas = within('.react-flow__pane');
+  if (step.target === 'minister' && target.closest('[data-minister-for]')?.getAttribute('data-minister-for') === refs.minister) return true;
   if (kind === 'wheel') return isCanvas || within('.settings-dialog, .card-library-modal, [data-tutorial-highlight]');
   if (step.id === 'pan') return isCanvas;
   if (step.id === 'zoom') return isCanvas || within('.world-controls');
   if (step.target === 'deck') {
-    const type = step.role === 'agent' ? 'agent' : step.role === 'conversation' ? 'conversation' : step.role === 'sandbox' ? 'sandbox' : 'text';
+    const type = step.role === 'ministerRole' ? 'core.minister-role' : step.role === 'agent' ? 'agent' : step.role === 'conversation' ? 'conversation' : step.role === 'sandbox' ? 'sandbox' : 'text';
     return within(`[data-palette-card="${type}"]`) || (kind === 'drop' && isCanvas);
   }
   if (step.id === 'deck-build') return within('.library-deck-rail, .library-card[data-tutorial-highlight], .library-card-add-menu');
@@ -57,7 +60,7 @@ export function tutorialAllows(target: Element, scope: InteractionScope, kind = 
     if (within('.icon-button--danger')) return step.expects === 'delete';
     if (['move', 'select', 'focus', 'delete'].includes(step.expects ?? '')) return !within('button, a, input, textarea, select, [contenteditable="true"]');
     if (step.expects === 'close') return within('.node-surface-close');
-    if (['open', 'workspace'].includes(step.expects ?? '')) return !within('button, a, input, textarea, select, [contenteditable="true"]') || within('.card-expand-button, .minister-manage');
+    if (['open', 'workspace'].includes(step.expects ?? '')) return !within('button, a, input, textarea, select, [contenteditable="true"]') || within('.card-expand-button');
     return true;
   }
   if (step.target === 'minister' && target.closest('.minister-presence')?.getAttribute('data-tutorial-card-id') === refs.minister) return true;
@@ -78,6 +81,7 @@ export function installTutorialInteractionGuard(getScope: () => InteractionScope
       return;
     }
     if (['pointerover', 'pointerenter'].includes(event.type)) {
+      if (target.closest('.world-card.is-node[data-minister]') && scope.step.target !== 'minister') { stop(event); return; }
       if (target.closest('.minister-avatar-zone') && !tutorialAllows(target, scope)) stop(event);
       return;
     }

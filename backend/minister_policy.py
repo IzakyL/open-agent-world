@@ -27,7 +27,18 @@ def review_change(services, node_id, effect):
 
 def _grant(card):
     return dict(created_at=card.created_at.isoformat(), position=card.position.model_dump(), size=card.size.model_dump(),
-                radius=card.config['control_radius'], enabled=card.config['allow_canvas_edits'])
+                radius=card.minister.control_radius, enabled=card.minister.allow_canvas_edits)
+
+
+async def invalidate_changed_role(services, before, after):
+    """Revoking and reappointing must never revive an earlier approval request."""
+    if before.minister == after.minister:
+        return
+    for key, proposal in list(services._minister_proposals.items()):
+        if proposal['node_id'] == before.id and proposal['status'] == 'pending':
+            proposal['status'] = 'failed'
+            await services.events.publish(EventType.MINISTER_REVIEW, node_id=before.id,
+                payload={'proposal_id': key, 'status': 'failed'})
 
 
 def default_agent_model(services):
@@ -36,7 +47,6 @@ def default_agent_model(services):
 
 
 def summarize(services, actor_id, effect):
-    from backend.minister import MINISTER_TYPE
     before = {card.id: card for card in effect['before']}
     operation = effect['operation']
     reasons, changes = [], []
@@ -44,14 +54,15 @@ def summarize(services, actor_id, effect):
         reasons.append('Delete cards and their stored content; attached equipment and connections are also removed.')
         if effect.get('organization'):
             reasons.append('Remove the physical glue bonds to neighbouring cards; the neighbours are preserved.')
-    if operation in {'group', 'unglue'} and any(card.type == MINISTER_TYPE for card in effect['before']):
-        raise PermissionDeniedError('Minister control nodes must remain independent of canvas groups and glue')
+    if operation == 'group' and any(card.minister is not None for card in effect['before']):
+        raise PermissionDeniedError('Minister scope ownership can only be changed by the user')
     for card in effect['after']:
         previous = before.get(card.id)
         creating = previous is None
-        if card.type == MINISTER_TYPE and (creating or previous and (
-            card.position != previous.position or card.size != previous.size or any(
-                card.config.get(key) != previous.config.get(key) for key in ('control_radius', 'allow_canvas_edits', 'system_instruction')))):
+        if (card.minister != (previous.minister if previous else None)
+                or card.minister is not None and previous and any(
+                    getattr(card, key) != getattr(previous, key)
+                    for key in ('position', 'size', 'parent_id', 'equipment'))):
             raise PermissionDeniedError('Minister authority and control scopes can only be changed by the user')
         spec = services.plugins.node_type(card.type)
         if creating and spec.canvas_create_requires_confirmation:
@@ -147,7 +158,6 @@ def pending_proposals(services, node_id):
 
 
 def administration_options(services, actor_id, nodes):
-    from backend.minister import MINISTER_TYPE
     types = []
     for item in services.plugins.catalog().node_types:
         spec = services.plugins.node_type(item.id)
@@ -157,13 +167,11 @@ def administration_options(services, actor_id, nodes):
                 risk = config_write_risk(spec.config_model, {key: None})
             except PermissionDeniedError:
                 continue
-            if item.id == MINISTER_TYPE and key in {'control_radius', 'allow_canvas_edits', 'system_instruction'}:
-                continue
             schema = spec.config_model.model_json_schema()['properties'][key]
             fields[key] = dict(risk=risk, description=schema.get('description', schema.get('title', key)),
                                type=schema.get('type'), choices=schema.get('enum'))
         types.append(dict(id=item.id, label=item.label, create=(
-            'DENY' if item.id == MINISTER_TYPE else 'unsupported' if not spec.user_creatable or spec.container and spec.container.document_field else
+            'unsupported' if not spec.user_creatable or spec.container and spec.container.document_field else
             'CONFIRM' if spec.canvas_create_requires_confirmation else 'ALLOW'), configuration=fields,
             container=item.container.model_dump(mode='json') if hasattr(item.container, 'model_dump') else item.container))
     return dict(card_types=types, risk_policy=dict(ALLOW='Execute normal local organization and configuration directly.',

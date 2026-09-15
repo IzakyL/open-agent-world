@@ -4,9 +4,9 @@ import type { GlueBond } from '../state/glue';
 import type { LibrarySnapshot } from '../state/cardLibrary';
 import type { WorldInteraction } from '../state/interactions';
 
-export type Role = 'demo' | 'practice' | 'agent' | 'conversation' | 'sandbox' | 'glueA' | 'glueB' | 'minister';
+export type Role = 'demo' | 'practice' | 'agent' | 'conversation' | 'sandbox' | 'glueA' | 'glueB' | 'ministerRole' | 'minister';
 export type Target = Role | 'center' | 'terrain' | 'deck' | 'tools' | 'zoom-controls' | 'library' | 'library-pack' | 'library-decks' | 'settings' | 'model-connection' | 'model-credentials' | 'model-list' | 'model-save';
-export type Demonstration = 'library' | 'deck' | 'place' | 'connect' | 'glue' | 'unglue' | 'minister';
+export type Demonstration = 'library' | 'deck' | 'place' | 'connect' | 'glue' | 'unglue';
 export interface TutorialStep {
   id: string;
   chapter: number;
@@ -17,7 +17,7 @@ export interface TutorialStep {
   participants?: [Role, Role];
   result?: { dialogue: string; target: Target };
   button?: string;
-  expects?: 'library-open' | 'pack-open' | 'library-cards' | 'deck-ready' | 'settings-open' | 'model-connection' | 'models-saved' | 'pan' | 'zoom' | 'place' | 'move' | 'select' | 'open' | 'close' | 'focus' | 'delete' | 'configure' | 'workspace' | 'message' | 'connect' | 'glue' | 'presence';
+  expects?: 'library-open' | 'pack-open' | 'library-cards' | 'deck-ready' | 'settings-open' | 'model-connection' | 'models-saved' | 'pan' | 'zoom' | 'place' | 'move' | 'select' | 'open' | 'close' | 'focus' | 'delete' | 'configure' | 'workspace' | 'message' | 'connect' | 'glue' | 'presence' | 'promotion' | 'minister-panel';
   role?: Role;
   optional?: string;
   review?: boolean;
@@ -61,10 +61,11 @@ export const STEPS: readonly TutorialStep[] = [
   { id: 'glue-reset', result: { target: 'glueA', dialogue: 'The cards are separate again. When you are ready, we will switch on Glue and bring their edges together.' }, participants: ['glueA', 'glueB'], chapter: 3, dialogue: 'See the seam? Sticking arranges cards; it doesn’t grant a capability. I’ll separate my props so you can try.', target: 'glueA', action: 'unglue', button: 'My turn' },
   { id: 'glue', participants: ['glueA', 'glueB'], chapter: 3, dialogue: 'Switch on the droplet tool (Glue). Drag one of my two Text cards close to the other’s edge; release when the seam appears.', target: 'tools', expects: 'glue', role: 'glueA' },
   { id: 'glue-move', participants: ['glueA', 'glueB'], chapter: 3, dialogue: 'Now drag either card. Its neighbour comes along! Select the pair to find Detach glue when you want to separate them.', target: 'glueA', expects: 'move', role: 'glueA' },
-  { id: 'minister', result: { target: 'minister', dialogue: 'The Minister is here. Notice its circle; continue when you are ready to explore it.' }, chapter: 4, dialogue: 'One last neighbour: the Minister. It can help operate and configure the world inside its circle.', target: 'center', action: 'minister', button: 'Place Minister Card' },
-  { id: 'minister-presence', chapter: 4, dialogue: 'Move onto the Minister’s circle or click it. You can speak right here on the canvas.', target: 'minister', expects: 'presence', role: 'minister' },
+  { id: 'minister-card', chapter: 4, dialogue: 'Here is a new card in your deck: Minister role. Place it beside your Agent.', target: 'deck', expects: 'place', role: 'ministerRole' },
+  { id: 'minister', chapter: 4, dialogue: 'Drag the Minister role card onto your Agent. The card is absorbed, and your Agent is promoted with its original model and tools.', participants: ['ministerRole', 'agent'], target: 'agent', expects: 'promotion', role: 'agent', review: true, button: 'Continue' },
+  { id: 'minister-presence', chapter: 4, dialogue: 'Your Agent is now a Minister and still uses its original model and tools. Click its new Minister badge to talk right here on the canvas.', target: 'minister', expects: 'presence', role: 'minister' },
   { id: 'minister-message', chapter: 4, dialogue: 'Try asking “What cards are inside your circle?” Later, ask it to find a card, arrange your world, or help configure an Agent.', target: 'minister', expects: 'message', role: 'minister', optional: 'Try the model later' },
-  { id: 'minister-history', chapter: 4, dialogue: 'The little settings button beside its circle opens history, settings, nearby cards, and confirmations. Open it now.', target: 'minister', expects: 'open', role: 'minister' },
+  { id: 'minister-history', chapter: 4, dialogue: 'Open your Agent card and choose the Minister tab. Its permissions and confirmations live there; history stays in the Agent workspace.', target: 'minister', expects: 'minister-panel', role: 'minister' },
   { id: 'minister-safety', chapter: 4, dialogue: 'You stay in charge. Review sensitive or destructive proposals in the Minister’s confirmations. Its control radius and canvas-edit setting define where it can help.', target: 'minister', button: 'Got it' },
   { id: 'finish', chapter: 4, dialogue: 'You’ve made a world! Your workflow stays. I’ll tidy my temporary props. Find Replay Tutorial at the compass in the world controls whenever you want another walk.', target: 'center', button: 'Finish & keep my world' },
 ];
@@ -111,6 +112,8 @@ export function stepComplete(step: TutorialStep, refs: Partial<Record<Role, stri
     case 'configure': return Boolean(card && state.settled && (level === 'inspector' || level === 'workspace') && JSON.stringify(card.config) !== baseline.config);
     case 'workspace': return Boolean(card && level === 'workspace');
     case 'message': return Boolean(id && event?.type === 'message-sent' && event.cardId === id);
+    case 'promotion': return Boolean(card?.minister && refs.minister === card.id && state.settled);
+    case 'minister-panel': return Boolean(id && event?.type === 'minister-settings-opened' && event.cardId === id);
     case 'presence': return Boolean(id && event?.type === 'minister-opened' && event.cardId === id);
     case 'connect': return state.settled && state.edges.some(edge => edge.source === refs.agent && edge.target === refs.sandbox && ['execute', 'execute_manage'].includes(edge.relationship));
     case 'glue': return event?.type === 'glue-saved' && event.bonds.some(bond => [bond.a, bond.b].includes(refs.glueA ?? '') && [bond.a, bond.b].includes(refs.glueB ?? ''));

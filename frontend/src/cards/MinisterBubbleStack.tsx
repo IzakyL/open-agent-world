@@ -17,7 +17,12 @@ export function MinisterBubbleStack({ messages, since }: { messages: Conversatio
     return <div key={message.id} className={`minister-bubble-slot ${age > 60000 || (items.length > 4 && index === 0) ? 'is-leaving' : ''}`}>
       <article className={`minister-message is-${message.sender_kind}`} data-message-id={message.id}>
         <small>{message.sender_kind === 'user' ? t("You") : message.sender_name}</small>
-        <MarkdownMessage content={message.content} />
+        <div className="minister-bubble-content nowheel" tabIndex={0}
+          onScroll={event => {
+            event.currentTarget.dataset.scrolled = String(event.currentTarget.scrollTop > 0);
+          }}>
+          <MarkdownMessage content={message.content} />
+        </div>
       </article>
     </div>;
   })}</>;

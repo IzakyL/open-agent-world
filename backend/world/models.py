@@ -158,6 +158,14 @@ class EquipmentBinding(BaseModel):
     relationship: str | None = None
 
 
+class MinisterRole(BaseModel):
+    """Host-granted canvas authority, independent of an Agent's plugin config."""
+    model_config = ConfigDict(extra="forbid")
+
+    control_radius: float = Field(default=1200, ge=200, le=3000, allow_inf_nan=False)
+    allow_canvas_edits: bool = True
+
+
 class CardCreate(BaseModel):
     """Wire model shared with the canvas.
 
@@ -170,6 +178,7 @@ class CardCreate(BaseModel):
     id: str | None = None
     parent_id: str | None = Field(default=None, max_length=100)
     equipment: EquipmentBinding | None = None
+    minister: MinisterRole | None = None
     type: str = Field(min_length=1, max_length=128)
     name: str | None = Field(default=None, min_length=1, max_length=200)
     position: Point = Field(default_factory=Point)
@@ -188,6 +197,7 @@ class CardPatch(BaseModel):
 
     parent_id: str | None = Field(default=None, max_length=100)
     equipment: EquipmentBinding | None = None
+    minister: MinisterRole | None = None
 
     name: str | None = Field(default=None, min_length=1, max_length=200)
     position: Point | None = None
@@ -238,6 +248,7 @@ class Card(BaseModel):
     id: str
     parent_id: str | None = None
     equipment: EquipmentBinding | None = None
+    minister: MinisterRole | None = None
     type: str
     name: str
     position: Point

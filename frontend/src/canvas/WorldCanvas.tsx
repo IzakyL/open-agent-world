@@ -24,6 +24,7 @@ import {
 import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
 import { apiErrorMessage, worldApi } from "../api/client";
 import { transformationOptions } from "./documentTransformations";
+import { appointMinister, MINISTER_ROLE_CARD } from '../state/ministerRole';
 import { importPdf, type PdfImportProgress } from "./importPdf";
 import { PdfImportIndicator } from "./PdfImportIndicator";
 import { layoutIsPresented } from "./layoutPresentation";
@@ -35,7 +36,6 @@ import { canEquip, equipmentOwner, useEquipmentDrag, useEquipmentPanel } from ".
 import { ContainerCardNode } from "../cards/ContainerCard";
 import { ancestors, containerDefinition, containerDisplayOwners, containerShowsWorkspace, containerSizes, dropContainer, isContainer, memberSurfacePosition, parentFirst, resizeContainerLayout } from "../state/containers";
 import { WorldCardNode } from "../cards/CardFrame";
-import { MinisterNode, MINISTER_TYPE } from "../cards/Minister";
 import type { CanvasNode, CanvasNodeData } from "../cards/types";
 import { EdgeInspector } from "../edges/EdgeInspector";
 import { RelationshipConnectionLine } from "../edges/RelationshipConnectionLine";
@@ -57,7 +57,7 @@ import {
   type SurfaceObstacle,
 } from "./nodeDisplacement";
 
-const nodeTypes = { worldCard: WorldCardNode, minister: MinisterNode, container: ContainerCardNode, equipment: EquipmentCardNode, equipmentPanel: EquipmentPanelNode };
+const nodeTypes = { worldCard: WorldCardNode, container: ContainerCardNode, equipment: EquipmentCardNode, equipmentPanel: EquipmentPanelNode };
 const edgeTypes = { semantic: SemanticEdge };
 
 function isScrollableArea(target: EventTarget | null, boundary: HTMLElement): boolean {
@@ -168,7 +168,7 @@ export function WorldCanvas() {
   );
   const surfaceLevels = useMemo(() => new Map(renderCards.map((card) => [
     card.id,
-    card.type === MINISTER_TYPE ? "node" : surfaceLevelForNode(card.id, surfaceLevelsByNodeId),
+    surfaceLevelForNode(card.id, surfaceLevelsByNodeId),
   ])), [renderCards, surfaceLevelsByNodeId]);
   const glueBoxes = useMemo(() => reflowGlueSurfaces(storedGlueBoxes, glueBonds, surfaceLevels, workspaceSizes),
     [storedGlueBoxes, glueBonds, surfaceLevels, workspaceSizes]);
@@ -199,13 +199,6 @@ export function WorldCanvas() {
       const folded=foldedAncestor(card,renderCards);
       const displaced = displacedById.get(card.id);
       let node = nodeFromCard(card, level, displaced?.displaced ?? false, displaced?.position ?? card.position, level === "workspace" ? workspaceSizes[card.id] : undefined);
-      if (card.type === MINISTER_TYPE) {
-        // The chat opens beside the orb; its world position and radius never shift.
-        node = { ...node, type: "minister", position: card.position, data: { ...node.data, displaced: false },
-          width: card.size.width, height: card.size.height, style: { width: card.size.width, height: card.size.height },
-          dragHandle: ".minister-drag-region", connectable: false,
-          zIndex: ["inspector", "workspace"].includes(surfaceLevelsByNodeId[card.id]) ? 28 : 2 };
-      }
       if (isContainer(card, catalog)) {
         const { width, height } = frameSizes.get(card.id)!;
         node = { ...node, type: "container", position: card.position, width, height, style: { width, height }, zIndex: 0,
@@ -551,7 +544,7 @@ export function WorldCanvas() {
   const onNodeDragStart: OnNodeDrag<CanvasNode> = useCallback((_event, node, draggedNodes) => {
     cancelledDrag.current=false;
     cancelPositionAnimation();
-    if ((glueActive || glueBoxes[node.id]) && node.type === 'worldCard' && !node.parentId && !node.data.card.ephemeral && !node.data.equipmentDetail) {
+    if ((glueBoxes[node.id] || glueActive && node.data.card.type !== MINISTER_ROLE_CARD) && node.type === 'worldCard' && !node.parentId && !node.data.card.ephemeral && !node.data.equipmentDetail) {
       cancelGlueRefresh();
       const ids = glueGroup(node.id, glueBonds);
       draggedNodes.forEach(n => glueGroup(n.id, glueBonds).forEach(id => ids.add(id)));
@@ -563,7 +556,7 @@ export function WorldCanvas() {
       activeDragIds.current = ids;
       return;
     }
-    useEquipmentDrag.getState().set(node.data.card.type !== MINISTER_TYPE && !node.data.equipmentDetail && draggedNodes.length <= 1 ? node.data.card : undefined);
+    useEquipmentDrag.getState().set(!node.data.equipmentDetail && draggedNodes.length <= 1 ? node.data.card : undefined);
     setDragging(true);
     activeDragIds.current.clear();
     activeDragIds.current.add(node.id);
@@ -587,7 +580,8 @@ export function WorldCanvas() {
       if (!option) continue;
       const element = wrapper.current?.querySelector<HTMLElement>(`.react-flow__node[data-id="${CSS.escape(target.id)}"]`);
       const rect = element?.getBoundingClientRect();
-      if (rect && event.clientX > rect.left + 32 && event.clientX < rect.right - 32 && event.clientY > rect.top + 70 && event.clientY < rect.bottom - 32) return { target, option, element };
+      const inset = option[0] === 'appoint-minister' ? 8 : 32;
+      if (rect && event.clientX > rect.left + inset && event.clientX < rect.right - inset && event.clientY > rect.top + (option[0] === 'appoint-minister' ? 8 : 70) && event.clientY < rect.bottom - inset) return { target, option, element };
     }
   }, [cards, catalog]);
   const clearTransformationHints = () => wrapper.current?.querySelectorAll("[data-transformation-hint]").forEach(element => element.removeAttribute("data-transformation-hint"));
@@ -635,9 +629,9 @@ export function WorldCanvas() {
       return;
     }
     const transformation = transformationTarget(event, node);
-    transformation?.element?.setAttribute("data-transformation-hint", `${transformation.option[1].label}: ${node.data.card.name}`);
+    transformation?.element?.setAttribute("data-transformation-hint", `${t(transformation.option[1].label)}: ${node.data.card.name}`);
     const member = node.data.card;
-    if (!node.data.equipmentDetail && !member.ephemeral && member.type !== MINISTER_TYPE) {
+    if (!node.data.equipmentDetail && !member.ephemeral) {
       const parent = cards.find((c) => c.id === node.parentId);
       const origin=parent&&(isShadow(parent)?shadowLayout(parent,cards,surfaceLevels,catalog):parent.position);
       const surface = origin ? { x: node.position.x + origin.x, y: node.position.y + origin.y } : node.position;
@@ -690,6 +684,12 @@ export function WorldCanvas() {
     const transformation = draggedNodes.length <= 1 ? transformationTarget(_event, node) : undefined;
     if (transformation) {
       useEquipmentDrag.getState().set();
+      if (transformation.option[0] === 'appoint-minister') {
+        void appointMinister(transformation.target.id, node.data.card).finally(() => {
+          activeDragIds.current.clear(); setDragging(false);
+        });
+        return;
+      }
       void (async () => {
         try {
           const [source, target] = await Promise.all([worldApi.getNodeDocument(node.id), worldApi.getNodeDocument(transformation.target.id)]);
@@ -736,7 +736,7 @@ export function WorldCanvas() {
     const sizes = new Map(nodesRef.current.map((item) => [item.id, { width: Number(item.style?.width), height: Number(item.style?.height) }]));
     void updateCardPositions(updates.map((update) => {
       const member = cards.find((card) => card.id === update.id)!;
-      if (member.ephemeral || member.type === MINISTER_TYPE || containerDefinition(member, catalog)?.parentable === false) return update;
+      if (member.ephemeral || containerDefinition(member, catalog)?.parentable === false) return update;
       const owner=cards.find(c=>c.id===member.parent_id);
       if(owner&&isShadow(owner)) {
         const release=canReleaseMember(Boolean(useCollectionRelease.getState().active[owner.id]),{x:update.position.x+48,y:update.position.y+48},shadowLayout(owner,cards,surfaceLevels,catalog));
@@ -811,6 +811,10 @@ export function WorldCanvas() {
       const transformation = transformationTarget(event.nativeEvent, { data: { card: resource } } as CanvasNode);
       if (transformation) {
         useEquipmentDrag.getState().set();
+        if (transformation.option[0] === 'appoint-minister') {
+          void appointMinister(transformation.target.id);
+          return;
+        }
         void (async () => {
           try {
             const target = await worldApi.getNodeDocument(transformation.target.id);
@@ -873,7 +877,7 @@ export function WorldCanvas() {
         clearTransformationHints();
         if (resource) {
           const transformation = transformationTarget(event.nativeEvent, { data: { card: resource } } as CanvasNode);
-          transformation?.element?.setAttribute("data-transformation-hint", `${transformation.option[1].label}: ${resource.name}`);
+          transformation?.element?.setAttribute("data-transformation-hint", `${t(transformation.option[1].label)}: ${resource.name}`);
         }
         if (resource) useEquipmentDrag.getState().set(resource, equipmentDropOwner(resource, event.clientX, event.clientY)?.id);
       }}

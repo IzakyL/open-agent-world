@@ -104,6 +104,8 @@ export interface WorldCard {
   revision?: number;
   parent_id?: string | null;
   equipment?: { owner_id: string; relationship: string | null } | null;
+  /** Host-granted role; the original Agent type and runtime config stay intact. */
+  minister?: { control_radius: number; allow_canvas_edits: boolean } | null;
   type: CardType;
   name: string;
   position: WorldPosition;

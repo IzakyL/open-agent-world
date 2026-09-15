@@ -21,6 +21,8 @@ import { TaskBoardBody } from "./TaskBoard";
 import { SkillToolboxBody, SkillNodeBody } from "./SkillToolbox";
 import { WorkSourceWorkspace } from "./NodeExecution";
 import { ConversationWorkspace } from "./ConversationWorkspace";
+import { MinisterRoleSettings } from './MinisterRoleCard';
+import { openMinisterSettings, useMinisterRole } from '../state/ministerRole';
 import { AgentCardBody } from "./AgentCard";
 import { PluginSurface } from "../plugins/PluginSurface";
 import { CatalogIcon } from "../components/CatalogIcon";
@@ -166,6 +168,7 @@ export function WorkspaceSurface({ card }: WorkspaceSurfaceProps) {
   useLocale();
   const catalog = useWorldStore((state) => state.catalog);
   const [agentTab, setAgentTab] = useState("activity");
+  const ministerTab = useMinisterRole(s => s.settingsCardId === card.id) && Boolean(card.minister);
   return (
     <section className="node-workspace-window" role="dialog" aria-modal="false" aria-label={t("{v0} workspace", { v0: String(card.name) })} data-workspace-node-id={card.id}>
       <WorkspaceTitlebar card={card} />
@@ -173,10 +176,11 @@ export function WorkspaceSurface({ card }: WorkspaceSurfaceProps) {
       <PluginSurface card={card} slot="workspace" level="workspace">
       {catalog.node_types.find((definition) => definition.id === card.type)?.traits.includes("core.agent") ? <>
         <nav className="agent-window-tabs nodrag nopan" role="tablist" aria-label={t("Agent window")}>
-          <button role="tab" aria-selected={agentTab === "activity"} onClick={() => setAgentTab("activity")}>{t("Activity")}</button>
-          <button role="tab" aria-selected={agentTab === "settings"} onClick={() => setAgentTab("settings")}>{t("Settings")}</button>
+          <button role="tab" aria-selected={!ministerTab && agentTab === "activity"} onClick={() => { useMinisterRole.setState({ settingsCardId: undefined }); setAgentTab("activity"); }}>{t("Activity")}</button>
+          <button role="tab" aria-selected={!ministerTab && agentTab === "settings"} onClick={() => { useMinisterRole.setState({ settingsCardId: undefined }); setAgentTab("settings"); }}>{t("Settings")}</button>
+          {card.minister && <button role="tab" aria-selected={ministerTab} onClick={() => openMinisterSettings(card.id)}>{t('Minister')}</button>}
         </nav>
-        <div className="agent-window-body">{agentTab === "settings"
+        <div className="agent-window-body">{ministerTab ? <div className="agent-settings-window nodrag nopan nowheel"><MinisterRoleSettings card={card} onOpenHistory={() => setAgentTab('activity')} /></div> : agentTab === "settings"
           ? <div className="agent-settings-window nodrag nopan nowheel"><AgentCardBody card={card} level="workspace" /></div>
           : <AgentWorkspace card={card} />}</div>
         </>

@@ -128,6 +128,7 @@ export function normalizeCard(input: unknown): WorldCard {
     id: String(source.id),
     revision: typeof source.revision === "number" ? source.revision : undefined,
     equipment: source.equipment as WorldCard["equipment"] ?? null,
+    minister: source.minister as WorldCard["minister"] ?? null,
     parent_id: typeof source.parent_id === "string" ? source.parent_id : null,
     type,
     name: String(source.name ?? config.filename ?? type),
@@ -397,6 +398,7 @@ export const worldApi = {
       type: node.type,
       parent_id: node.parent_id,
       equipment: node.equipment,
+      minister: node.minister,
       name: node.name,
       position: node.position,
       size: node.size,
@@ -601,6 +603,10 @@ export const worldApi = {
 
   async transformDocument(id: string, operation: string, body: Record<string, unknown>): Promise<Record<string, unknown>> {
     return request(`/nodes/${encodeURIComponent(id)}/transformations/${encodeURIComponent(operation)}`, { method: "POST", body: JSON.stringify(body) });
+  },
+  async appointMinister(id: string, expected_revision: number, source?: WorldCard): Promise<WorldCard> {
+    return normalizeCard(await request(`/ministers/${encodeURIComponent(id)}/appoint`, { method: 'POST',
+      body: JSON.stringify({ expected_revision, ...(source ? { source_id: source.id, source_revision: source.revision } : {}) }) }));
   },
 
   artifacts<T>(collectionId: string, action = "versions", body?: unknown, method?: string): Promise<T> {

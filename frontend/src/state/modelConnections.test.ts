@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { availableModels, hasDefaultModelConfiguration, importLegacyModels, type ModelCatalog } from "./modelConnections";
+import { availableModels, hasDefaultModelConfiguration, hasModelConfiguration, importLegacyModels, type ModelCatalog } from "./modelConnections";
 import { DEFAULT_MODEL_SETTINGS } from "./modelSettings";
 
 describe("model connection migration", () => {
@@ -37,4 +37,11 @@ it("requires an enabled default model with saved authentication", () => {
   expect(hasDefaultModelConfiguration(draft)).toBe(true);
   draft.connections[0].enabled = false;
   expect(hasDefaultModelConfiguration(draft)).toBe(false);
+});
+
+it('recognizes an Agent model without requiring a global default', () => {
+  const draft = importLegacyModels({ revision: 0, connections: [], default_model: null }, { ...DEFAULT_MODEL_SETTINGS, models: ['custom'] });
+  draft.connections[0].api_key_configured = true;
+  expect(hasModelConfiguration(draft, availableModels(draft)[0].value)).toBe(true);
+  expect(hasModelConfiguration(draft, 'oaw:default')).toBe(false);
 });

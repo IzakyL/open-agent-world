@@ -869,7 +869,7 @@ class RunManager:
     @staticmethod
     def _agent_config(card: Card) -> AgentConfig:
         instruction = str(card.config.get("system_instruction", ""))
-        if card.type == "core.minister":
+        if card.minister is not None:
             from backend.minister import runtime_instruction
             instruction = runtime_instruction(instruction)
         provider_config = {

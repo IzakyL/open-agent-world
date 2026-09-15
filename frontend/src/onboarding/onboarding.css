@@ -94,3 +94,8 @@ body:has(.onboarding-layer.is-interaction-guide) .dialog-backdrop:has(> .connect
 .tutorial-portal { position: absolute; left: 40%; top: 10%; width: 32%; height: 84%; border: 3px solid var(--accent-strong); border-radius: 50%; background: radial-gradient(ellipse, var(--surface-solid) 24%, var(--accent-soft) 65%, var(--accent)); box-shadow: 0 0 12px var(--accent), inset 0 0 8px var(--accent); transform: scaleX(var(--portal-open, 0)); opacity: var(--portal-open, 0); pointer-events: none; }
 .tutorial-portal::after { content: ''; position: absolute; inset: 4px -7px; border: 1px solid var(--accent); border-radius: 50%; opacity: .55; }
 @media (prefers-reduced-motion: reduce) { .tutorial-guide .tutorial-bubble { transition: none; } .tutorial-portal { display: none; } }
+
+.quick-start-guide { position: fixed; bottom: 28px; right: 28px; z-index: 35; width: min(380px, calc(100vw - 56px)); padding: 18px; border: 1px solid var(--line); border-radius: 16px; color: var(--ink); background: var(--surface-solid); box-shadow: var(--panel-shadow); }
+.quick-start-guide strong { font-size: 14px; }
+.quick-start-guide p { font-size: 12px; line-height: 1.6; color: var(--ink-soft); }
+.quick-start-guide .action-row { flex-wrap: wrap; }

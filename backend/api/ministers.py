@@ -2,9 +2,15 @@ from fastapi import APIRouter, Depends, Query
 from pydantic import BaseModel, ConfigDict
 
 from backend.api.dependencies import get_services
-from backend.minister import InspectRequest, ensure_chat, inspect
+from backend.minister import AppointmentRequest, InspectRequest, appoint, ensure_chat, inspect
 
 router = APIRouter(tags=["ministers"])
+
+
+@router.post('/ministers/{node_id}/appoint')
+async def appoint_role(node_id: str, request: AppointmentRequest, services=Depends(get_services)):
+    # Direct manipulation by the host; this grant is deliberately absent from Agent tools.
+    return await appoint(services, node_id, request)
 
 
 @router.get("/ministers/{node_id}/world")

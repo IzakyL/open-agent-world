@@ -45,10 +45,10 @@ class CapabilityBroker:
 
     def derive(self, agent_id: str) -> CapabilitySet:
         agent = self._require_agent(agent_id)
-        if agent.type == "core.minister":
-            from backend.minister import capabilities as minister_capabilities
-            return minister_capabilities(self, agent)
         capabilities: list[Capability] = []
+        if agent.minister is not None:
+            from backend.minister import capabilities as minister_capabilities
+            capabilities.extend(minister_capabilities(self, agent).capabilities)
         directed_edges = [(edge, edge.target) for edge in self.world.connections_from(agent_id)]
         directed_edges.extend(
             (edge, edge.source)

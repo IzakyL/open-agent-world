@@ -16,14 +16,15 @@ export function MinisterConversation({ card, chat, presence = false }: { card: W
   useLocale();
   const log = useRef<HTMLDivElement>(null);
   const mountedAt = useRef(Date.now());
-  const refresh = useWorldStore(s => s.events.find(event => event.conversation_id === chat.conversation_id)?.id);
+  const events = useWorldStore(s => s.events);
+  const refresh = events.find(event => (event.conversation_id ?? event.payload.conversation_id) === chat.conversation_id)?.id;
   const live = useWorldStore(s => s.socketState === "live");
-  const timeline = useConversationTimeline(chat.conversation_id, chat.session_id, refresh, live, log);
-  const draft = useNodeSurfaceStore(s => s.drafts[card.id] ?? "");
+  const timeline = useConversationTimeline(chat.conversation_id, chat.session_id, refresh, live, log, events);
+  const draft = useNodeSurfaceStore(s => s.drafts[`minister:${card.id}`] ?? "");
   const setDraft = useNodeSurfaceStore(s => s.setDraft);
   const [sending, setSending] = useState(false);
   const [error, setError] = useState<string>();
-  const active = timeline.activeAgentIds?.includes(card.id) || card.status === "running" || card.status === "waiting";
+  const active = timeline.activeAgentIds.includes(card.id);
 
   const send = async () => {
     const content = draft.trim();
@@ -33,7 +34,7 @@ export function MinisterConversation({ card, chat, presence = false }: { card: W
       await worldApi.postConversationMessage(chat.conversation_id, chat.session_id, {
         content, mention_agent_ids: [card.id], message_id: crypto.randomUUID(),
       });
-      setDraft(card.id, "");
+      setDraft(`minister:${card.id}`, "");
       reportInteraction({ type: 'message-sent', cardId: card.id, conversationId: chat.conversation_id });
       await timeline.loadLatest();
     } catch (reason) { setError(apiErrorMessage(reason)); }
@@ -45,20 +46,20 @@ export function MinisterConversation({ card, chat, presence = false }: { card: W
       {!presence && !timeline.loading && !timeline.messages.length && <div className="minister-welcome">
         <Scan size={24} /><strong>{t("A little help, close at hand.")}</strong>
         <p>{t("Ask me to find cards or tidy this part of your canvas.")}</p>
-        <button type="button" onClick={() => setDraft(card.id, t("What cards are inside your circle?"))}>{t("What’s nearby?")}</button>
+        <button type="button" onClick={() => setDraft(`minister:${card.id}`, t("What cards are inside your circle?"))}>{t("What’s nearby?")}</button>
       </div>}
       {presence ? <MinisterBubbleStack messages={timeline.messages} since={mountedAt.current} /> : timeline.messages.map(message => <article key={message.id} data-message-id={message.id}
         className={`minister-message is-${message.sender_kind}`}>
         {message.kind?.startsWith("tool_") ? <details className="minister-tool"><summary>{ministerToolSummary(message.content, message.kind)}</summary><pre aria-label={t("Tool debug details")}>{message.content}</pre></details>
           : <><small>{message.sender_kind === "user" ? t("You") : message.sender_name}</small><MarkdownMessage content={message.content} /></>}
       </article>)}
-      {active && <p className="minister-thinking" role="status">{t("Minister is working…")}</p>}
+      {(active || sending) && <p className="minister-thinking" role="status">{active ? t("Minister is working…") : t("Sending...")}</p>}
     </div>
     {!presence && timeline.showLatest && <button type="button" className="minister-text-button" onClick={() => void timeline.loadLatest()}>{t("Latest messages")}</button>}
     {(error || timeline.error) && <p className="minister-error" role="alert">{error || timeline.error}</p>}
     <form className="minister-composer" onSubmit={event => { event.preventDefault(); void send(); }}>
       <textarea aria-label={t("Message {v0}", { v0: String(card.name) })} placeholder={t("Ask about this part of your canvas…")} rows={presence ? 1 : 2} value={draft}
-        onChange={event => setDraft(card.id, event.target.value)} onKeyDown={event => {
+        onChange={event => setDraft(`minister:${card.id}`, event.target.value)} onKeyDown={event => {
           if (event.key === "Enter" && !event.shiftKey && !event.nativeEvent.isComposing) { event.preventDefault(); void send(); }
         }} />
       {active ? <button type="button" aria-label={t("Stop {v0}", { v0: String(card.name) })} onClick={() => {

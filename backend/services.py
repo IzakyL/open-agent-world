@@ -914,6 +914,8 @@ class ApplicationServices:
                         f"{type(rollback_error).__name__}: {rollback_error}"
                     )
                 raise
+            from backend.minister_policy import invalidate_changed_role
+            await invalidate_changed_role(self, current, card)
             await self.events.publish(
                 EventType.CARD_UPDATED,
                 node_id=card.id,
@@ -946,7 +948,7 @@ class ApplicationServices:
         async with self._node_mutation():
             updates = self.expand_card_updates(updates)
             context = self._node_lifecycle_context()
-            previous_parents = {item.node_id: self.world.get_card(item.node_id).parent_id for item in updates}
+            previous_cards = {item.node_id: self.world.get_card(item.node_id) for item in updates}
             prepared: list[tuple[CardBatchPatch, NodeLifecycleTransaction]] = []
             for item in updates:
                 if item.patch.config is not None:
@@ -985,14 +987,16 @@ class ApplicationServices:
                         )
                 raise
             for card in cards:
+                from backend.minister_policy import invalidate_changed_role
+                await invalidate_changed_role(self, previous_cards[card.id], card)
                 await self.events.publish(
                     EventType.CARD_UPDATED,
                     node_id=card.id,
                     payload={"node": card.model_dump(mode="json")},
                 )
-                if previous_parents[card.id] != card.parent_id:
+                if previous_cards[card.id].parent_id != card.parent_id:
                     from backend.node_containers import touch_parent
-                    touch_parent(self, previous_parents[card.id])
+                    touch_parent(self, previous_cards[card.id].parent_id)
                     touch_parent(self, card.parent_id)
         return cards
 

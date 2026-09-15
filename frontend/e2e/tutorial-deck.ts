@@ -10,11 +10,11 @@ export async function prepareTutorialDeck(page: Page, verifyNarrow = false) {
   await page.locator('.library-pack[data-tutorial-highlight] .pack-touch-area').click();
   await expect(page.locator('.tutorial-bubble')).toHaveAttribute('data-step', 'deck-build');
   const useDeck = page.getByRole('button', { name: 'Use this deck', exact: true });
-  await expect(useDeck).toBeDisabled();
   // Choose a new destination explicitly, leaving the original hand untouched.
   const rail = page.getByRole('complementary', { name: 'Deck destinations' });
   await rail.getByRole('textbox', { name: 'New deck name' }).fill('My first workflow');
   await rail.getByRole('button', { name: 'Create deck', exact: true }).click();
+  await expect(useDeck).toBeDisabled();
   const destination = rail.locator('.library-deck-destination.is-selected');
   await expect(destination).toBeVisible();
   const originalViewport = page.viewportSize()!;

@@ -87,7 +87,7 @@ def patch_glue(services, request):
         raise RevisionConflictError('Glue changed in another canvas; refresh before organizing it')
     for key in request.boxes:
         card = services.world.get_card(key)
-        if card.parent_id or card.equipment or card.type == 'core.minister' or services.world.is_container(card):
+        if card.parent_id or card.equipment or services.world.is_container(card):
             raise GraphValidationError('Glue applies to ordinary root card surfaces; use container membership or equipment for other attachments')
     value['boxes'].update({key: box.model_dump(exclude_none=True) for key, box in request.boxes.items()})
     value['bonds'] = [b for b in value['bonds'] if not set(request.detach) & {b['a'], b['b']}]
@@ -164,7 +164,7 @@ async def change_glue(facade, node_ids, target_id, side, versions, *, detach=Fal
         cards = {key: services.world.get_card(key) for key in ids}
         facade._check(scope, versions, cards.values())
         for card in cards.values():
-            if card.parent_id or card.equipment or card.type == 'core.minister' or services.world.is_container(card):
+            if card.parent_id or card.equipment or services.world.is_container(card):
                 raise GraphValidationError('Use container membership or equipment for this card; glue requires root card surfaces')
         if detach:
             facade._review('unglue', before=list(cards.values()), organization={'detach': node_ids})

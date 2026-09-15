@@ -97,6 +97,7 @@ function cardRestorePatch(card: WorldCard): Partial<Omit<WorldCard, "id" | "type
     name: card.name,
     parent_id: card.parent_id ?? null,
     equipment: card.equipment ?? null,
+    minister: card.minister ?? null,
     position: { ...card.position },
     size: { ...card.size },
     expanded: card.expanded,
@@ -670,7 +671,7 @@ export const useWorldStore = create<WorldState>()(persist((set, get) => ({
     const finalPosition = position ?? viewportCenterToWorld(get().viewport);
     const draft = buildCardDraft(type, finalPosition, definition);
     const defaultModel = get().modelCatalog.default_model ?? (!get().modelCatalog.revision ? get().modelSettings.models[0] : undefined);
-    const configuredDraft = definition.traits.includes("core.agent") && defaultModel
+    const configuredDraft = type === "agent" && defaultModel
       ? { ...draft, config: { ...draft.config, model: defaultModel } }
       : draft;
     set({ syncState: "syncing" });
@@ -696,7 +697,9 @@ export const useWorldStore = create<WorldState>()(persist((set, get) => ({
       get().pushToast({
         tone: "success",
         title: `${card.name} placed`,
-        detail: card.type === "core.minister" ? "Open the circle to talk or adjust its control radius." : "Drag its ports to define a real capability.",
+        detail: type === 'core.minister-role'
+          ? 'Drag this role card onto an Agent to appoint it as Minister.'
+          : "Drag its ports to define a real capability.",
       });
       return card;
     } catch (error) {
