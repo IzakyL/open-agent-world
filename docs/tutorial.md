@@ -32,3 +32,13 @@ node scripts/run-e2e.mjs e2e/onboarding.spec.ts e2e/guide-rig.spec.ts
 ```
 
 The browser suite checks welcome choices, a smaller viewport, reload/resume, and the full tutorial with normal and reduced motion. It runs against the existing isolated backend, performs actual gestures, grants real relationships, and checks that the workflow survives prop cleanup. The isolated backend uses its test runtime; these tests do not establish live model quality or native Sandbox execution.
+
+### Guided interaction scope
+
+While a step is active, `interactionGuard.ts` accepts input only for that step's subjects and required controls. This is separate from spotlight shading: card placement leaves the canvas visible, but only the requested deck card can begin a placement and the canvas accepts its drop. Connections allow both endpoints and their capability chooser. Model steps allow their current form section, with the settings close/reopen path retained.
+
+Global shortcuts are blocked except the step's focus/delete action on its own selected card; editing shortcuts still work inside allowed fields. Tab stays within allowed controls. Accepted gestures can finish across step transitions. Pause (or Escape) releases the scope without discarding progress; Resume rebases the current step, and Skip retains the existing cleanup/recovery flow. Add or change an interaction scope alongside any new tutorial step, and verify its complete source-to-destination gesture.
+
+### Guide travel
+
+`guideTravel.ts` keeps near movement on the existing walking path and uses a 720 ms entry/exit portal for trips beyond 480 screen pixels. Destination changes during transit do not restart its clock. The bubble keeps its layout measurements but becomes hidden, inert, and hidden from accessibility APIs while the guide moves; it reappears on arrival. Pause and reduced-motion preferences finish travel immediately. Portal styling uses the active theme, and the character still uses the shared rig.

@@ -247,6 +247,7 @@ test.describe('canvas onboarding', () => {
     await move(page, first, 50, 35);
     await at(page, 'minister');
     await page.keyboard.press('Escape');
+    await page.getByRole('button', { name: 'Resume', exact: true }).click();
     await page.getByRole('button', { name: 'Place Minister Card', exact: true }).click();
     await page.locator('.tutorial-next').filter({ hasText: 'Continue' }).click();
     await at(page, 'minister-presence');

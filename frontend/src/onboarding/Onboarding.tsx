@@ -1,7 +1,7 @@
 import { t, useLocale } from "../i18n";
 import { createPortal } from 'react-dom';
 import { getNodesBounds, getViewportForBounds, useReactFlow } from '@xyflow/react';
-import { ArrowRight, ChevronDown, Compass, RotateCcw, X } from 'lucide-react';
+import { ArrowRight, ChevronDown, Compass, Pause, RotateCcw, X } from 'lucide-react';
 import { useCallback, useEffect, useId, useLayoutEffect, useRef, useState, type CSSProperties } from 'react';
 import { useCardLibrary } from '../state/cardLibrary';
 import { useWorldStore } from '../state/worldStore';
@@ -12,11 +12,13 @@ import { OawGuide, type GuideMotion } from './OawGuide';
 import { CHAPTERS, STEPS, STARTER_CARDS, starterPack, type Role, type Target } from './steps';
 import { tutorial, useTutorialStore, type GuideVisuals } from './controller';
 import './onboarding.css';
+import { installTutorialInteractionGuard } from './interactionGuard';
 import { Spotlight, type SpotlightHandle } from './Spotlight';
 import { relationshipPath } from '../edges/geometry';
 import { nodeCornerRadius } from '../edges/nodeGeometry';
 import type { CanvasNode } from '../cards/types';
-import { advanceGuide, placeGuide, vacantPosition } from './placement';
+import { GuideTravel } from './guideTravel';
+import { placeGuide, vacantPosition } from './placement';
 
 function nodeElement(id: string) { return document.querySelector<HTMLElement>(`.world-canvas > .react-flow .react-flow__node[data-id="${CSS.escape(id)}"]`); }
 /** Only illuminate the part of a target visible inside its scroll containers. */
@@ -69,6 +71,7 @@ export function Onboarding() {
   const guide = useRef<HTMLDivElement>(null);
   const spotlight = useRef<SpotlightHandle>(null);
   const deckArrow = useRef<SVGPathElement>(null);
+  const placementArrow = useRef<HTMLDivElement>(null);
   const arrowId = useId();
   const flightLayer = useRef<HTMLDivElement>(null);
   const focusSequence = useRef(0);
@@ -78,6 +81,8 @@ export function Onboarding() {
   const reviewing = s.session?.completedDemo === step.id;
   const target = s.target ?? (reviewing ? step.result?.target : undefined) ?? step.target;
   const currentPosition = useRef(position);
+  const travel = useRef<GuideTravel>();
+  travel.current ??= new GuideTravel(position);
   const anchor = useRef<{ key: string; x: number; y: number } | undefined>(undefined);
   const guideArrived = useRef(false);
   const origin = useRef(flow.screenToFlowPosition({ x: window.innerWidth * .72, y: window.innerHeight * .42 }));
@@ -292,6 +297,12 @@ export function Onboarding() {
     return id ? nodeElement(id) : null;
   }, []);
 
+  useEffect(() => installTutorialInteractionGuard(() => {
+    const current = useTutorialStore.getState();
+    return { active: current.view === 'active', busy: current.busy, selectedIds: useWorldStore.getState().selectedCardIds,
+      step: STEPS.find(item => item.id === current.session?.step) ?? STEPS[0], refs: current.session?.refs ?? {} };
+  }, () => tutorial.pause()), []);
+
   const [resolvedTarget, setResolvedTarget] = useState<string>();
   const [hasConnection, setHasConnection] = useState(false);
 
@@ -309,8 +320,12 @@ export function Onboarding() {
     let frame = 0;
     let highlighted: HTMLElement[] = [];
     let lastTime = performance.now();
+    let modelTargetHeight = 0;
     function place() {
-      const element = targetElement(target);
+      const placement = s.view === 'active' && target === 'deck';
+      const placementType = step.role === 'agent' ? 'agent' : step.role === 'conversation' ? 'conversation' : step.role === 'sandbox' ? 'sandbox' : 'text';
+      const placementCard = placement ? document.querySelector<HTMLElement>(`[data-palette-card="${placementType}"]`) : null;
+      const element = placementCard ?? targetElement(target);
       const participants = (step.participants ?? []).flatMap(role => {
         const element = targetElement(role); return element ? [{ id: role, element }] : [];
       });
@@ -331,9 +346,24 @@ export function Onboarding() {
         if (!candidates.some(item => item.element === next) && (target.startsWith('model-') || target.startsWith('library-'))) next.scrollIntoView({ block: 'nearest', inline: 'nearest' });
       }
       highlighted = elements;
+      // Adding a model grows the same target; reveal its newly mounted inputs.
+      if (target === 'model-list' && element && element.offsetHeight !== modelTargetHeight) {
+        modelTargetHeight = element.offsetHeight;
+        element.scrollIntoView({ block: 'nearest', inline: 'nearest' });
+      }
       const visible = regions.map(item => ({ id: item.id, glow: !chooser || item.id === 'capability-chooser', ...(() => {
         const box = visibleBounds(item.element); return { x: box.x, y: box.y, width: box.width, height: box.height };
       })() })).filter(box => box.width > 0 && box.height > 0);
+      if (placementArrow.current) {
+        const box = placementCard ? visibleBounds(placementCard) : undefined;
+        const show = box && box.width > 0 && box.height > 0;
+        placementArrow.current.style.display = show ? '' : 'none';
+        if (show) {
+          placementArrow.current.style.left = `${box.x + box.width / 2 - 26}px`;
+          placementArrow.current.style.top = `${Math.max(8, box.y - 82)}px`;
+          placementArrow.current.dataset.card = placementType;
+        }
+      }
       const source = visible.find(box => candidates.some(item => item.id === box.id));
       const destination = document.querySelector<HTMLElement>('.library-deck-destination.is-selected .library-deck-destination-select');
       const end = destination ? visibleBounds(destination) : undefined;
@@ -356,9 +386,9 @@ export function Onboarding() {
         // inside the pair, even when their boundaries touch or overlap.
         route = { ...route, path: `M ${a.x + a.width / 2},${a.y + a.height / 2} L ${b.x + b.width / 2},${b.y + b.height / 2}`, transform: '' };
       }
-      spotlight.current?.update(s.view === 'active' ? visible : [], s.view === 'active' && route ? {
+      spotlight.current?.update(s.view === 'active' && !placement ? visible : [], s.view === 'active' && route ? {
         id: `route-${pair!.join('-')}`, path: route.path, transform: route.transform,
-      } : undefined);
+      } : undefined, !placement && step.id !== 'deck-build');
       // The character stays beside the interacting cards, even when an extra
       // tool is also illuminated. Including that distant toolbar in the bounds
       // would push the guide to an unrelated corner of the viewport.
@@ -403,12 +433,23 @@ export function Onboarding() {
       }
       setPosition(previous => Math.abs(previous.x - x) + Math.abs(previous.y - y) > 1 ? { x, y } : previous);
       const now = performance.now();
-      currentPosition.current = welcome || reducedMotion() ? { x, y } : advanceGuide(currentPosition.current, { x, y }, now - lastTime);
+      const trip = travel.current!.update({ x, y }, now - lastTime, welcome || s.view === 'paused' || reducedMotion());
+      currentPosition.current = trip.position;
       lastTime = now;
-      guideArrived.current = Math.hypot(currentPosition.current.x - x, currentPosition.current.y - y) < .5;
+      guideArrived.current = !trip.moving;
       if (guide.current) {
         guide.current.style.transform = `translate(${currentPosition.current.x}px, ${currentPosition.current.y}px)`;
-        guide.current.dataset.moving = String(!guideArrived.current);
+        guide.current.dataset.moving = String(trip.moving);
+        guide.current.dataset.travelPhase = trip.phase;
+        const portal = trip.phase === 'departing' || trip.phase === 'arriving';
+        const visibility = trip.phase === 'departing' ? 1 - trip.progress : trip.progress;
+        guide.current.style.setProperty('--portal-open', String(portal ? Math.min(1, Math.sin(Math.PI * trip.progress) * 1.8) : 0));
+        guide.current.style.setProperty('--traveler-opacity', String(portal ? visibility : 1));
+        guide.current.style.setProperty('--traveler-scale', String(portal ? .04 + .96 * visibility : 1));
+        guide.current.style.setProperty('--traveler-x', `${portal ? (trip.phase === 'departing' ? 14 : -14) * (1 - visibility) : 0}px`);
+        const bubble = guide.current.querySelector<HTMLElement>('.tutorial-bubble');
+        bubble?.toggleAttribute('inert', trip.moving);
+        bubble?.setAttribute('aria-hidden', String(trip.moving));
       }
       frame = requestAnimationFrame(place);
     }
@@ -431,6 +472,9 @@ export function Onboarding() {
   const missing = role && step.expects !== 'place' && step.expects !== 'delete' && !cards.some(card => card.id === s.session?.refs[role]);
   return createPortal(<div className={`onboarding-layer ${welcome ? 'is-welcome' : 'is-tutorial'} ${settingsStep ? 'is-settings-guide' : ''} ${libraryOpen ? 'is-library-guide' : ''} ${step.participants ? 'is-interaction-guide' : ''}`}>
     <Spotlight ref={spotlight} />
+    <div ref={placementArrow} className="tutorial-placement-arrow" aria-hidden="true" style={{ display: 'none' }}>
+      <svg viewBox="0 0 52 72"><path d="M 18 4 H 34 V 40 H 47 L 26 65 L 5 40 H 18 Z" /></svg>
+    </div>
     <svg className="tutorial-deck-arrow" aria-hidden="true">
       <defs><marker id={arrowId} viewBox="0 0 10 10" refX="8" refY="5" markerWidth="5" markerHeight="5" orient="auto-start-reverse"><path d="M 1 1 L 8 5 L 1 9" /></marker></defs>
       <path ref={deckArrow} className="tutorial-deck-arrow-path" markerEnd={`url(#${arrowId})`} style={{ display: 'none' }} />
@@ -452,13 +496,14 @@ export function Onboarding() {
     <div ref={guide} className={`tutorial-guide ${welcome ? 'is-logo' : ''} ${compact ? 'is-compact' : ''} ${rightGuide ? 'is-right-guide' : ''}`}
       style={{ '--guide-x': `${position.x}px`, '--guide-y': `${position.y}px` } as CSSProperties}>
       {!welcome && <div className="tutorial-bubble" role="region" aria-label={t("Tutorial guide")} data-step={step.id} data-reviewing={reviewing}>
-        <header><span>{s.view === 'paused' ? t("Your walk is saved") : `${step.chapter + 1} / ${CHAPTERS.length} · ${t(CHAPTERS[step.chapter])}`}</span>
+        <header>{active && <button className="onboarding-icon-button" disabled={s.busy} aria-label={t("Pause tutorial")} title={t("Pause tutorial")} onClick={() => tutorial.pause()}><Pause size={13} /></button>}<span>{s.view === 'paused' ? t("Your walk is saved") : `${step.chapter + 1} / ${CHAPTERS.length} · ${t(CHAPTERS[step.chapter])}`}</span>
           <button className="onboarding-icon-button" aria-label={compact ? t("Show tutorial hint") : t("Minimize tutorial hint")} onClick={() => setCompact(value => !value)}><ChevronDown size={13} /></button>
           <button className="onboarding-icon-button" aria-label={t("Skip tutorial")} title={t("Skip tutorial and tidy temporary props")} onClick={() => void tutorial.exit('skipped')}><X size={13} /></button>
         </header>
         {!compact && <>
           <p key={`${step.id}-${reviewing}`} className="tutorial-dialogue" aria-live="polite" aria-atomic="true">{s.view === 'paused' ? t("Pick up where you left off, or start a new walk. Your own cards stay with you.") : missing ? t("Looks like that card moved away or was removed. I can help you find it or return to placing one.") : t(dialogue)}</p>
           {s.error ? <p className="onboarding-error" role="alert">{s.error}</p> : sync === 'offline' ? <small role="status">{t("Waiting for the world service to reconnect. Your progress is saved.")}</small> : step.hint && <small>{t(step.hint)}</small>}
+          {active && <small className="tutorial-lock-hint">{t("Other controls are locked. Pause to explore freely.")}</small>}
           <footer>
             {s.view === 'paused' ? <>
               <button className="tutorial-next" disabled={s.busy} onClick={() => tutorial.resume()}>{t("Resume")}</button>
@@ -473,7 +518,7 @@ export function Onboarding() {
           {active && step.optional && <button className="onboarding-text-button tutorial-optional" disabled={s.busy || sync === 'syncing' || (step.id === 'model-connection' && (waitingForTarget || !hasConnection)) || (step.id === 'configure' && !['inspector', 'workspace'].includes(surfaces[s.session?.refs.agent ?? ''] ?? ''))} onClick={() => void tutorial.continue()}>{s.ready ? t("Continue with these settings") : t(step.optional)}</button>}
         </>}
       </div>}
-      <div className="tutorial-mascot"><OawGuide motion={motion} inLogo={welcome} movementTarget={guide} celebration={s.celebration} /></div>
+      <div className="tutorial-mascot"><div className="tutorial-portal" aria-hidden="true" /><div className="tutorial-traveler"><OawGuide motion={motion} inLogo={welcome} movementTarget={guide} celebration={s.celebration} /></div></div>
     </div>
   </div>, libraryOpen ? document.querySelector('.card-library-modal') ?? document.body : document.body);
 }

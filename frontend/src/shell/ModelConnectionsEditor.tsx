@@ -112,7 +112,8 @@ export function ModelConnectionsEditor({ value, onChange, saved, busy }: {
             </label>}
           </div>}
         </div>
-        <div className="connection-model-heading" data-tutorial="model-list"><h4>{t("Models")}</h4><button type="button" className="secondary-button" disabled={connection.models.length >= 100} onClick={() => update({ models: [...connection.models, { id: crypto.randomUUID(), name: "", model_id: "", enabled: true }] })}><Plus size={13} /> {t("Add model")}</button></div>
+        <div data-tutorial="model-list">
+        <div className="connection-model-heading"><h4>{t("Models")}</h4><button type="button" className="secondary-button" disabled={connection.models.length >= 100} onClick={() => update({ models: [...connection.models, { id: crypto.randomUUID(), name: "", model_id: "", enabled: true }] })}><Plus size={13} /> {t("Add model")}</button></div>
         {!connection.models.length && <p className="settings-description">{t("Add a model using the model ID supplied by your service.")}</p>}
         {connection.models.map((model, index) => <div className="connection-model-row" key={model.id}>
           <label className="field-label"><span>{t("Display name")}{value.default_model === modelRef(model.id) && <Star className="model-default-icon" size={12} role="img" aria-label={t("Default for new agents")}><title>{t("Default for new agents")}</title></Star>}</span><input aria-label={t("Model {v0} display name", { v0: String(index + 1) })} required maxLength={120} value={model.name}
@@ -124,6 +125,7 @@ export function ModelConnectionsEditor({ value, onChange, saved, busy }: {
           {!saved.connections.some(c => c.models.some(m => m.id === model.id)) && <button type="button" className="icon-button" aria-label={t("Remove model {v0}", { v0: String(index + 1) })} onClick={() => update({ models: connection.models.filter(m => m.id !== model.id) })}><Trash2 size={13} /></button>}
           </div>
         </div>)}
+        </div>
         <p className="settings-description">{t("Changes apply to new runs. Disable saved models or connections to preserve existing agent references.")}</p>
       </div> : <div className="connection-empty"><Server size={32} /><h4>{t("Your models, your accounts")}</h4><p>{t("Add multiple accounts from the same provider, or connect your own service.")}</p></div>}
     </div>

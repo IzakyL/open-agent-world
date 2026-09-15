@@ -126,7 +126,7 @@ export function SettingsPanel() {
             <span>{t("Application preferences")}</span>
             <h2 id="settings-title">{t("Settings")}</h2>
           </div>
-          <button type="button" className="icon-button" onClick={setOpen} disabled={busy} aria-label={t("Close settings")}><X size={16} /></button>
+          <button type="button" className="icon-button" onClick={setOpen} disabled={busy} data-tutorial="settings-close" aria-label={t("Close settings")}><X size={16} /></button>
         </header>
 
         <div className="settings-layout">

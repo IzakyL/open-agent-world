@@ -3,7 +3,7 @@ import type { GuideRect } from './placement';
 
 export interface SpotlightRegion extends GuideRect { id: string; glow?: boolean }
 export interface SpotlightRoute { id: string; path: string; transform: string }
-export interface SpotlightHandle { update: (regions: SpotlightRegion[], route?: SpotlightRoute) => void }
+export interface SpotlightHandle { update: (regions: SpotlightRegion[], route?: SpotlightRoute, dim?: boolean) => void }
 
 /** One mask with several openings: overlapping holes never darken each other.
  * Keep outgoing openings alive while the next subjects fade into view. */
@@ -12,15 +12,15 @@ export const Spotlight = forwardRef<SpotlightHandle>(function Spotlight(_, ref) 
   const holes = useRef<SVGGElement>(null);
   const glow = useRef<HTMLDivElement>(null);
   const shade = useRef<SVGRectElement>(null);
-  const desired = useRef<{ regions: SpotlightRegion[]; route?: SpotlightRoute }>({ regions: [] });
-  useImperativeHandle(ref, () => ({ update: (regions, route) => { desired.current = { regions, route }; } }), []);
+  const desired = useRef<{ regions: SpotlightRegion[]; route?: SpotlightRoute; dim?: boolean }>({ regions: [] });
+  useImperativeHandle(ref, () => ({ update: (regions, route, dim = true) => { desired.current = { regions, route, dim }; } }), []);
   useLayoutEffect(() => {
     const entries = new Map<string, { hole: SVGElement; glow?: HTMLDivElement; opacity: number }>();
     let frame = 0, previous = performance.now(), darkness = 0;
     const tick = (now: number) => {
       const dt = Math.min(50, now - previous); previous = now;
       const amount = matchMedia('(prefers-reduced-motion: reduce)').matches ? 1 : dt / 480;
-      const { regions, route } = desired.current;
+      const { regions, route, dim } = desired.current;
       const wanted = new Set(regions.map(region => region.id));
       if (route) wanted.add(route.id);
       for (const region of regions) {
@@ -58,7 +58,7 @@ export const Spotlight = forwardRef<SpotlightHandle>(function Spotlight(_, ref) 
         if (entry.glow) entry.glow.style.opacity = String(entry.opacity);
         if (!wanted.has(key) && entry.opacity === 0) { entry.hole.remove(); entry.glow?.remove(); entries.delete(key); }
       }
-      darkness = Math.max(0, Math.min(1, darkness + (wanted.size ? amount : -amount)));
+      darkness = Math.max(0, Math.min(1, darkness + (wanted.size && dim ? amount : -amount)));
       shade.current?.setAttribute('opacity', String(darkness));
       frame = requestAnimationFrame(tick);
     };

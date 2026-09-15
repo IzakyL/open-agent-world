@@ -89,9 +89,12 @@ export function OawGuide({ motion = 'idle', ringOnly = false, logo = false, inLo
         speed = Math.hypot(dx, dy) / dt / 150;
         if (Math.abs(dx) > .2) direction = Math.sign(dx);
       }
+      const phase = input.movementTarget?.current?.dataset.travelPhase;
+      const inPortal = phase === 'departing' || phase === 'arriving';
+      if (inPortal) { speed = 1; direction = 1; }
       previous = rect ? { x: rect.x, y: rect.y } : undefined;
       rig.setIntent(speed, input.motion, direction);
-      if (input.celebration !== jumpSeen.current || (input.motion === 'celebrate' && previousMotion !== 'celebrate')) {
+      if (!inPortal && (input.celebration !== jumpSeen.current || (input.motion === 'celebrate' && previousMotion !== 'celebrate'))) {
         jumpSeen.current = input.celebration; rig.jump();
       }
       previousMotion = input.motion;

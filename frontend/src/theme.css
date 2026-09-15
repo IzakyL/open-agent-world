@@ -1580,6 +1580,7 @@ button:disabled { cursor: not-allowed; opacity: 0.48; }
 .component-palette:hover .deck-stage,
 .component-palette:focus-within .deck-stage,
 .component-palette[data-tutorial-highlight] .deck-stage,
+.component-palette:has([data-palette-card][data-tutorial-highlight]) .deck-stage,
 body:has(.tutorial-bubble[data-step="place-demo"]) .component-palette .deck-stage {
   min-height: var(--deck-open-height);
   max-height: var(--deck-open-height);

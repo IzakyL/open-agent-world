@@ -78,3 +78,19 @@
 .onboarding-layer.is-interaction-guide { position: fixed; z-index: 85; }
 body:has(.onboarding-layer.is-interaction-guide) .dialog-backdrop:has(> .connection-dialog) { background: transparent; backdrop-filter: none; }
 @media (prefers-reduced-motion: reduce) { .tutorial-dialogue { animation: none; } }
+
+/* Point at the card while leaving the entire drop surface unobscured. */
+.tutorial-placement-arrow { position: fixed; z-index: 1; width: 52px; height: 72px; pointer-events: none; }
+.tutorial-placement-arrow svg { width: 100%; height: 100%; overflow: visible; animation: tutorial-placement-point 1.4s ease-in-out infinite; filter: drop-shadow(0 3px 5px var(--surface-solid)); }
+.tutorial-placement-arrow path { fill: var(--accent-strong); stroke: var(--surface-solid); stroke-width: 3; stroke-linejoin: round; }
+@keyframes tutorial-placement-point { 0%, 100% { transform: translateY(-7px); } 50% { transform: translateY(0); } }
+@media (prefers-reduced-motion: reduce) { .tutorial-placement-arrow svg { animation: none; } }
+
+/* Keep text stationary: only reveal it after the character has arrived. */
+.tutorial-guide[data-moving="true"] .tutorial-bubble { visibility: hidden; opacity: 0; pointer-events: none; transition: none; }
+.tutorial-guide[data-moving="false"] .tutorial-bubble { transition: opacity .15s ease-out; }
+.tutorial-mascot { position: relative; }
+.tutorial-traveler { position: relative; width: 100%; height: 100%; opacity: var(--traveler-opacity, 1); transform: translateX(var(--traveler-x, 0px)) scaleX(var(--traveler-scale, 1)); transform-origin: 65% 65%; }
+.tutorial-portal { position: absolute; left: 40%; top: 10%; width: 32%; height: 84%; border: 3px solid var(--accent-strong); border-radius: 50%; background: radial-gradient(ellipse, var(--surface-solid) 24%, var(--accent-soft) 65%, var(--accent)); box-shadow: 0 0 12px var(--accent), inset 0 0 8px var(--accent); transform: scaleX(var(--portal-open, 0)); opacity: var(--portal-open, 0); pointer-events: none; }
+.tutorial-portal::after { content: ''; position: absolute; inset: 4px -7px; border: 1px solid var(--accent); border-radius: 50%; opacity: .55; }
+@media (prefers-reduced-motion: reduce) { .tutorial-guide .tutorial-bubble { transition: none; } .tutorial-portal { display: none; } }

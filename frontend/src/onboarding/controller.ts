@@ -357,6 +357,7 @@ export const tutorial = {
     } catch (error) { useTutorialStore.setState({ error: apiErrorMessage(error) }); }
     finally { useTutorialStore.setState({ busy: false }); }
   },
+  pause() { if (!state().busy) useTutorialStore.setState({ view: 'paused' }); },
   resume() { useTutorialStore.setState({ view: 'active', error: undefined }); rebase(); observe(); },
   async replay() {
     if (state().busy || stopping) return;

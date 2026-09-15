@@ -1,3 +1,4 @@
+import { tutorialAllowsCanvasTarget } from '../onboarding/interactionGuard';
 import { t, useLocale } from "../i18n";
 import { GlueLayer } from "./GlueLayer";
 import { reportInteraction } from "../state/interactions";
@@ -571,7 +572,7 @@ export function WorldCanvas() {
 
   const equipmentDropOwner = useCallback((resource: CanvasNodeData["card"], x: number, y: number) => {
     return cards.find((candidate) => {
-      if (activeDragIds.current.has(candidate.id) || !canEquip(resource, candidate, catalog, cards)) return false;
+      if (!tutorialAllowsCanvasTarget(candidate.id, 'transform') || activeDragIds.current.has(candidate.id) || !canEquip(resource, candidate, catalog, cards)) return false;
       const box = wrapper.current?.querySelector(`[data-equip-target="${candidate.id}"]`)?.getBoundingClientRect();
       return box && x > box.left && x < box.right && y > box.top && y < box.bottom;
     });
@@ -581,7 +582,7 @@ export function WorldCanvas() {
     const stackedIds = [...new Set(document.elementsFromPoint(event.clientX, event.clientY).map(element => element.closest('.react-flow__node')?.getAttribute('data-id')).filter(Boolean))];
     for (const id of stackedIds) {
       const target = cards.find(card => card.id === id);
-      if (!target) continue;
+      if (!target || !tutorialAllowsCanvasTarget(target.id, 'transform')) continue;
       const option = transformationOptions(catalog, node.data.card, target)[0];
       if (!option) continue;
       const element = wrapper.current?.querySelector<HTMLElement>(`.react-flow__node[data-id="${CSS.escape(target.id)}"]`);
@@ -625,7 +626,7 @@ export function WorldCanvas() {
     if (gluing) {
       const dx = node.position.x - gluing.origin.x, dy = node.position.y - gluing.origin.y;
       const moved = Object.fromEntries(Object.entries(gluing.boxes).map(([id, b]) => [id, { ...b, x: b.x + dx, y: b.y + dy }]));
-      const targets = Object.fromEntries(nodesRef.current.filter(n => !gluing.boxes[n.id] && n.type === 'worldCard' && !n.parentId && !n.hidden && !n.data.card.ephemeral && !n.data.equipmentDetail).map(n => [n.id,
+      const targets = Object.fromEntries(nodesRef.current.filter(n => !gluing.boxes[n.id] && tutorialAllowsCanvasTarget(n.id, 'glue') && n.type === 'worldCard' && !n.parentId && !n.hidden && !n.data.card.ephemeral && !n.data.equipmentDetail).map(n => [n.id,
         { x: n.position.x, y: n.position.y, width: Number(n.style?.width), height: Number(n.style?.height), level: n.data.surfaceLevel }]));
       gluing.latest = moved;
       gluing.candidate = glueActive ? findGlue(moved, targets, 16 / getViewport().zoom) : undefined;
@@ -644,7 +645,7 @@ export function WorldCanvas() {
       if(isShadow(parent)&&!useCollectionRelease.getState().active[parent!.id])useCollectionDrag.getState().set(member.id,position);
       const point = { x: position.x + 48, y: position.y + 48 };
       const sizes = new Map(nodesRef.current.map((item) => [item.id, { width: Number(item.style?.width), height: Number(item.style?.height) }]));
-      const destination = dropContainer(cards, member, point, catalog, sizes);
+      const destination = dropContainer(cards.filter(card => tutorialAllowsCanvasTarget(card.id, 'transform')), member, point, catalog, sizes);
       const paint = (id: string, mode: string) => {
         const frame = wrapper.current?.querySelector<HTMLElement>(`.container-frame[data-card-id="${id}"]`);
         const container = cards.find((c) => c.id === id);
@@ -743,7 +744,7 @@ export function WorldCanvas() {
         // In release mode test the saved silhouette, not the moving member's expanded hull.
         return {...update,parent_id:release?(owner.parent_id??null):owner.id};
       }
-      const destination = dropContainer(cards, member, { x: update.position.x + 48, y: update.position.y + 48 }, catalog, sizes);
+      const destination = dropContainer(cards.filter(card => tutorialAllowsCanvasTarget(card.id, 'transform')), member, { x: update.position.x + 48, y: update.position.y + 48 }, catalog, sizes);
       if(destination&&isShadow(destination)&&collectionState(destination)!=="expanded")return {...update,position:member.position,parent_id:destination.id};
       return { ...update, parent_id: destination?.id ?? null };
     })).finally(() => {
@@ -753,10 +754,11 @@ export function WorldCanvas() {
   }, [cancelPositionAnimation, cards, setDragging, updateCardPositions, updateCard, catalog, clearContainerDropHint, transformationTarget, glueBoxes]);
 
   const onConnect = useCallback((connection: Connection) => {
-    requestConnection(connection.source, connection.target);
+    if (tutorialAllowsCanvasTarget(connection.source, 'connect') && tutorialAllowsCanvasTarget(connection.target, 'connect')) requestConnection(connection.source, connection.target);
   }, [requestConnection]);
 
   const isValidConnection = useCallback((connection: Connection | CanvasEdge) => {
+    if (!tutorialAllowsCanvasTarget(connection.source, 'connect') || !tutorialAllowsCanvasTarget(connection.target, 'connect')) return false;
     const source = renderCards.find((card) => card.id === connection.source);
     const target = renderCards.find((card) => card.id === connection.target);
     return validateConnection(

@@ -59,7 +59,7 @@ export function MinisterPresence({ card, active, setActive, panelOpen }: {
     window.addEventListener('pointermove', move);
     return () => { window.clearTimeout(timer); window.removeEventListener('pointermove', move); };
   }, [active, card.id, card.status, draft, setActive]);
-  return <ViewportPortal><div ref={region} className="minister-presence nodrag nopan nowheel"
+  return <ViewportPortal><div ref={region} data-tutorial-card-id={card.id} className="minister-presence nodrag nopan nowheel"
     hidden={!active || panelOpen} style={{ left: origin.x + card.size.width + 16, top: origin.y + card.size.height / 2 }}
     onPointerDown={event => event.stopPropagation()} onDoubleClick={event => event.stopPropagation()}
     onKeyDown={event => { event.stopPropagation(); if (event.key === 'Escape') { (document.activeElement as HTMLElement)?.blur(); setActive(false); setGreeting(false); } }}>

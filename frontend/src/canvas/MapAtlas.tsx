@@ -61,7 +61,7 @@ export function MapAtlas({ active, onActiveChange, glueActive, onGlueChange }: {
       {glueActive && <div className="glue-tool-hint">{t("万能胶已开启 · 拖动卡片靠近另一张卡片的边缘，出现胶水时松手粘合。选中后可从自由角缩放，或解除粘连。")}</div>}
       <div className="map-toolbar" role="toolbar" aria-label={t("画布工具")}>
         <button className="icon-button" aria-label={t("图钉")} aria-pressed={active} aria-expanded={active} title={t("图钉 / 地图册")} onClick={() => onActiveChange(!active)}><MapPin size={18} /></button>
-        <button className="icon-button" aria-label={t("万能胶")} aria-pressed={glueActive} title={t("万能胶 · 靠近边缘并松手粘合")} onClick={() => onGlueChange(!glueActive)}><Droplets size={18} /></button>
+        <button className="icon-button" aria-label={t("万能胶")} data-tutorial="tools" aria-pressed={glueActive} title={t("万能胶 · 靠近边缘并松手粘合")} onClick={() => onGlueChange(!glueActive)}><Droplets size={18} /></button>
       </div>
     </Panel>
   </>;
