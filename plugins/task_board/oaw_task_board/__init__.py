@@ -210,7 +210,7 @@ class TaskBoardPlugin:
         registration.register_relationship(RelationshipDefinition(id=f"{PREFIX}.executor", label="Execute with", short_label="executor",
             description="Allow this work source to dispatch tasks to this Agent. Task access is granted separately.",
             source_traits=frozenset({"oaw.task-board"}), target_traits=frozenset({"core.agent"}), templateable=True))
-        registration.register_relationship(RelationshipDefinition(id=f"{PREFIX}.control", label="Control execution", short_label="execution",
+        registration.register_relationship(RelationshipDefinition(canvas_requires_confirmation=True, id=f"{PREFIX}.control", label="Control execution", short_label="execution",
             description="Read tasks and explicitly start or stop work; does not grant plan editing.",
             source_traits=frozenset({"core.agent"}), target_traits=frozenset({"oaw.task-board"}),
             capabilities=(grants["read"], execution_grant), templateable=True))

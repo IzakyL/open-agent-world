@@ -208,17 +208,16 @@ def test_validated_indirect_sensitive_changes_also_require_confirmation(client):
     assert next(card for card in services.world.list_cards() if card.type == 'test.review.agent').config['host_permission'] is True
 
 
-def test_sandbox_creation_is_reviewable_and_shared_glue_survives_reload(tmp_path):
+def test_sandbox_creation_is_autonomous_and_shared_glue_survives_reload(tmp_path):
     from fastapi.testclient import TestClient
     from backend.config import Settings
     from backend.main import create_app
     settings = Settings.for_data_root(tmp_path / 'world')
     with TestClient(create_app(settings)) as client:
         minister = create_minister(client)
-        proposal = invoke(client, minister, 'create', type='sandbox', name='Local workplace', position={}, versions=versions(client, minister))
-        assert proposal['risk'] == 'CONFIRM'
-        assert proposal['resources'][-1]['kind'] == 'sandbox defaults'
-        approve(client, minister, proposal)
+        sandbox = invoke(client, minister, 'create', type='sandbox', name='Local workplace', position={}, versions=versions(client, minister))
+        assert sandbox['type'] == 'sandbox' and sandbox['status'] == 'stopped'
+        assert client.get(f"/api/ministers/{minister['id']}/proposals").json() == []
         a = create_node(client, 'text', position={'x': 100, 'y': 0}, size={'width': 96, 'height': 96})
         b = create_node(client, 'text', position={'x': 300, 'y': 0}, size={'width': 96, 'height': 96})
         invoke(client, minister, 'organize', operation='glue', node_ids=[a['id']], target_id=b['id'], versions=versions(client, minister))
@@ -226,3 +225,65 @@ def test_sandbox_creation_is_reviewable_and_shared_glue_survives_reload(tmp_path
     with TestClient(create_app(settings)) as reopened:
         assert reopened.get('/api/canvas/glue').json() == saved
         assert reopened.get(f"/api/ministers/{minister['id']}/proposals").json() == []
+
+
+def test_ordinary_plugin_creation_configuration_and_connections_need_no_review(client):
+    from pydantic import BaseModel
+    from backend.plugins import NodeTypeDefinition, RelationshipDefinition
+    from backend.tests.plugin_support import install_test_plugin
+
+    class Config(BaseModel):
+        description: str = ''
+
+    def register(registration):
+        registration.register_node_type(NodeTypeDefinition(
+            id='test.ordinary', label='Ordinary card', description='Local notes', icon='file', color='#888888',
+            deck_id='test', deck_label='Test', deck_icon='file', default_name='Notes', default_size=(96, 96),
+            default_status='available', statuses=frozenset({'available'}), config_model=Config))
+        registration.register_relationship(RelationshipDefinition(
+            id='test.ordinary.use', label='Use notes', short_label='use', description='Connect local notes',
+            source_traits=frozenset({'core.agent'}), target_types=frozenset({'test.ordinary'})))
+
+    install_test_plugin(client.app.state.services.plugins, 'test.ordinary', register)
+    minister = create_minister(client)
+    agent = create_node(client, 'agent', size={'width': 96, 'height': 96})
+    card = invoke(client, minister, 'create', type='test.ordinary', name='Local notes', position={'x': 150, 'y': 0},
+                  config={'description': 'Initial notes'}, versions=versions(client, minister))
+    assert card['type'] == 'test.ordinary'
+    invoke(client, minister, 'update', updates=[{'node_id': card['id'], 'patch': {'config': {'description': 'Updated notes'}}}],
+           versions=versions(client, minister))
+    view = invoke(client, minister, 'inspect', source_id=agent['id'], target_id=card['id'])
+    assert view['connection_options'][0]['risk'] == 'ALLOW'
+    edge = invoke(client, minister, 'connect', source=agent['id'], target=card['id'], relationship='test.ordinary.use', versions=view['versions'])
+    invoke(client, minister, 'disconnect', edge_id=edge['id'], versions=versions(client, minister))
+    invoke(client, minister, 'organize', operation='attach', node_ids=[card['id']], target_id=agent['id'],
+           relationship='test.ordinary.use', versions=versions(client, minister))
+    assert client.get(f"/api/nodes/{card['id']}").json()['equipment']['owner_id'] == agent['id']
+    assert client.get(f"/api/ministers/{minister['id']}/proposals").json() == []
+
+
+def test_existing_sensitive_connection_does_not_block_ordinary_configuration_or_revocation(client):
+    minister = create_minister(client)
+    agent = create_node(client, 'agent', size={'width': 96, 'height': 96})
+    sandbox = create_node(client, 'sandbox', size={'width': 96, 'height': 96})
+    edge = client.post('/api/edges', json={'source': agent['id'], 'target': sandbox['id'], 'relationship': 'execute'}).json()
+    invoke(client, minister, 'update', updates=[{'node_id': agent['id'], 'patch': {'config': {'system_instruction': 'Be brief.'}}}],
+           versions=versions(client, minister))
+    invoke(client, minister, 'disconnect', edge_id=edge['id'], versions=versions(client, minister))
+    assert client.get(f"/api/nodes/{agent['id']}").json()['config']['system_instruction'] == 'Be brief.'
+    assert client.get(f"/api/ministers/{minister['id']}/proposals").json() == []
+
+
+def test_nested_sensitive_fields_still_require_confirmation():
+    from pydantic import BaseModel, Field
+    from backend.plugins.config_policy import config_write_risk
+
+    class HostSettings(BaseModel):
+        access: bool = Field(default=False, json_schema_extra={'privileged': True})
+
+    class Config(BaseModel):
+        settings: HostSettings = Field(default_factory=HostSettings)
+        description: str = ''
+
+    assert config_write_risk(Config, {'description': 'Ordinary text'}) == 'ALLOW'
+    assert config_write_risk(Config, {'settings': {'access': True}}) == 'CONFIRM'

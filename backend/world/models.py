@@ -66,7 +66,7 @@ class AgentConfig(BaseModel):
     system_instruction: str = Field(default="You are a helpful agent in Open Agent World.", json_schema_extra={"agentReadable": True, "agentWritable": True})
     model: str = Field(default="oaw:default", json_schema_extra={"agentReadable": True, "privileged": True})
     status: AgentStatus = AgentStatus.IDLE
-    runtime_provider_id: str | None = None
+    runtime_provider_id: str | None = Field(default=None, json_schema_extra={"privileged": True})
     max_concurrent_runs: Annotated[int, Field(ge=1, le=64)] = 1
     inherit_legion_model: bool = True
     legion_role: str = Field(default="", max_length=200, json_schema_extra={"agentReadable": True, "agentWritable": True})
@@ -78,7 +78,7 @@ class LegionConfig(BaseModel):
     status: Literal["available"] = "available"
     description: str = Field(default="", max_length=2000, json_schema_extra={"agentReadable": True, "agentWritable": True})
     instruction: str = Field(default="", max_length=16000, json_schema_extra={"agentReadable": True, "agentWritable": True})
-    model_override: str = Field(default="", max_length=200)
+    model_override: str = Field(default="", max_length=200, json_schema_extra={"privileged": True})
     paused: bool = False
     shared_state_access: Literal["read_only", "read_write"] = "read_write"
 
@@ -99,10 +99,10 @@ class SandboxConfig(BaseModel):
     model_config = ConfigDict(extra="allow")
 
     status: SandboxStatus = SandboxStatus.STOPPED
-    runtime: str = Field(default="auto", min_length=1, max_length=200)
-    workspace_path: str | None = Field(default=None, max_length=4096)
-    workspace_access: Literal["read_only", "read_write"] = "read_write"
-    network_enabled: bool = False
+    runtime: str = Field(default="auto", min_length=1, max_length=200, json_schema_extra={"privileged": True})
+    workspace_path: str | None = Field(default=None, max_length=4096, json_schema_extra={"privileged": True})
+    workspace_access: Literal["read_only", "read_write"] = Field(default="read_write", json_schema_extra={"privileged": True})
+    network_enabled: bool = Field(default=False, json_schema_extra={"privileged": True})
     memory_bytes: int = Field(default=512 * 1024 * 1024, ge=16 * 1024 * 1024, le=8 * 1024 * 1024 * 1024)
     active_process_limit: int = Field(default=64, ge=1, le=256)
     command_timeout: float = Field(default=600, gt=0, le=36000)

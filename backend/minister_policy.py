@@ -80,8 +80,8 @@ def summarize(services, actor_id, effect):
         if previous and (card.parent_id != previous.parent_id or card.equipment != previous.equipment):
             if card.parent_id:
                 parent = services.world.get_card(card.parent_id)
-                if parent.type == 'legion' and any(parent.config.get(key) for key in ('model_override', 'paused')):
-                    reasons.append(f'{card.name} will inherit the model/pause settings of {parent.name}.')
+                if parent.type == 'legion' and parent.config.get('model_override'):
+                    reasons.append(f'{card.name} will inherit the model settings of {parent.name}.')
         change = dict(name=card.name, type=card.type, action='create' if creating else 'update',
                       id=None if creating else card.id)
         if config:
@@ -96,16 +96,18 @@ def summarize(services, actor_id, effect):
         changes.append(dict(id=card.id, name=card.name, type=card.type, action='delete'))
 
     connections = []
+    changes_access = operation in {'create', 'connect', 'update_edge', 'group'} or any(
+        card.id in before and card.parent_id != before[card.id].parent_id for card in effect['after'])
     for edge in effect['affected_edges']:
         definition = services.plugins.relationship(edge.relationship)
-        if definition.canvas_requires_confirmation:
+        if definition.canvas_requires_confirmation and changes_access:
             reasons.append(f'Affects existing access via {definition.label}: {definition.description}')
     for key, verb in (('added_edges', 'grant'), ('removed_edges', 'remove')):
         for edge in effect[key]:
             definition = services.plugins.relationship(edge.relationship)
-            if actor_id in (edge.source, edge.target) and definition.canvas_requires_confirmation:
+            if verb == 'grant' and actor_id in (edge.source, edge.target) and definition.canvas_requires_confirmation:
                 raise PermissionDeniedError('A Minister cannot acquire additional capabilities through its own connections')
-            if definition.canvas_requires_confirmation:
+            if definition.canvas_requires_confirmation and verb == 'grant':
                 reasons.append(f'{verb.capitalize()} {definition.label}: {definition.description}')
             connections.append(dict(source=edge.source, target=edge.target, relationship=edge.relationship,
                 direction=edge.direction, action=verb, description=definition.description,
@@ -117,7 +119,7 @@ def summarize(services, actor_id, effect):
     runs = [dict(id=run.run_id, agent_id=run.agent_id, status=str(run.status)) for card in cards.values()
             for run in (services.run_manager.list_runs(agent_id=card.id) if services.run_manager else [])
             if run.status not in TERMINAL_RUN_STATUSES]
-    if runs and (operation == 'delete' or any(change.get('configuration') for change in changes)):
+    if runs and reasons:
         reasons.append('Active runs are affected. Existing lifecycle rules may require stopping them before this change can be applied.')
     resources = []
     for card in sorted(cards.values(), key=lambda item: item.id):
@@ -177,7 +179,7 @@ def administration_options(services, actor_id, nodes):
             'CONFIRM' if spec.canvas_create_requires_confirmation else 'ALLOW'), configuration=fields,
             container=item.container.model_dump(mode='json') if hasattr(item.container, 'model_dump') else item.container))
     return dict(card_types=types, risk_policy=dict(ALLOW='Execute normal local organization and configuration directly.',
-        CONFIRM='Show the actual effects in the Minister panel and wait for user confirmation.',
+        CONFIRM='Only sensitive effects require confirmation beside Minister on the canvas.',
         DENY='Secrets, security bypasses and changes to Minister authority are unavailable.'),
         default_agent_model=default_agent_model(services))
 

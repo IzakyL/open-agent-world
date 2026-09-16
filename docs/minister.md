@@ -88,7 +88,7 @@ The host decides each mutation's risk before lifecycle effects or persistence:
 | Decision | Behavior |
 | --- | --- |
 | **ALLOW** | Normal local creation, structure and public writable configuration execute directly. |
-| **CONFIRM** | Deletion, sensitive settings, unfamiliar plugin initialization and dangerous grants show a persistent review bubble beside Minister on the canvas, also available in the Agent's Minister tab. Nothing is applied until the user confirms. |
+| **CONFIRM** | Deletion, sensitive settings, explicitly marked sensitive plugin initialization and dangerous grants show a persistent review bubble beside Minister on the canvas, also available in the Agent's Minister tab. Nothing is applied until the user confirms. |
 | **DENY** | Raw secrets, immutable/internal fields, boundary bypasses and changes to Minister authority cannot be approved through a Minister tool. |
 
 Reviews list affected cards, connections, access changes and relevant resources/runs.
@@ -155,8 +155,10 @@ members continues to require that collection's dedicated operation.
 The Minister harness and tools add a small risk policy and review queue around
 ApplicationServices.canvas_control. The facade validates scope, schemas,
 consequences and revisions; existing services own mutations and lifecycle
-compensation. Plugins can mark ordinary creation/relationships as not requiring
-confirmation; unreviewed effects default to confirmation. Existing generic
+compensation. Ordinary plugin creation, declared configuration fields and connections
+are allowed by default. Plugins mark sensitive initialization and capability grants
+with `canvas_create_requires_confirmation=True` and `canvas_requires_confirmation=True`,
+and sensitive configuration fields with `privileged: true` in schema metadata. Existing generic
 automation grants keep their original config restrictions.
 
 Tests exercise real tools, persistence, lifecycle and events, including concurrent

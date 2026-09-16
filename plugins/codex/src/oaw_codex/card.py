@@ -8,14 +8,14 @@ class CodexCardConfig(BaseModel):
     model_config = ConfigDict(extra="allow")
 
     client_source: Literal["auto", "desktop", "cli", "manual"] = Field(
-        default="auto", title="Local Codex", description="Auto prefers the desktop App's native runtime, then CLI.")
-    codex_command: str = Field(default="", title="Native executable", description="Used when Local Codex is manual. Select codex.exe, not a shell wrapper.")
-    workspace_path: str = Field(default="", title="Project folder", description="Leave blank to use codex-workspace under Default Workspace location. Or enter an existing absolute project folder.")
+        default="auto", title="Local Codex", description="Auto prefers the desktop App's native runtime, then CLI.", json_schema_extra={"privileged": True})
+    codex_command: str = Field(default="", title="Native executable", description="Used when Local Codex is manual. Select codex.exe, not a shell wrapper.", json_schema_extra={"privileged": True})
+    workspace_path: str = Field(default="", title="Project folder", description="Leave blank to use codex-workspace under Default Workspace location. Or enter an existing absolute project folder.", json_schema_extra={"privileged": True})
     model: str = Field(default="default", title="Model", description="default inherits local Codex settings; or enter an explicit Codex model ID.")
     reasoning_effort: Literal["default", "minimal", "low", "medium", "high", "xhigh", "max"] = Field(
         default="default", title="Reasoning effort", description="Must be supported by the selected model. default inherits Codex settings.")
     session_mode: Literal["continue", "fresh"] = Field(default="continue", title="Session mode", description="continue remembers each OAW conversation; fresh starts a new session on each Run.")
-    codex_sandbox: Literal["read-only", "workspace-write"] = Field(default="workspace-write", title="Native file access", description="Codex sandbox for project files. OAW tool access follows graph connections.")
+    codex_sandbox: Literal["read-only", "workspace-write"] = Field(default="workspace-write", title="Native file access", description="Codex sandbox for project files. OAW tool access follows graph connections.", json_schema_extra={"privileged": True})
     system_instruction: str = Field(default="You are Codex working in Open Agent World. Help with the project and connected resources.", title="Additional instructions", json_schema_extra={"format": "textarea"})
     runtime_provider_id: Literal["openai.codex"] = "openai.codex"
     max_concurrent_runs: Literal[1] = 1

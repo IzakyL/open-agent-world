@@ -60,21 +60,21 @@ def config_write_risk(model, patch):
     """Local administration may propose sensitive writes, never secrets/internal state.
 
     This does not broaden ordinary agent access. Only a host-reviewed canvas
-    facade uses this policy. Unknown plugin fields remain confirmable, whereas
+    facade uses this policy. Declared ordinary plugin fields are autonomous, whereas
     undeclared extras and explicitly read-only fields remain unavailable.
     """
     schema = model.model_json_schema()
-    policy = agent_config_policy(model)
 
-    def protected(value, seen=frozenset()):
-        if any(value.get(key) is True for key in ("secret", "writeOnly", "immutable", "readOnly")) or value.get("format") == "password":
+    def protected(value, seen=frozenset(), sensitive=False):
+        markers = ("privileged",) if sensitive else ("secret", "writeOnly", "immutable", "readOnly")
+        if any(value.get(key) is True for key in markers) or not sensitive and value.get("format") == "password":
             return True
         ref = value.get("$ref")
         if ref and ref not in seen:
-            return protected(schema.get("$defs", {}).get(ref.rsplit("/", 1)[-1], {}), seen | {ref})
-        return any(protected(child, seen) for key in ("anyOf", "allOf", "oneOf") for child in value.get(key, [])) or any(
-            _secret_name(key) or protected(child, seen) for key, child in value.get("properties", {}).items()) or (
-            isinstance(value.get("items"), dict) and protected(value["items"], seen))
+            return protected(schema.get("$defs", {}).get(ref.rsplit("/", 1)[-1], {}), seen | {ref}, sensitive)
+        return any(protected(child, seen, sensitive) for key in ("anyOf", "allOf", "oneOf") for child in value.get(key, [])) or any(
+            (not sensitive and _secret_name(key)) or protected(child, seen, sensitive) for key, child in value.get("properties", {}).items()) or (
+            isinstance(value.get("items"), dict) and protected(value["items"], seen, sensitive))
 
     risk = "ALLOW"
     for name in patch:
@@ -88,6 +88,6 @@ def config_write_risk(model, patch):
         # contract rather than a parent annotation that exposes arbitrary data.
         if definition.get("type") == "object" and not definition.get("properties"):
             raise PermissionDeniedError("This configuration document needs its dedicated settings operation")
-        if not policy[name]["agentWritable"]:
+        if protected(definition, sensitive=True):
             risk = "CONFIRM"
     return risk
