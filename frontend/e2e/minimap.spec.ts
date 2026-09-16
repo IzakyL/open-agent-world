@@ -52,7 +52,7 @@ test('local map stays centered at 130% of the viewport during pan and zoom', asy
     await page.mouse.up();
     await check();
     expect((await geometry()).actual).not.toEqual(before.actual);
-    await page.locator('.world-controls').getByRole('button', { name: /zoom in/i }).click();
+    await page.locator('.world-controls .react-flow__controls-zoomin').click();
     await expect.poll(async () => (await geometry()).actual[2]).toBeLessThan(before.actual[2]);
     await check();
     const box = (await map.boundingBox())!;

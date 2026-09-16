@@ -12,7 +12,8 @@ export function MapAtlas({ active, onActiveChange, glueActive, onGlueChange }: {
   useLocale();
   const pins = useWorldStore(state => state.mapPins);
   const { setCenter } = useReactFlow();
-  const transform = useStore(state => state.transform, shallow);
+  // Closed tools have no screen-space markers to reposition during a pan.
+  const transform = useStore(state => active && pins.length ? state.transform : null, shallow);
   const jump = useCallback((pin: MapPinLocation) => {
     void setCenter(pin.x, pin.y, { zoom: pin.zoom,
       duration: window.matchMedia('(prefers-reduced-motion: reduce)').matches ? 0 : 300 });
@@ -38,7 +39,7 @@ export function MapAtlas({ active, onActiveChange, glueActive, onGlueChange }: {
   }, [active, glueActive, jump, onActiveChange, onGlueChange, pins]);
 
   return <>
-    {active && <div className="map-pin-layer" aria-hidden="true">
+    {active && transform && <div className="map-pin-layer" aria-hidden="true">
       {pins.map((pin, index) => <div key={pin.id} className="map-pin-marker" data-testid="map-pin-marker"
         style={{ left: pin.x * transform[2] + transform[0], top: pin.y * transform[2] + transform[1] }}>
         <MapPin size={25} /><span>{index + 1} · {pin.name}</span>

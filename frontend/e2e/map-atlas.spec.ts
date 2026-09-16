@@ -1,6 +1,7 @@
 import { expect, test } from '@playwright/test';
 
 test('map pins place, jump, rename, persist and hide independently of shortcuts', async ({ page }) => {
+  await page.addInitScript(() => localStorage.setItem('oaw.locale', 'zh-CN'));
   await page.goto('/');
   const tool = page.getByRole('button', { name: '图钉', exact: true });
   await tool.click();
