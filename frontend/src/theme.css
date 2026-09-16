@@ -1956,6 +1956,13 @@ body:has(.tutorial-bubble[data-step="place-demo"]) .component-palette .deck-stag
   .world-shell:has(.component-palette:is(:hover, :focus-within)) .edge-inspector { bottom: 200px; }
 }
 .legion-container { width: 100%; height: 100%; border: 1px solid #82958c; border-radius: 24px; background: color-mix(in srgb, var(--surface, #f6f4ec) 82%, transparent); box-shadow: inset 0 0 0 7px #82958c0c; position: relative; }
+/* Empty team space belongs to the canvas; only its controls intercept gestures. */
+.legion-container { pointer-events: none; }
+.legion-container > .container-header,
+.legion-container > .legion-controls,
+.legion-container > .container-resize-arc { pointer-events: auto; }
+/* Labels sit above container backgrounds (0), below member card surfaces (12+). */
+.world-canvas > .react-flow .react-flow__edgelabel-renderer { z-index: 1; }
 .legion-container.is-selected { outline: 2px solid #698b7d; outline-offset: 4px; }
 .legion-container > .container-header { display: flex; align-items: center; gap: 16px; height: 76px; padding: 0 24px; border-bottom: 1px solid #82958c44; color: var(--text-primary); cursor: grab; }
 .legion-container > .container-header > div { display: flex; flex-direction: column; gap: 4px; min-width: 0; flex: 0 1 260px; }

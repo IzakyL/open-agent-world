@@ -204,6 +204,7 @@ export function WorldCanvas() {
       if (isContainer(card, catalog)) {
         const { width, height } = frameSizes.get(card.id)!;
         node = { ...node, type: "container", position: card.position, width, height, style: { width, height }, zIndex: 0,
+          ...(card.type === "legion" ? { style: { width, height, pointerEvents: "none" as const } } : {}),
           dragHandle: ".container-drag-region", connectable: containerDefinition(card, catalog)!.connectable };
         if(isShadow(card)) {
           const rect=shadowLayout(card,renderCards,surfaceLevels,catalog);
