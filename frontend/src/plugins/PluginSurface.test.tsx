@@ -60,5 +60,5 @@ it("renders a plugin resource icon without a vendor mapping", () => {
   const { container } = render(<CatalogIcon definition={{ icon: "unknown", icon_url: "/api/plugins/example/assets/logo" }} size={25} />);
   const icon = container.querySelector(".catalog-asset-icon") as HTMLElement;
   expect(icon.style.mask).toContain("/api/plugins/example/assets/logo");
-  expect(icon.style.width).toBe("25px");
+  expect(icon.style.width).toBe("var(--catalog-icon-size, 25px)");
 });

@@ -1,4 +1,4 @@
-import { CardFace } from "../components/CardFace";
+import { CardFace, CardStock } from "../components/CardFace";
 import { t, useLocale } from "../i18n";
 import { useEffect, useRef, useState } from "react";
 import { Archive, Check, ChevronLeft, ChevronRight, Layers3, LibraryBig, Plus, Search, Store, X } from "lucide-react";
@@ -82,11 +82,11 @@ export function CardLibrary() {
   </select></label>;
   const renderCard = (item: LibraryCard) => {
     const included = deck?.entries.some(entry => same(entry, item));
-    return <PhysicalLibraryCard key={`${item.kind}:${item.id}`} selected={Boolean(selected && same(selected, item))} color={item.definition?.color ?? "#78967b"}>
+    return <PhysicalLibraryCard key={`${item.kind}:${item.id}`} selected={Boolean(selected && same(selected, item))} included={Boolean(included)} color={item.definition?.color ?? "#78967b"}>
       <button className="library-card-inspect" draggable={item.available && !item.internal && !library.busy}
         onDragStart={event => { if (!item.available || item.internal || library.busy) { event.preventDefault(); return; } event.dataTransfer.setData('application/x-oaw-library-card', JSON.stringify({ kind: item.kind, id: item.id })); event.dataTransfer.effectAllowed = 'copy'; setDragged(item); setAdding(null); }}
-        onDragEnd={() => setDragged(null)} data-library-card={item.id} onClick={() => setSelected(item)} aria-label={t("Inspect {v0}", { v0: String(item.label) })}><CardFace icon={<CatalogIcon definition={item.definition} />} label={item.label} description={item.description} />
-        {!item.available && !item.internal ? <span className="library-unavailable">{t("Unavailable")}</span> : null}</button>
+        onDragEnd={() => setDragged(null)} data-library-card={item.id} onClick={() => setSelected(item)} aria-label={t("Inspect {v0}", { v0: String(item.label) })}><CardStock className="library-card-stock"><CardFace icon={<CatalogIcon definition={item.definition} />} label={item.label} description={item.description} />
+        {!item.available && !item.internal ? <span className="library-unavailable">{t("Unavailable")}</span> : null}</CardStock></button>
       {item.internal && !included ? <div className="library-card-usage">{item.owners.length ? t("Use through its container") : t("Created by a world action")}</div> :
         <button className={`library-card-add ${included ? "is-in-deck" : ""}`} disabled={library.busy || !deck || (!included && !item.available)} onClick={() => included ? toggleCard(item) : setAdding(item)} aria-label={t(included ? 'Remove {v0} from deck' : 'Add {v0} to deck', { v0: item.label })}>
           {included ? <Check size={14} /> : <Plus size={14} />}{included ? t("In {deck} · Remove", { deck: displayDeckName(deck!) }) : t("Add to…")}</button>}

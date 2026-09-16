@@ -191,10 +191,17 @@ it("asks for a destination before adding and supports dropping into a different 
   expect(useCardLibrary.getState().snapshot!.decks[0].entries).toEqual([]);
   const transfer = { setData: vi.fn(), effectAllowed: '', dropEffect: '' };
   const source = screen.getByRole('button', { name: 'Inspect Review toolbox' });
+  const card = source.closest('.library-card')!;
+  expect(source.querySelector('.card-stock--compact')).toBeTruthy();
+  expect(card.querySelector('.card-stock')?.contains(screen.getByRole('button', { name: 'Remove Review toolbox from deck' }))).toBe(false);
+  expect(card.classList.contains('is-in-deck')).toBe(true);
+  fireEvent.change(screen.getByLabelText('Selected deck'), { target: { value: 'test' } });
+  expect(card.classList.contains('is-in-deck')).toBe(false);
   fireEvent.dragStart(source, { dataTransfer: transfer });
   const destination = rail.querySelector('[data-deck-id="test"]')!;
   await act(async () => fireEvent.drop(destination, { dataTransfer: transfer }));
   expect(useCardLibrary.getState().snapshot!.decks[0].entries).toEqual([{ kind: 'node', id: 'card.1' }]);
+  expect(card.classList.contains('is-in-deck')).toBe(true);
   const calls = edit.mock.calls.length;
   fireEvent.dragStart(source, { dataTransfer: transfer });
   await act(async () => fireEvent.drop(destination, { dataTransfer: transfer }));

@@ -208,3 +208,57 @@ test("source packs organize the collection and scoped Skills lead to their usabl
   expect(await library.locator(".library-body").evaluate(element => element.scrollWidth <= element.clientWidth + 1)).toBe(true);
   expect(errors).toEqual([]);
 });
+
+
+test("compact Library cards keep actions outside their single surface", async ({ page, request }) => {
+  let snapshot: LibrarySnapshot = await (await request.get("/api/card-library")).json();
+  const id = snapshot.available_pack_ids.find(id => snapshot.packs[id].definition.name === "Core essentials")!;
+  const opened = await request.post("/api/card-library/actions", { data: { action: "open_pack", id, expected_revision: snapshot.revision } });
+  expect(opened.ok()).toBe(true);
+  await page.goto("/");
+  const startEmpty = page.getByRole("button", { name: "Start Empty", exact: true });
+  await expect(startEmpty).toBeVisible();
+  await startEmpty.click();
+  await expect(startEmpty).not.toBeVisible();
+  await page.getByRole("button", { name: "Open Pack and Card Library" }).click();
+  const library = page.getByRole("dialog", { name: "Pack & Card Library" });
+  await library.getByRole("button", { name: /^Cards/ }).click();
+  await library.getByLabel("Source pack", { exact: true }).selectOption(`pack:${id}`);
+  const card = library.locator(".library-card").first();
+  const inspect = card.locator(".library-card-inspect");
+  const surface = card.locator(".card-stock--compact");
+  await expect(surface).toBeVisible();
+  expect(await library.locator(".library-card").count()).toBeGreaterThan(1);
+  const checkSurface = async () => {
+    expect(await surface.evaluate(element => getComputedStyle(element).boxShadow.split(/,(?![^(]*\))/).filter(shadow => !shadow.includes("inset")).every(shadow => {
+      const lengths = shadow.match(/-?[\d.]+px/g) ?? [];
+      return Number.parseFloat(lengths[2] ?? "0") > 0;
+    }))).toBe(true);
+    const bounds = (await surface.boundingBox())!;
+    const action = (await card.locator(".library-card-add").boundingBox())!;
+    expect(action.y).toBeGreaterThan(bounds.y + bounds.height);
+  };
+  await page.mouse.move(0, 0);
+  await checkSurface();
+  await page.screenshot({ path: "../.tmp/library-compact-rest.png" });
+  await inspect.hover();
+  await checkSurface();
+  await page.screenshot({ path: "../.tmp/library-compact-hover.png" });
+  await inspect.focus();
+  await page.keyboard.press("Enter");
+  await expect(card).toHaveClass(/is-selected/);
+  await card.locator(".library-card-add").click();
+  await library.locator(".library-deck-destination.is-selected > button").click();
+  await expect(card).toHaveClass(/is-in-deck/);
+  await expect(surface).toHaveCSS("border-top-color", "rgb(53, 53, 53)");
+  const deckSurface = page.locator(".component-palette .palette-item").first();
+  for (const viewport of [{ width: 1280, height: 800 }, { width: 600, height: 780 }, { width: 1280, height: 600 }]) {
+    await page.setViewportSize(viewport);
+    const dimensions = (element: Element) => { const style = getComputedStyle(element); return [style.width, style.height]; };
+    expect(await surface.evaluate(dimensions)).toEqual(await deckSurface.evaluate(dimensions));
+    await page.screenshot({ path: `../.tmp/library-unified-${viewport.width}-${viewport.height}.png` });
+  }
+  await page.setViewportSize({ width: 640, height: 780 });
+  await page.screenshot({ path: "../.tmp/library-compact-narrow.png" });
+  expect(await library.locator(".library-body").evaluate(element => element.scrollWidth <= element.clientWidth + 1)).toBe(true);
+});

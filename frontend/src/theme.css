@@ -1649,9 +1649,9 @@ body:has(.tutorial-bubble[data-step="place-demo"]) .component-palette .deck-stag
 
 .component-palette .palette-item {
   position: relative;
-  width: 106px;
-  min-width: 106px;
-  min-height: 122px;
+  width: var(--compact-card-width);
+  min-width: var(--compact-card-width);
+  min-height: var(--compact-card-height);
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -1664,11 +1664,6 @@ body:has(.tutorial-bubble[data-step="place-demo"]) .component-palette .deck-stag
   transform-origin: 50% 110%;
   cursor: grab;
   transition: transform 160ms ease, box-shadow 160ms ease, border-color 160ms ease;
-}
-
-/* A hand entry represents one card; avoid the shared stock's offset solid layers. */
-.component-palette .palette-item.card-stock {
-  box-shadow: inset 0 1px 0 var(--highlight), 3px 6px 10px var(--shadow);
 }
 
 .deck-hover-slot[data-active] .palette-item {
@@ -1696,9 +1691,9 @@ body:has(.tutorial-bubble[data-step="place-demo"]) .component-palette .deck-stag
 
 .legion-palette-entry {
   position: relative;
-  width: 106px;
-  min-width: 106px;
-  min-height: 122px;
+  width: var(--compact-card-width);
+  min-width: var(--compact-card-width);
+  min-height: var(--compact-card-height);
   margin: 0 -3px;
   transform-origin: 50% 110%;
 }
@@ -1937,8 +1932,8 @@ body:has(.tutorial-bubble[data-step="place-demo"]) .component-palette .deck-stag
   .deck-stage { grid-template-columns: 84px minmax(0, 1fr); padding-inline: 9px; }
   .deck-caption small { max-width: 72px; }
   .component-palette .palette-items { padding-inline: 6px; }
-  .component-palette .palette-item { width: 96px; min-width: 96px; }
-  .legion-palette-entry { width: 96px; min-width: 96px; }
+  .component-palette .palette-item { width: var(--compact-card-width); min-width: var(--compact-card-width); }
+  .legion-palette-entry { width: var(--compact-card-width); min-width: var(--compact-card-width); }
   .deck-editor { grid-template-columns: 86px minmax(0, 1fr) 76px; gap-inline: 6px; }
   .deck-editor-heading { padding-right: 5px; }
   .deck-editor-heading small { display: none; }
@@ -1951,10 +1946,10 @@ body:has(.tutorial-bubble[data-step="place-demo"]) .component-palette .deck-stag
 @media (max-height: 650px) {
   .deck-stage { --deck-open-height: 120px; }
   .component-palette .palette-items { height: 104px; }
-  .component-palette .palette-item { min-height: 101px; }
+  .component-palette .palette-item { min-height: var(--compact-card-height); }
   .legion-palette-entry,
   .legion-palette-entry .palette-item,
-  .legion-palette-entry .palette-item:hover { min-height: 101px; height: 101px; }
+  .legion-palette-entry .palette-item:hover { min-height: var(--compact-card-height); height: var(--compact-card-height); }
   .component-palette .palette-item-icon { width: 38px; height: 38px; }
   .world-shell:has(.component-palette:is(:hover, :focus-within)) .top-bar,
   .world-shell:has(.component-palette:is(:hover, :focus-within)) .world-controls.react-flow__controls,
@@ -2197,7 +2192,7 @@ body:has(.tutorial-bubble[data-step="place-demo"]) .component-palette .deck-stag
   position: relative;
   width: 100%;
   min-width: 0;
-  height: 122px;
+  height: var(--compact-card-height);
 }
 .component-palette .palette-items:not(.has-many) > .deck-hover-slot { flex: 0 1 100px; }
 .component-palette .deck-hover-button {
@@ -2234,8 +2229,8 @@ body:has(.tutorial-bubble[data-step="place-demo"]) .component-palette .deck-stag
   position: absolute;
   bottom: 0;
   left: 50%;
-  margin: 0 0 0 -53px;
-  height: 122px;
+  margin: 0 0 0 calc(var(--compact-card-width) / -2);
+  height: var(--compact-card-height);
   pointer-events: none;
   transition: box-shadow 160ms ease, border-color 160ms ease;
 }
@@ -2250,11 +2245,11 @@ body:has(.tutorial-bubble[data-step="place-demo"]) .component-palette .deck-stag
 .deck-hover-slot[data-active] .legion-card-delete,
 .deck-hover-slot:focus-within .legion-card-delete { opacity: 1; }
 @media (max-width: 620px) {
-  .component-palette .deck-hover-slot .palette-item { margin-left: -48px; }
+  .component-palette .deck-hover-slot .palette-item { margin-left: calc(var(--compact-card-width) / -2); }
 }
 @media (max-height: 650px) {
-  .component-palette .deck-hover-slot { height: 101px; }
-  .component-palette .deck-hover-slot .palette-item { height: 101px; }
+  .component-palette .deck-hover-slot { height: var(--compact-card-height); }
+  .component-palette .deck-hover-slot .palette-item { height: var(--compact-card-height); }
 }
 
 /* One bubble wraps the whole Markdown message, including block elements. */
@@ -2363,14 +2358,6 @@ body:has(.tutorial-bubble[data-step="place-demo"]) .component-palette .deck-stag
 .map-pin-marker span { padding: 3px 6px; border: 1px solid var(--line); border-radius: 6px; background: var(--chrome); color: var(--ink); font-size: 12px; max-width: 180px; overflow: hidden; text-overflow: ellipsis; }
 .world-canvas.pin-tool-active > .react-flow .react-flow__pane { cursor: crosshair; }
 @media (max-width: 760px) { .map-tools.react-flow__panel { right: 60px; bottom: 82px; } }
-
-/* Shared printed cards remain compact in the hand. */
-.component-palette .card-face { gap: 3px; padding: 5px; }
-.component-palette .card-face-art { min-height: 27px; }
-.component-palette .card-face-art > svg, .component-palette .card-face-art > img { width: 25px; height: 25px; }
-.component-palette .card-face-copy { gap: 2px; }
-.component-palette .card-face-copy strong { font-size: 10px; }
-.component-palette .card-face-copy small { font-size: 8px; -webkit-line-clamp: 1; }
 
 /* Preview is a portrait card; React Flow uses NODE_SURFACE_SIZE.preview. */
 .world-card.node-surface.is-preview { border-radius: 14px; }
