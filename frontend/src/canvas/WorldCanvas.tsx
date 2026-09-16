@@ -82,7 +82,7 @@ function nodeFromCard(
   position: ReturnType<typeof useWorldStore.getState>["cards"][number]["position"],
   windowSize?: SurfaceSize,
 ): CanvasNode {
-  const size = windowSize ?? (surfaceLevel === 'node' ? card.size : NODE_SURFACE_SIZE[surfaceLevel]);
+  const size = windowSize ?? NODE_SURFACE_SIZE[surfaceLevel];
   return {
     id: card.id,
     type: "worldCard",
@@ -227,7 +227,7 @@ export function WorldCanvas() {
         const index = renderCards.filter((c) => equipmentOwner(c, cards)?.id === owner.id).findIndex((c) => c.id === card.id);
         const ownerHeight = frameSizes.get(owner.id)?.height
           ?? (ownerLevel === "workspace" ? workspaceSizes[owner.id]?.height : undefined)
-          ?? (ownerLevel === "node" ? owner.size.height : NODE_SURFACE_SIZE[ownerLevel].height);
+          ?? NODE_SURFACE_SIZE[ownerLevel].height;
         return equipmentSurfaceNodes(node, owner.id, ownerLevel, index, equipmentPanels.includes(owner.id), equipmentPositions[card.id], ownerHeight);
       }
       if (card.parent_id && byId.has(card.parent_id)) {

@@ -10,6 +10,7 @@ import { Handle, NodeResizeControl, Position, type NodeProps } from "@xyflow/rea
 import { BookOpen, Maximize2, Minus, ExternalLink, Trash2, X } from "lucide-react";
 import { memo, type ComponentType, type CSSProperties, type PointerEvent as ReactPointerEvent, useEffect, useRef, useState } from "react";
 import { ConnectionHoverHint, clearConnectionHoverHint, updateConnectionHoverHint } from "./ConnectionHoverHint";
+import { CardName } from "./CardName";
 import { IconButton } from "../components/IconButton";
 import { NODE_SURFACE_RADIUS, WORKSPACE_MIN_SIZE, collapsedSurface, nodePresentation, nodeSurfaceSupport, surfaceLevelForNode, useNodeSurfaceStore, type NodeSurfaceLevel } from "../state/nodeSurfaces";
 import { useWorldStore } from "../state/worldStore";
@@ -115,7 +116,6 @@ const WorldCardNodeComponent = memo(function WorldCardNodeComponent({ data, sele
   const dismissSurface = useNodeSurfaceStore((state) => state.dismiss);
   const openWorkspace = useNodeSurfaceStore((state) => state.openWorkspace);
   const resizeWorkspace = useNodeSurfaceStore((state) => state.resizeWorkspace);
-  const updateCard = useWorldStore((state) => state.updateCard);
   const deleteCard = useWorldStore((state) => state.deleteCard);
   const connectingNodeId = useNodeSurfaceStore((state) => state.connectingNodeId);
   const cardRef = useRef<HTMLElement>(null);
@@ -234,14 +234,7 @@ const WorldCardNodeComponent = memo(function WorldCardNodeComponent({ data, sele
           <div className="card-kind-icon" aria-hidden="true"><CatalogIcon definition={definition} size={18} /></div>
           <div className="card-title-group">
             <span className="card-eyebrow">{label}</span>
-            <h2 title={card.name}>{card.name}</h2>
-            <input className="card-name-input nodrag nopan" defaultValue={card.name}
-              aria-label={t("{v0} name", { v0: String(label) })}
-              onBlur={(event) => {
-                const name = event.currentTarget.value.trim();
-                if (name && name !== card.name) void updateCard(card.id, { name });
-              }}
-              onKeyDown={(event) => { if (event.key === "Enter") event.currentTarget.blur(); }} />
+            <CardName key={`${card.id}:${visualLevel}`} card={card} label={label} editable={visualLevel !== "node"} />
           </div>
           <div className="card-status" data-status={displayStatus} title={`${t('Status')}: ${t(statusLabel(displayStatus))}`}>
             <span aria-hidden="true" /><span>{t(statusLabel(displayStatus))}</span>
