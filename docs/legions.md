@@ -1,13 +1,16 @@
-# Legion team spaces
+# Legion groups, team spaces and blueprints
 
 [Documentation](README.md)
 
 A Legion has two representations: a reusable library template and a live `legion`
-card in the world. A live card owns settings and a durable `legion:<card_id>` state
-scope. Its members remain ordinary world nodes with a nullable `parent_id`.
+card in the world. New Legions start as **groups**: a spatial container with no
+shared Agent context. The header's **Legion settings** button toggles a settings
+sidebar attached to the right side of the Legion. **Enable shared team settings**
+turns the group into a team space with a durable `legion:<card_id>` state scope.
+The sidebar leaves the canvas interactive. Closing it keeps the canvas clear and preserves unsaved variable drafts. Members remain ordinary world nodes
+with a nullable `parent_id`. Existing teams retain their settings and behavior.
 
-Select ungrouped cards and choose **Form Legion**, or add the Legion card to your deck through the
-[Card Library](card-library.md) and place an empty Legion. Select the Legion and additional cards to add those cards using
+Select ungrouped cards and choose **Form Legion**. Select the Legion and additional cards to add those cards using
 **Add selected cards**. **Detach** removes membership while retaining the card,
 its world position, and its edges. An Agent must finish or stop its active Runs
 before changing membership. This version supports one Legion per member, up to
@@ -27,6 +30,12 @@ deletes the container and all members as one batch. Both actions support undo/re
 including restoration of saved shared variables. Library presets are unaffected.
 
 ## Runtime settings and state
+
+These settings apply in team mode (`config.mode = "team"`). Switching back to
+group mode retains the saved settings but disables instruction/model inheritance,
+team pause admission, the Legion state scope and state tools for members.
+Existing Runs retain their start-time context snapshot; live state-tool access
+is revoked immediately. Opening or closing the settings sidebar does not change mode.
 
 - **Team instruction** is appended to each member Agent's own instruction at Run
   start. A member's optional role is included in that context.
@@ -55,19 +64,36 @@ not a second writable copy of the team state.
 
 ## Templates and API
 
-First **Form Legion**, configure the live team's settings and shared variables,
-then optionally **Save to library**. Saving to the library also saves any pending
+Use **Save to library** in the Legion header, with or without team settings.
+Saving to the library also saves any pending
 shared-variable draft. It captures the container, settings, current shared variables,
-members, internal edges, and existing portable resource payloads. Membership uses
+members, internal edges, relative node positions, sizes, display states
+(`node`, `preview`, `inspector`, `workspace`, corresponding to levels 1–4), compact
+return states, resized workspace dimensions, and portable resource payloads. Membership uses
 template-local keys, which are remapped on instantiation. Each deployment receives
 an independent copy of the saved variables; changes to the source or another copy
 do not alter the preset. Older templates without variable presets start empty.
-Run history and host-bound sandbox folders continue to be excluded.
+Display states are stored in the backend template and restored to each new node
+ID, including on redo. They are distinct from execution status: restored Agents
+start idle and Sandboxes stopped. Run history and host-bound sandbox folders
+continue to be excluded.
 
 The frontend deploys older flat templates inside a new Legion. For compatibility,
 `POST /api/legions/{template_id}/instances` preserves the original flat behavior
-unless `as_group: true` is provided; templates containing containers always retain
-their membership structure.
+unless `as_group: true` is provided. Use `unwrap: true` to place only the contents
+of saved Legion containers while preserving positions and internal connections.
+This removes Legion-level settings from the deployed formation; individual node
+settings and any other nested containers remain. `unwrap` and `as_group` are
+mutually exclusive. Normal library deployment retains Legion membership.
+
+## First-world blueprints
+
+The welcome screen offers **General assistant**, **Coding workspace**, and
+**Multi-Agent collaboration**, along with **Start Tutorial** and **Start Empty**.
+Users can also choose a saved Legion. Blueprints use the same template deployment
+path with `unwrap: true`; no Legion wrapper remains on the canvas. The operation
+supports undo/redo, uses the user's default model, and opens model setup when
+needed. Creating a formation does not start its Agents or Sandbox.
 
 ```text
 POST /api/legion-groups                      {name, node_ids}
@@ -75,6 +101,10 @@ PATCH /api/nodes/{member_id}                 {parent_id: legion_id | null}
 PATCH /api/nodes/{legion_id}                 {config: {...}}
 GET /api/legion-groups/{legion_id}/state
 PUT /api/legion-groups/{legion_id}/state      {value, expected_revision}
+GET /api/legions/presets
+POST /api/legions/presets/{id}/instances     {position, unwrap: true}
+POST /api/legions                           {name, node_ids, presentation: {node_id: {level, base_level, workspace_size}}}
+POST /api/legions/{id}/instances            {position, as_group | unwrap}
 ```
 
 Group formation is one database transaction and emits world events only after

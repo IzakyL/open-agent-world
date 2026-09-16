@@ -17,7 +17,7 @@ from backend.agents import (
     RuntimeProvider,
 )
 from backend.errors import RuntimeUnavailableError
-from backend.legions.runtime import group_context
+from backend.legions.runtime import group_context, member_team
 from backend.events.hub import EventHub
 from backend.events.models import EventType
 from backend.plugins import PluginRegistry
@@ -752,7 +752,7 @@ class RunManager:
             self.state.ensure_scope("agent", record.agent_id, schema_id="core.agent"),
         ]
         card = self.world.maybe_get_card(record.agent_id)
-        if card is not None and card.parent_id and self.world.get_card(card.parent_id).type == "legion":
+        if card is not None and member_team(self.world, card) is not None:
             scopes.insert(1, self.state.ensure_scope("legion", card.parent_id, schema_id="core.legion"))
         if record.context_id is not None:
             scopes.append(
@@ -832,7 +832,7 @@ class RunManager:
     def _check_concurrency(self, card: Card) -> None:
         if any(r.lifecycle.get('cleanup') in {'pending', 'failed'} for r in self.list_runs(agent_id=card.id)):
             raise RuntimeUnavailableError('Agent admission is closed until its pending Run cleanup is resolved')
-        if card.parent_id and self.world.get_card(card.parent_id).type == "legion" and self.world.get_card(card.parent_id).config.get("paused"):
+        if (team := member_team(self.world, card)) is not None and team.config.get("paused"):
             raise RuntimeUnavailableError("Legion is paused; its members cannot start new Runs")
         configured = card.config.get("max_concurrent_runs", 1)
         limit = configured if isinstance(configured, int) and configured > 0 else 1

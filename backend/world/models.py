@@ -75,12 +75,23 @@ class AgentConfig(BaseModel):
 class LegionConfig(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
+    mode: Literal["group", "team"] = "group"
     status: Literal["available"] = "available"
     description: str = Field(default="", max_length=2000, json_schema_extra={"agentReadable": True, "agentWritable": True})
     instruction: str = Field(default="", max_length=16000, json_schema_extra={"agentReadable": True, "agentWritable": True})
     model_override: str = Field(default="", max_length=200, json_schema_extra={"privileged": True})
     paused: bool = False
     shared_state_access: Literal["read_only", "read_write"] = "read_write"
+
+    @model_validator(mode="before")
+    @classmethod
+    def upgrade_team_config(cls, value: Any) -> Any:
+        # Existing Legions predate optional team context. Preserve their intent.
+        if isinstance(value, dict) and "mode" not in value and any(
+            key in value for key in ("instruction", "model_override", "shared_state_access", "paused")
+        ):
+            return {**value, "mode": "team"}
+        return value
 
 
 class TextConfig(BaseModel):

@@ -11,6 +11,7 @@ import type {
   EdgeDirection,
   FlowViewportState,
   LegionInstantiation,
+  LegionDeployOptions,
   LegionSummary,
   PluginCatalog,
   Relationship,
@@ -67,6 +68,7 @@ export type WorldHistoryOperation =
       id: number;
       label: string;
       kind: "legion-instantiated";
+      options?: LegionDeployOptions;
       legionId: string;
       position: WorldPosition;
       cards: WorldCard[];
@@ -347,6 +349,7 @@ interface WorldState {
   instantiateLegion: (
     id: string,
     anchor?: WorldPosition,
+    options?: LegionDeployOptions & { blueprint?: LegionSummary },
   ) => Promise<LegionInstantiation | undefined>;
   dissolveContainer: (id: string) => Promise<void>;
   deleteCard: (id: string) => Promise<void>;
@@ -957,6 +960,8 @@ export const useWorldStore = create<WorldState>()(persist((set, get) => ({
         name: name.trim(),
         ...(description?.trim() ? { description: description.trim() } : {}),
         node_ids: ids,
+        presentation: useNodeSurfaceStore.getState().capturePresentation(
+          [...new Map(selected.flatMap(card => [card, ...ownedDescendants(get().cards, card.id)]).map(card => [card.id, card])).values()], catalog),
       });
       markWorldMutation();
       set((state) => ({
@@ -1000,8 +1005,8 @@ export const useWorldStore = create<WorldState>()(persist((set, get) => ({
     }
   })),
 
-  instantiateLegion: (id, anchor) => withHistoryTransaction(() => withLegionOperation(id, async () => {
-    const legion = get().legions.find((item) => item.id === id);
+  instantiateLegion: (id, anchor, options = {}) => withHistoryTransaction(() => withLegionOperation(id, async () => {
+    const legion = options.blueprint ?? get().legions.find((item) => item.id === id);
     if (!legion) {
       get().pushToast({ tone: "error", title: "Legion is unavailable", detail: "Refresh the Legion library and try again." });
       return undefined;
@@ -1025,7 +1030,9 @@ export const useWorldStore = create<WorldState>()(persist((set, get) => ({
     };
     set({ syncState: "syncing" });
     try {
-      const instance = await worldApi.instantiateLegion(id, origin);
+      const deployment = { unwrap: options.unwrap, preset: options.preset };
+      const instance = await worldApi.instantiateLegion(id, origin, deployment);
+      useNodeSurfaceStore.getState().restorePresentation(instance.nodes, get().catalog, instance.presentation);
       const cards = instance.nodes.map(copyCard);
       const edges = instance.edges.map(copyEdge);
       markWorldMutation();
@@ -1040,6 +1047,7 @@ export const useWorldStore = create<WorldState>()(persist((set, get) => ({
           id: ++historySequence,
           label: `Deploy ${legion.name}`,
           kind: "legion-instantiated",
+          options: deployment,
           legionId: legion.id,
           position: { ...origin },
           cards,
@@ -2021,6 +2029,7 @@ export const useWorldStore = create<WorldState>()(persist((set, get) => ({
         ) return;
         if (
           operation.kind === "legion-instantiated"
+          && !operation.options?.preset
           && !get().legions.some((legion) => legion.id === operation.legionId)
         ) {
           set((state) => ({
@@ -2102,7 +2111,8 @@ export const useWorldStore = create<WorldState>()(persist((set, get) => ({
           break;
         }
         case "legion-instantiated": {
-          const instance = await worldApi.instantiateLegion(operation.legionId, operation.position);
+          const instance = await worldApi.instantiateLegion(operation.legionId, operation.position, operation.options);
+          useNodeSurfaceStore.getState().restorePresentation(instance.nodes, get().catalog, instance.presentation);
           const cards = instance.nodes.map(copyCard);
           const edges = instance.edges.map(copyEdge);
           redoneOperation = { ...operation, cards, edges };

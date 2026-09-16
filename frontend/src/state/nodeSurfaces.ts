@@ -1,7 +1,7 @@
 import { create } from "zustand";
 import { createJSONStorage, persist } from "zustand/middleware";
 import { profileStorage } from "./profileStorage";
-import type { CardType, NodePresentation, NodeSurfaceLevel, PluginCatalog, WorldCard } from "../types/world";
+import type { CardType, LegionNodePresentation, NodePresentation, NodeSurfaceLevel, PluginCatalog, WorldCard } from "../types/world";
 
 export type { NodeSurfaceLevel } from "../types/world";
 
@@ -82,6 +82,8 @@ export interface SurfaceSize { width: number; height: number }
 export const WORKSPACE_MIN_SIZE = { width: 640, height: 420 };
 
 interface NodeSurfaceState {
+  capturePresentation: (cards: readonly WorldCard[], catalog: PluginCatalog) => Record<string, LegionNodePresentation>;
+  restorePresentation: (cards: readonly WorldCard[], catalog: PluginCatalog, presentation?: Record<string, LegionNodePresentation>) => void;
   presentations: Record<string, NodePresentation>;
   syncCards: (cards: readonly Pick<WorldCard, "id" | "type">[], catalog: PluginCatalog) => void;
   workspaceSizes: Record<string, SurfaceSize>;
@@ -132,7 +134,27 @@ function closeSurfaces(state: NodeSurfaceState, target: NodeSurfaceLevel, nodeId
   ])) };
 }
 
-export const useNodeSurfaceStore = create<NodeSurfaceState>()(persist((set) => ({
+export const useNodeSurfaceStore = create<NodeSurfaceState>()(persist((set, get) => ({
+  capturePresentation: (cards, catalog) => {
+    const state = get();
+    return Object.fromEntries(cards.map(card => [card.id, {
+      level: state.surfaceLevels[card.id] ?? nodePresentation(card.type, catalog).initial,
+      base_level: state.baseLevels[card.id] === 'node' ? 'node' : 'preview',
+      ...(state.workspaceSizes[card.id] ? { workspace_size: { ...state.workspaceSizes[card.id] } } : {}),
+    }]));
+  },
+  restorePresentation: (cards, catalog, saved = {}) => set(state => {
+    const surfaceLevels = { ...state.surfaceLevels }, baseLevels = { ...state.baseLevels }, workspaceSizes = { ...state.workspaceSizes };
+    for (const card of cards) {
+      const value = saved[card.id];
+      if (!value) continue;
+      const presentation = nodePresentation(card.type, catalog);
+      surfaceLevels[card.id] = supportedLevel(presentation, value.level);
+      baseLevels[card.id] = baseLevel(presentation, value.base_level ?? undefined);
+      if (value.workspace_size) workspaceSizes[card.id] = { ...value.workspace_size };
+    }
+    return { surfaceLevels, baseLevels, workspaceSizes };
+  }),
   presentations: {},
   syncCards: (cards, catalog) => set(state => {
     const presentations: Record<string, NodePresentation> = {};

@@ -26,7 +26,7 @@ test.describe('canvas onboarding', () => {
     await page.mouse.up();
   };
 
-  test('welcome choices persist and Quick Start guides missing model setup', async ({ page, request }) => {
+  test('welcome choices persist and a blueprint guides missing model setup', async ({ page, request }) => {
     await page.goto('/');
     await expect(page.getByRole('heading', { name: 'Open Agent World' })).toBeVisible();
     await page.screenshot({ path: 'test-results/onboarding-welcome-light.png' });
@@ -42,7 +42,7 @@ test.describe('canvas onboarding', () => {
     await page.goto('about:blank');
     await resetTutorialProfile(request);
     await page.goto('/');
-    await page.getByRole('button', { name: 'Quick Start', exact: true }).click();
+    await page.getByRole('button', { name: /^General assistant/ }).click();
     await expect(page.getByRole('dialog', { name: 'Settings', exact: true })).toBeVisible();
     expect((await (await request.get('/api/nodes')).json()).every((card: { minister?: unknown }) => !card.minister)).toBe(true);
     await expect(page.locator('.onboarding-layer')).toHaveCount(0);

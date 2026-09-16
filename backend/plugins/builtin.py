@@ -90,7 +90,7 @@ class LegionContainerDefinition(NodeContainerDefinition):
     parentable: bool = False
     connectable: bool = False
     min_size: tuple[int, int] = (800, 550)
-    content_inset: tuple[int, int, int, int] = (320, 100, 24, 24)
+    content_inset: tuple[int, int, int, int] = (24, 100, 24, 24)
 
 
 class AgentNodeBehavior(NodeLifecycleHandler):
@@ -493,6 +493,8 @@ class AgentNodeTemplateHandler(_CoreConfigProjection, NodeTemplateHandler):
         "status",
         "runtime_provider_id",
         "max_concurrent_runs",
+        "inherit_legion_model",
+        "legion_role",
     })
 
     def dependencies(

@@ -16,12 +16,22 @@ class LegionBounds(BaseModel):
     height: Annotated[float, Field(gt=0)]
 
 
+class LegionNodePresentation(BaseModel):
+    """Portable editor state, separate from an Agent's execution status."""
+
+    model_config = ConfigDict(extra="forbid")
+    level: Literal["node", "preview", "inspector", "workspace"]
+    base_level: Literal["node", "preview"] | None = None
+    workspace_size: Size | None = None
+
+
 class LegionCapture(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     name: str = Field(min_length=1, max_length=120)
     description: str = Field(default="", max_length=500)
     node_ids: Annotated[list[str], Field(min_length=2, max_length=101)]
+    presentation: dict[str, LegionNodePresentation] = Field(default_factory=dict, max_length=1000)
 
     @field_validator("name")
     @classmethod
@@ -49,6 +59,13 @@ class LegionInstantiate(BaseModel):
 
     position: Point = Field(default_factory=Point)
     as_group: bool = False
+    unwrap: bool = False
+
+    @model_validator(mode="after")
+    def validate_deployment_mode(self) -> "LegionInstantiate":
+        if self.as_group and self.unwrap:
+            raise ValueError("Choose either grouped or unwrapped deployment")
+        return self
 
 
 class LegionTemplateDependency(BaseModel):
@@ -84,12 +101,15 @@ class LegionTemplateNode(BaseModel):
     expanded: bool
     status: str
     config: dict[str, Any]
+    presentation: LegionNodePresentation | None = None
     dependencies: list[LegionTemplateDependency] = Field(default_factory=list)
     payload_version: int | None = Field(default=None, ge=1)
     payload: dict[str, Any] | None = None
 
     @model_validator(mode="after")
     def require_payload_version_pair(self) -> "LegionTemplateNode":
+        if self.type == "legion" and "mode" not in self.config:
+            self.config = {**self.config, "mode": "team"}
         if self.initial_shared_state is not None:
             if self.type != "legion":
                 raise ValueError("Only Legion containers may define initial shared state")
@@ -177,3 +197,4 @@ class LegionInstance(BaseModel):
     node_ids: dict[str, str] = Field(default_factory=dict)
     nodes: list[Card]
     edges: list[Edge]
+    presentation: dict[str, LegionNodePresentation] = Field(default_factory=dict)

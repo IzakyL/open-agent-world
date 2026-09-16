@@ -5,6 +5,7 @@ from typing import Any
 
 from backend.capabilities.models import Capability, CapabilitySet
 from backend.errors import PermissionDeniedError, ResourceValidationError
+from backend.legions.runtime import member_team
 from backend.plugins import PluginRegistry
 from backend.resources.manager import ManagedResourceStore
 from backend.resources.models import ResourceRecord, TextDocument, TextEdit
@@ -86,8 +87,7 @@ class CapabilityBroker:
                         input_schema=dict(operation.input_schema),
                     )
                 )
-        if agent.parent_id and self.world.get_card(agent.parent_id).type == "legion":
-            group = self.world.get_card(agent.parent_id)
+        if (group := member_team(self.world, agent)) is not None:
             for operation in ("read", "patch"):
                 if operation == "patch" and group.config.get("shared_state_access") != "read_write":
                     continue

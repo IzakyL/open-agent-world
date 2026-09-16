@@ -51,7 +51,7 @@ export function AgentCardBody({ card, level }: { card: WorldCard; level: NodeSur
       {schemaSettings ? <AgentSchemaSettings card={card} /> : <>
       {level === "workspace" && <><label className="field-label"><span>{t("When to use this Agent")}</span><textarea defaultValue={String(card.config.description ?? "")} maxLength={500}
         onBlur={(event) => { if (event.target.value !== card.config.description) void updateCard(card.id, { config: { description: event.target.value } }); }} /></label>
-      {cards.find((c) => c.id === card.parent_id)?.type === "legion" && <section className="card-section">
+      {cards.some(c => c.id === card.parent_id && c.type === "legion" && (c.config.mode ?? 'team') === 'team') && <section className="card-section">
         <div className="section-heading"><span>{t("Legion:")} {cards.find((c) => c.id === card.parent_id)?.name ?? t("Team")}</span></div>
         <label className="field-label"><span>{t("Member role")}</span><input key={String(card.config.legion_role ?? "")} defaultValue={String(card.config.legion_role ?? "")} maxLength={200} placeholder={t("Planner, executor, reviewer")}
           onBlur={(e) => { if (e.target.value !== card.config.legion_role) void updateCard(card.id, { config: { legion_role: e.target.value } }); }} /></label>

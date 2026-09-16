@@ -2,8 +2,22 @@ import { beforeEach, describe, expect, it } from "vitest";
 import { collapsedSurface, nodePresentation, NODE_SURFACE_SUPPORT, surfaceLevelForNode, useNodeSurfaceStore } from "./nodeSurfaces";
 import { TEST_CATALOG } from "./catalog.fixture";
 import type { NodePresentation, NodeSurfaceLevel } from "../types/world";
+import { buildCardDraft } from './helpers';
 
 describe("node surface state", () => {
+  it('restores template state to new IDs and preserves workspace size and compact return state', () => {
+    const original = { id: 'source', ...buildCardDraft('agent', { x: 0, y: 0 }) };
+    useNodeSurfaceStore.setState({ surfaceLevels: { source: 'workspace' }, baseLevels: { source: 'node' }, workspaceSizes: { source: { width: 1250, height: 900 } } });
+    const saved = useNodeSurfaceStore.getState().capturePresentation([original], TEST_CATALOG);
+    const restored = { ...original, id: 'copy' };
+    useNodeSurfaceStore.getState().restorePresentation([restored], TEST_CATALOG, { copy: saved.source });
+    useNodeSurfaceStore.getState().syncCards([restored], TEST_CATALOG);
+    expect(useNodeSurfaceStore.getState().surfaceLevels.copy).toBe('workspace');
+    expect(useNodeSurfaceStore.getState().workspaceSizes.copy).toEqual({ width: 1250, height: 900 });
+    useNodeSurfaceStore.getState().closeWorkspace('copy');
+    useNodeSurfaceStore.getState().closeInspector('copy');
+    expect(useNodeSurfaceStore.getState().surfaceLevels.copy).toBe('node');
+  });
   beforeEach(() => {
     useNodeSurfaceStore.setState({
       surfaceLevels: {},

@@ -14,6 +14,7 @@ import { tutorial, useTutorialStore, type GuideVisuals } from './controller';
 import './onboarding.css';
 import { useMinisterRole } from '../state/ministerRole';
 import { QuickStartGuide } from './QuickStartGuide';
+import { BlueprintChooser } from './BlueprintChooser';
 import { installTutorialInteractionGuard } from './interactionGuard';
 import { Spotlight, type SpotlightHandle } from './Spotlight';
 import { relationshipPath } from '../edges/geometry';
@@ -67,7 +68,7 @@ export function Onboarding() {
   const flow = useReactFlow<CanvasNode>();
   const [compact, setCompact] = useState(false);
   const [rightGuide, setRightGuide] = useState(false);
-  const [position, setPosition] = useState({ x: window.innerWidth / 2 - 80, y: window.innerHeight * (window.innerHeight <= 650 ? .32 : .38) - 112 });
+  const [position, setPosition] = useState({ x: window.innerWidth / 2 - 80, y: window.innerHeight <= 700 ? 16 : Math.min(72, window.innerHeight * .09) });
   const [trace, setTrace] = useState<{ source: string; target: string }>();
   const tracePath = useRef<SVGPathElement>(null);
   const guide = useRef<HTMLDivElement>(null);
@@ -418,7 +419,7 @@ export function Onboarding() {
       setResolvedTarget(element?.dataset.tutorial);
       setHasConnection(Boolean(document.querySelector('[data-tutorial="model-credentials"]')));
       const width = window.innerWidth, height = window.innerHeight;
-      let x = width / 2 - 80, y = height * (height <= 650 ? .32 : .38) - 112;
+      let x = width / 2 - 80, y = height <= 700 ? 16 : Math.min(72, height * .09);
       if (!welcome) {
         const rect = bounds && bounds.width > 0 && bounds.height > 0 ? bounds : undefined;
         const bubbleWidth = Math.min(256, width - 32);
@@ -502,9 +503,9 @@ export function Onboarding() {
       <span className="onboarding-eyebrow">{t("A world of possibilities")}</span>
       <h1>{t("Open Agent World")}</h1>
       <p>{t("A little space. A few cards. Something entirely yours.")}</p>
+      <BlueprintChooser />
       <div className="onboarding-actions">
         <button className="primary-button onboarding-start" disabled={s.busy || sync === 'offline'} onClick={() => void tutorial.start()}><span>{t("Start Tutorial")}<small>{t("Recommended · A guided walk through your first world")}</small></span><ArrowRight size={19} /></button>
-        <button className="secondary-button" disabled={s.busy || sync === 'offline'} onClick={() => void tutorial.quickStart()}>{t("Quick Start")}</button>
         <button className="onboarding-text-button" disabled={s.busy} onClick={() => void tutorial.directly()}>{t("Start Empty")}</button>
       </div>
       {s.error && <p className="onboarding-error" role="alert">{s.error}</p>}

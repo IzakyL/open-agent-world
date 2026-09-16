@@ -1611,14 +1611,14 @@ class ApplicationServices:
         cards = [self.world.get_card(node_id) for node_id in dict.fromkeys(node_ids)]
         if not cards or any(c.type == "legion" or c.parent_id for c in cards):
             raise GraphValidationError("Select ungrouped member cards to form a Legion")
-        x = min(c.position.x for c in cards) - 480
+        x = min(c.position.x for c in cards) - 180
         y = min(c.position.y for c in cards) - 90
         width = max(1100, max(c.position.x + c.size.width for c in cards) - x + 60)
         height = max(700, max(c.position.y + c.size.height for c in cards) - y + 60)
         if width > 4096 or height > 4096:
             raise GraphValidationError("Move the selected cards closer together before grouping")
         return CardCreate(id=str(uuid4()), type="legion", name=name,
-            position={"x": x, "y": y}, size={"width": width, "height": height})
+            position={"x": x, "y": y}, size={"width": width, "height": height}, config={"mode": "group"})
 
     async def capture_legion(self, request: LegionCapture) -> LegionSummary:
         # Commands may mutate read-write hard links before their resource
@@ -1743,6 +1743,7 @@ class ApplicationServices:
                 expanded=card.expanded,
                 status=status,
                 config=config,
+                presentation=getattr(request, "presentation", {}).get(card.id),
                 dependencies=dependencies,
                 payload_version=payload_version,
                 payload=payload,
@@ -1886,7 +1887,9 @@ class ApplicationServices:
                 f"legion {legion_id!r} is incompatible: " + "; ".join(summary.issues)
             )
 
-        node_ids = {node.key: str(uuid4()) for node in record.blueprint.nodes}
+        removed_keys = {node.key for node in record.blueprint.nodes if request.unwrap and node.type == "legion"}
+        template_nodes = [node for node in record.blueprint.nodes if node.key not in removed_keys]
+        node_ids = {node.key: str(uuid4()) for node in template_nodes}
         created_nodes: list[Card] = []
         created_edges: list[Edge] = []
         creation_receipts: dict[
@@ -1897,17 +1900,17 @@ class ApplicationServices:
             if request.as_group and not any(n.type == "legion" for n in record.blueprint.nodes):
                 wrapper = await self._create_card(CardCreate(
                     type="legion", name=record.name,
-                    position={"x": request.position.x - 480, "y": request.position.y - 90},
-                    size={"width": min(4096, record.blueprint.bounds.width + 540), "height": min(4096, max(700, record.blueprint.bounds.height + 150))},
-                    config={"description": record.description},
+                    position={"x": request.position.x - 180, "y": request.position.y - 90},
+                    size={"width": min(4096, record.blueprint.bounds.width + 240), "height": min(4096, max(700, record.blueprint.bounds.height + 150))},
+                    config={"description": record.description, "mode": "group"},
                 ), _creation_receipts=creation_receipts, _publish_event=False)
                 created_nodes.append(wrapper)
             from backend.node_containers import parent_first
-            for node in parent_first(record.blueprint.nodes, key=lambda n: n.key, parent=lambda n: n.owner_key or n.parent_key):
+            for node in parent_first(template_nodes, key=lambda n: n.key, parent=lambda n: n.owner_key or n.parent_key):
                 created_nodes.append(await self._create_card(
                     CardCreate(
                         id=node_ids[node.key],
-                        parent_id=node_ids[node.parent_key] if node.parent_key else (wrapper.id if wrapper and not node.owner_key else None),
+                        parent_id=node_ids.get(node.parent_key) if node.parent_key else (wrapper.id if wrapper and not node.owner_key else None),
                         equipment={"owner_id": node_ids[node.owner_key], "relationship": node.equipment_relationship} if node.owner_key else None,
                         type=node.type,
                         name=node.name,
@@ -1936,6 +1939,8 @@ class ApplicationServices:
                     write_shared_state(self.world, self.state, node_ids[node.key],
                                        LegionStateWrite(value=node.initial_shared_state, expected_revision=0))
             for edge in record.blueprint.edges:
+                if edge.source in removed_keys or edge.target in removed_keys:
+                    continue
                 created_edges.append(await self.create_edge(EdgeCreate(
                     source=node_ids[edge.source],
                     target=node_ids[edge.target],
@@ -1967,6 +1972,7 @@ class ApplicationServices:
             node_ids=node_ids,
             nodes=created_nodes,
             edges=created_edges,
+            presentation={node_ids[node.key]: node.presentation for node in template_nodes if node.presentation is not None},
         )
 
     async def _compensate_legion_instance(

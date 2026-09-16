@@ -766,7 +766,7 @@ describe("authoritative world synchronization", () => {
 
     await useWorldStore.getState().instantiateLegion("legion-1", { x: 160, y: 120 });
 
-    expect(instantiateLegion).toHaveBeenCalledWith("legion-1", { x: 40, y: 72 });
+    expect(instantiateLegion).toHaveBeenCalledWith("legion-1", { x: 40, y: 72 }, { preset: undefined, unwrap: undefined });
     expect(useWorldStore.getState().cards.map((item) => item.id)).toEqual([existing.id, first.id, second.id]);
     expect(useWorldStore.getState().edges).toEqual([relationship]);
     expect(useWorldStore.getState().selectedCardIds).toEqual([first.id, second.id]);
@@ -1017,6 +1017,10 @@ describe("authoritative world synchronization", () => {
     expect(createLegion).toHaveBeenCalledWith({
       name: "Research Cell",
       node_ids: [first.id, second.id],
+      presentation: {
+        [first.id]: { level: 'preview', base_level: 'preview' },
+        [second.id]: { level: 'preview', base_level: 'preview' },
+      },
     });
     expect(useWorldStore.getState().cards.map((item) => item.position)).toEqual([
       { x: 80, y: 40 },

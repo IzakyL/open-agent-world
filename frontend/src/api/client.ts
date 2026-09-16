@@ -8,6 +8,8 @@ import type {
   ConversationSummary,
   EdgeDirection,
   LegionInstantiation,
+  LegionNodePresentation,
+  LegionDeployOptions,
   LegionSummary,
   PluginCatalog,
   Relationship,
@@ -195,6 +197,7 @@ export function normalizeLegionInstantiation(input: unknown): LegionInstantiatio
     legion_id: String(source.legion_id),
     nodes: nodes.map(normalizeCard),
     edges: edges.map(normalizeEdge),
+    presentation: asRecord(source.presentation) as Record<string, LegionNodePresentation>,
   };
 }
 
@@ -349,6 +352,7 @@ export const worldApi = {
     name: string;
     description?: string;
     node_ids: string[];
+    presentation?: Record<string, LegionNodePresentation>;
   }): Promise<LegionSummary> {
     const body = await request<unknown>("/legions", {
       method: "POST",
@@ -362,10 +366,14 @@ export const worldApi = {
     return normalizeLegionSummary(unwrap(body, "legion"));
   },
 
-  async instantiateLegion(id: string, position: { x: number; y: number }): Promise<LegionInstantiation> {
-    const body = await request<unknown>(`/legions/${encodeURIComponent(id)}/instances`, {
+  async getBlueprintPresets(): Promise<LegionSummary[]> {
+    return (await request<unknown[]>("/legions/presets")).map(normalizeLegionSummary);
+  },
+
+  async instantiateLegion(id: string, position: { x: number; y: number }, options: LegionDeployOptions = {}): Promise<LegionInstantiation> {
+    const body = await request<unknown>(`/legions/${options.preset ? "presets/" : ""}${encodeURIComponent(id)}/instances`, {
       method: "POST",
-      body: JSON.stringify({ position, as_group: true }),
+      body: JSON.stringify({ position, as_group: !options.unwrap, unwrap: !!options.unwrap }),
     });
     return normalizeLegionInstantiation(body);
   },

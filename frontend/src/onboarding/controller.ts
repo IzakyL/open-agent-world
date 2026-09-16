@@ -12,7 +12,7 @@ import { observeInteractions, type WorldInteraction } from '../state/interaction
 import { positionSurfaceAtNodeCenter } from '../canvas/nodeDisplacement';
 import { getConnectionOptions } from '../state/relationships';
 import { STEPS, stepComplete, type Baseline, type Demonstration, type Observation, type Role, type Target } from './steps';
-import type { WorldCard, WorldSnapshot, WorldPosition } from '../types/world';
+import type { LegionSummary, WorldCard, WorldSnapshot, WorldPosition } from '../types/world';
 
 const TYPES: Record<Role, string> = { demo: 'text', practice: 'text', agent: 'agent', conversation: 'conversation', sandbox: 'sandbox', glueA: 'text', glueB: 'text', ministerRole: 'core.minister-role', minister: 'agent' };
 export interface DemoRecord { id: string; name: string; created_at?: string; contentRevision?: number }
@@ -368,35 +368,19 @@ export const tutorial = {
   async directly() {
     useTutorialStore.setState({ status: 'skipped', view: 'hidden', error: undefined });
   },
-  async quickStart() {
+  async fromBlueprint(blueprint: LegionSummary, preset: boolean) {
     if (state().busy) return;
     useTutorialStore.setState({ busy: true, error: undefined });
     try {
       await prepareDeck(['agent', 'conversation', 'text', 'sandbox']);
-      const snapshot = await worldApi.getWorld();
-      useWorldStore.setState(s => ({ cards: mergeCards(s.cards, snapshot.nodes, s.cardTombstones), edges: snapshot.edges }));
-      const modelCatalog = await worldApi.getModelConnections();
-      useWorldStore.setState({ modelCatalog });
-      const agent = snapshot.nodes.find(card => !card.parent_id && !card.equipment && world().catalog.node_types.some(type => type.id === card.type && type.traits.includes('core.agent')))
-        ?? await world().createCard('agent', center(-220, 0));
-      if (!agent) throw new Error('Your Agent could not be placed. Please retry.');
-      const linked = snapshot.edges.find(edge => edge.source === agent.id && edge.relationship === 'participate');
-      const conversation = snapshot.nodes.find(card => card.id === linked?.target)
-        ?? snapshot.nodes.find(card => card.type === 'conversation' && !card.equipment && !card.parent_id)
-        ?? await world().createCard('conversation', { x: agent.position.x + 440, y: agent.position.y });
-      if (!conversation) throw new Error('Your Conversation could not be placed. Please retry.');
-      if (!linked || linked.target !== conversation.id) {
-        world().requestConnection(agent.id, conversation.id);
-        await world().createConnection('participate');
-        if (!world().edges.some(edge => edge.source === agent.id && edge.target === conversation.id && edge.relationship === 'participate'))
-          throw new Error('The connection was not saved. Please retry.');
-        world().selectEdge(undefined);
-      }
-      useTutorialStore.setState({ status: 'skipped', view: 'hidden', quickStart: { agentId: agent.id, conversationId: conversation.id } });
-      await visuals?.focus([agent.id, conversation.id]);
-      if (agent.type === 'agent' && !hasModelConfiguration(modelCatalog, agent.config.model)) useWorldStore.setState({ settingsOpen: true });
-      else if (agent.type !== 'agent') useNodeSurfaceStore.getState().openInspector(agent.id);
-      else useNodeSurfaceStore.getState().openWorkspace(conversation.id);
+      const instance = await world().instantiateLegion(blueprint.id, undefined, { blueprint, preset, unwrap: true });
+      if (!instance) throw new Error('The blueprint could not be placed. Check the notification and retry.');
+      const agent = instance.nodes.find(card => card.type === 'agent');
+      const conversation = instance.nodes.find(card => card.type === 'conversation');
+      useTutorialStore.setState({ status: 'skipped', view: 'hidden',
+        quickStart: agent && conversation ? { agentId: agent.id, conversationId: conversation.id } : undefined });
+      await visuals?.focus(instance.nodes.map(card => card.id));
+      if (agent && !hasModelConfiguration(world().modelCatalog, agent.config.model)) useWorldStore.setState({ settingsOpen: true });
     } catch (error) { useTutorialStore.setState({ error: apiErrorMessage(error) }); }
     finally { useTutorialStore.setState({ busy: false }); }
   },
