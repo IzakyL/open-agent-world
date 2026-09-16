@@ -643,9 +643,7 @@ test("a Conversation workspace creates a group and routes explicit mentions", as
     await page.goto("/");
     const conversationCard = page.locator(`[data-card-id="${conversation.id}"]`);
     await expect(conversationCard).toHaveAttribute("data-card-type", "conversation");
-    await conversationCard.click();
-    await expect(conversationCard).toHaveAttribute("data-surface-level", "inspector");
-    await conversationCard.getByRole("button", { name: "Open workspace" }).click();
+    await expect(conversationCard).toHaveAttribute("data-surface-level", "workspace");
 
     const workspace = page.locator(`[data-workspace-node-id="${conversation.id}"]`);
     await expect(workspace).toBeVisible();
@@ -682,7 +680,7 @@ test("a Conversation workspace creates a group and routes explicit mentions", as
     await expect(workspace.getByText("E2E River", { exact: true }).last()).toBeVisible();
 
     await workspace.getByRole("button", { name: "Close workspace" }).click();
-    await conversationCard.getByRole("button", { name: "Close E2E Conversation inspector" }).click();
+    await expect(conversationCard).toHaveAttribute("data-surface-level", "preview");
     const atlasCard = page.locator(`[data-card-id="${atlas.id}"]`);
     await atlasCard.click();
     await atlasCard.getByRole("button", { name: "Open workspace" }).click();
@@ -709,8 +707,7 @@ test("a Conversation group can remove a participant and be dissolved", async ({ 
   try {
     await page.goto("/");
     const conversationCard = page.locator(`[data-card-id="${conversation.id}"]`);
-    await conversationCard.click();
-    await conversationCard.getByRole("button", { name: "Open workspace" }).click();
+    await expect(conversationCard).toHaveAttribute("data-surface-level", "workspace");
     const workspace = page.locator(`[data-workspace-node-id="${conversation.id}"]`);
     await workspace.getByRole("button", { name: "New group" }).click();
     await workspace.getByLabel("Group name").fill("E2E Kick Group");

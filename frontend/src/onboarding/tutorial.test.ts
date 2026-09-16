@@ -35,6 +35,23 @@ beforeEach(() => {
 afterEach(() => { detach?.(); detach = undefined; });
 
 describe('tutorial progression', () => {
+  it('requires a visible workspace and explicit Continue for window introductions', async () => {
+    useWorldStore.setState({ cards: [card('room', 'conversation')] });
+    useTutorialStore.setState({ status: 'started', view: 'active', session: {
+      id: 'window-intro', step: 'conversation-open', initialIds: [], demos: [], refs: { conversation: 'room' },
+    } });
+    tutorial.resume(); detach = tutorial.attach(bridge);
+    expect(useTutorialStore.getState().ready).toBe(true);
+    expect(useTutorialStore.getState().session?.step).toBe('conversation-open');
+    useNodeSurfaceStore.getState().closeWorkspace('room');
+    expect(useTutorialStore.getState().ready).toBe(false);
+    await tutorial.continue();
+    expect(useTutorialStore.getState().session?.step).toBe('conversation-open');
+    useNodeSurfaceStore.getState().openPrimary('room');
+    await tutorial.continue();
+    expect(useTutorialStore.getState().session?.step).toBe('message');
+  });
+
   it('waits for all four cards in the chosen deck and activates only that deck', async () => {
     const entries = ['text', 'agent', 'conversation', 'sandbox'].map(id => ({ kind: 'node' as const, id }));
     const library: LibrarySnapshot = { schema_version: 1, revision: 1, migration_pending: false, plugins: {}, packs: {}, card_definitions: {}, collection: {},
@@ -107,7 +124,7 @@ describe('tutorial progression', () => {
     expect(useTutorialStore.getState().ready).toBe(true);
     await tutorial.continue();
     expect(useTutorialStore.getState().session?.step).toBe('conversation');
-    expect(useNodeSurfaceStore.getState().surfaceLevels.agent).toBeUndefined();
+    expect(useNodeSurfaceStore.getState().surfaceLevels.agent).toBe('preview');
   });
   it('requires a user viewport gesture, a successful send, and the right card identities', () => {
     const pan = STEPS.find(step => step.id === 'pan')!;

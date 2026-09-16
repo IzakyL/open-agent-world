@@ -11,7 +11,7 @@ import { BookOpen, Maximize2, Minus, ExternalLink, Trash2, X } from "lucide-reac
 import { memo, type ComponentType, type CSSProperties, type PointerEvent as ReactPointerEvent, useEffect, useRef, useState } from "react";
 import { ConnectionHoverHint, clearConnectionHoverHint, updateConnectionHoverHint } from "./ConnectionHoverHint";
 import { IconButton } from "../components/IconButton";
-import { NODE_SURFACE_RADIUS, WORKSPACE_MIN_SIZE, nodeSurfaceSupport, surfaceLevelForNode, useNodeSurfaceStore, type NodeSurfaceLevel } from "../state/nodeSurfaces";
+import { NODE_SURFACE_RADIUS, WORKSPACE_MIN_SIZE, collapsedSurface, nodePresentation, nodeSurfaceSupport, surfaceLevelForNode, useNodeSurfaceStore, type NodeSurfaceLevel } from "../state/nodeSurfaces";
 import { useWorldStore } from "../state/worldStore";
 import { type CardType, type WorldCard } from "../types/world";
 import { TaskBoardBody } from "./TaskBoard";
@@ -110,7 +110,7 @@ const WorldCardNodeComponent = memo(function WorldCardNodeComponent({ data, sele
   const level = useNodeSurfaceStore((state) => surfaceLevelForNode(card.id, state.surfaceLevels));
   const showPreview = useNodeSurfaceStore((state) => state.showPreview);
   const hidePreview = useNodeSurfaceStore((state) => state.hidePreview);
-  const openInspector = useNodeSurfaceStore((state) => state.openInspector);
+  const openPrimary = useNodeSurfaceStore((state) => state.openPrimary);
   const closeInspector = useNodeSurfaceStore((state) => state.closeInspector);
   const dismissSurface = useNodeSurfaceStore((state) => state.dismiss);
   const openWorkspace = useNodeSurfaceStore((state) => state.openWorkspace);
@@ -133,6 +133,9 @@ const WorldCardNodeComponent = memo(function WorldCardNodeComponent({ data, sele
   const promotion = useMinisterRole(s => s.promotions[card.id]);
 
   const support = nodeSurfaceSupport(card.type, catalog);
+  const presentation = nodePresentation(card.type, catalog);
+  const base = useNodeSurfaceStore(state => state.baseLevels[card.id]);
+  const canCollapseInspector = collapsedSurface(presentation, "inspector", base) !== "inspector";
 
   useEffect(() => {
     if (dragging && pointerStart.current) pointerStart.current.moved = true;
@@ -204,7 +207,7 @@ const WorldCardNodeComponent = memo(function WorldCardNodeComponent({ data, sele
         if (event.shiftKey || event.ctrlKey || event.metaKey || event.altKey || connectingNodeId || dragging) return;
         if (event.detail !== 0 && start && (start.moved || Math.hypot(event.clientX - start.x, event.clientY - start.y) >= DRAG_THRESHOLD_PX)) return;
         if ((event.target as HTMLElement).closest("button, input, textarea, select, label, a, [contenteditable='true'], .react-flow__handle")) return;
-        if (support.inspector && (visualLevel === "node" || visualLevel === "preview")) openInspector(card.id);
+        if (visualLevel === "node" || visualLevel === "preview") openPrimary(card.id);
       }}
     >
       {visualLevel === "workspace" && selected && <NodeResizeControl
@@ -243,7 +246,7 @@ const WorldCardNodeComponent = memo(function WorldCardNodeComponent({ data, sele
           <div className="card-status" data-status={displayStatus} title={`${t('Status')}: ${t(statusLabel(displayStatus))}`}>
             <span aria-hidden="true" /><span>{t(statusLabel(displayStatus))}</span>
           </div>
-          {(visualLevel === "node" || visualLevel === "preview") && support.preview ? (
+          {(visualLevel === "node" || visualLevel === "preview") && support.node && support.preview ? (
             <IconButton
               icon={visualLevel === "node" ? Maximize2 : Minus}
               size={visualLevel === "node" ? "xs" : "sm"}
@@ -256,13 +259,13 @@ const WorldCardNodeComponent = memo(function WorldCardNodeComponent({ data, sele
                 else hidePreview(card.id);
               }} />
           ) : null}
-          <IconButton icon={X} size="sm" quiet className="node-surface-close"
-            onClick={() => closeInspector(card.id)} label={t("Close {v0} inspector", { v0: String(card.name) })} />
+          {canCollapseInspector && <IconButton icon={X} size="sm" quiet className="node-surface-close"
+            onClick={() => closeInspector(card.id)} label={t("Close {v0} inspector", { v0: String(card.name) })} />}
         </header>
 
         <div className="node-preview-content" aria-hidden={visualLevel !== "preview"}>
           <NodePreview card={card} />
-          <span className="node-preview-hint">{t("Click for details")}</span>
+          {presentation.open !== "preview" && <span className="node-preview-hint">{t(presentation.open === "workspace" ? "Open workspace" : "Click for details")}</span>}
         </div>
 
         <div className="card-body node-inspector-content" aria-hidden={visualLevel !== "inspector"}>

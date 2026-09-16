@@ -8,13 +8,15 @@ import {
   Clock3,
   MessageSquare,
   PanelRight,
+  Pencil,
   Radio,
+  Trash2,
   X,
 } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { apiErrorMessage, worldApi } from "../api/client";
 import { IconButton } from "../components/IconButton";
-import { nodeSurfaceSupport, useNodeSurfaceStore } from "../state/nodeSurfaces";
+import { collapsedSurface, nodePresentation, useNodeSurfaceStore } from "../state/nodeSurfaces";
 import { useWorldStore } from "../state/worldStore";
 import type { ConversationSession, WorldCard } from "../types/world";
 import { TaskBoardBody } from "./TaskBoard";
@@ -35,16 +37,27 @@ function WorkspaceTitlebar({ card }: WorkspaceSurfaceProps) {
   useLocale();
   const catalog = useWorldStore((state) => state.catalog);
   const closeWorkspace = useNodeSurfaceStore((state) => state.closeWorkspace);
+  const base = useNodeSurfaceStore((state) => state.baseLevels[card.id]);
+  const updateCard = useWorldStore((state) => state.updateCard);
+  const deleteCard = useWorldStore((state) => state.deleteCard);
+  const canCollapse = collapsedSurface(nodePresentation(card.type, catalog), "workspace", base) !== "workspace";
+  const [renaming, setRenaming] = useState(false);
 
   return (
     <header className="workspace-titlebar node-drag-region">
       <div className="workspace-app-mark"><CatalogIcon definition={catalog.node_types.find((d) => d.id === card.type)} size={16} /></div>
       <div>
         <span>{catalog.node_types.find((item) => item.id === card.type)?.label ?? card.type} {t("workspace")}</span>
-        <strong>{card.name}</strong>
+        {renaming ? <input className="workspace-name-input nodrag nopan" key={card.name} defaultValue={card.name} autoFocus
+          aria-label={t("{v0} name", { v0: String(catalog.node_types.find(d => d.id === card.type)?.label ?? card.type) })}
+          onBlur={event => { const name = event.currentTarget.value.trim(); if (name && name !== card.name) void updateCard(card.id, { name }); setRenaming(false); }}
+          onKeyDown={event => { if (event.key === "Enter") event.currentTarget.blur(); }} /> : <strong onDoubleClick={() => setRenaming(true)}>{card.name}</strong>}
       </div>
       <div className="workspace-window-actions">
-        <IconButton icon={X} size="sm" quiet onClick={() => closeWorkspace(card.id)} label={t("Close workspace")} />
+        <IconButton icon={Pencil} size="sm" quiet onClick={() => setRenaming(true)} label={t("Rename")} />
+        {!card.ephemeral && <IconButton icon={Trash2} size="sm" quiet danger onClick={() => { void deleteCard(card.id); }}
+          label={t("Remove {v0}", { v0: String(card.name) })} title={t("Remove object (Ctrl+Z to undo)")} />}
+        {canCollapse && <IconButton icon={X} size="sm" quiet onClick={() => closeWorkspace(card.id)} label={t("Close workspace")} />}
       </div>
     </header>
   );

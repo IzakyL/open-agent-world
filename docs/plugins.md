@@ -27,6 +27,8 @@ Plugin-specific documentation can remain in its own package or repository. These
 
 Start with the installable [Greeter example](../examples/plugins/greeter/README.md), then consult [package discovery](#package-structure-and-discovery), [the public API](#public-plugin-api), and the contracts below.
 
+Plugin API 1.16 adds `NodePresentation` for supported surfaces, initial appearance,
+and compact-card opening behavior (see the node definition contract below).
 Plugin API 1.15 adds optional pack artwork and accent colors through registered
 public image assets (see [Card Library](card-library.md#pack-appearance)).
 Plugin API 1.14 adds `PackDefinition` and `registration.register_pack(...)`.
@@ -411,8 +413,43 @@ the catalog for existing-node rendering, but are omitted from card decks and are
 rejected by the generic node-creation API. This flag is independent of
 `templateable`: restoration support never implies standalone creation.
 
-`surfaces` declares generic `preview`, `inspector`, and `workspace` availability.
-The backend does not load plugin-supplied browser code.
+Plugin API 1.16 adds `NodeTypeDefinition.presentation`:
+
+```python
+from open_agent_world.plugin_api import NodePresentation
+
+# Pass this to NodeTypeDefinition(presentation=...).
+presentation = NodePresentation(
+    states=("node", "preview", "workspace"),
+    initial="workspace",
+    open="workspace",
+)
+```
+
+The four host surfaces are `node` (compact node), `preview` (small card),
+`inspector` (details), and `workspace` (canvas window). `states` is any nonempty,
+unique subset; its order does not change the host's size hierarchy. Both `initial`
+and `open` must belong to it. `initial` applies on the first appearance of an
+instance in the current application profile. Subsequent refreshes, reloads and
+undo restoration preserve its saved surface. `open` is the destination when
+clicking a compact node or small card. Closing skips unsupported surfaces and
+restores the previously chosen compact form. A single-surface card has no
+collapse action. Explicit settings/workspace requests fall back to `open` if
+their requested surface is unsupported.
+
+Conversation and Sandbox use the example above: new instances open as windows,
+can collapse to small cards or nodes, and reopen directly as windows. Plugins
+can keep all four surfaces while setting `open="workspace"`, or start directly
+in `inspector`. Changing a declaration preserves supported saved states and
+redirects removed states to `open`. Display state does not start a runtime.
+
+Legacy `surfaces` declarations remain supported: `node` is implicit, `preview`
+is the initial state when available, and opening prefers `inspector`, then
+`workspace`, then `preview`. An explicit `presentation` takes precedence;
+the catalog also derives the legacy `surfaces` flags from it for older clients.
+The definition controls generic card surfaces; specialized container views still
+own their member layout. Frontend content uses the existing `preview`, `body`
+(inspector), and `workspace` slots.
 
 ## Lifecycle transactions
 

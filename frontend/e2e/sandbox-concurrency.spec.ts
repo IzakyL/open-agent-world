@@ -33,8 +33,7 @@ test("shared sandbox admits a command and cancels only the selected peer", async
   });
   await page.goto("/");
   const panel = page.locator(`[data-card-id="${card.id}"]`);
-  await panel.locator(".card-kind-icon").click();
-  await panel.getByRole("button", { name: "Open Window", exact: true }).click();
+  await expect(panel).toHaveAttribute("data-surface-level", "workspace");
   const window = page.getByRole("dialog", { name: "Shared lab workspace" });
   const command = window.getByRole("textbox", { name: "Command", exact: true });
   await expect(command).toBeEditable();

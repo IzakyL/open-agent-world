@@ -4,9 +4,9 @@ import re
 import keyword
 from collections.abc import Awaitable, Callable, Mapping
 from dataclasses import dataclass, field
-from typing import TYPE_CHECKING, Any, Protocol
+from typing import TYPE_CHECKING, Any, Literal, Protocol, Self
 
-from pydantic import BaseModel, ConfigDict, Field, ValidationError
+from pydantic import BaseModel, ConfigDict, Field, ValidationError, model_validator
 
 from backend.errors import GraphValidationError, PluginCompatibilityError, PluginUnavailableError
 from backend.plugins.lifecycle import NodeLifecycleHandler
@@ -24,7 +24,7 @@ from backend.plugins.documents import NodeDocumentDefinition
 from backend.plugins.containers import NodeContainerDefinition
 from backend.plugins.execution import NodeExecutionDefinition
 
-PLUGIN_API_VERSION = "1.15"
+PLUGIN_API_VERSION = "1.16"
 _IDENTIFIER = re.compile(r"^[a-z][a-z0-9]*(?:[._:/-][a-z0-9]+)*$")
 _API_VERSION = re.compile(r"^(0|[1-9]\d*)\.(0|[1-9]\d*)$")
 
@@ -86,6 +86,36 @@ class PluginDefinition:
         self.configure(registration)
 
 
+SurfaceLevel = Literal["node", "preview", "inspector", "workspace"]
+
+
+class NodePresentation(BaseModel):
+    """Supported canvas surfaces, first appearance, and compact-card open target."""
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+    states: tuple[SurfaceLevel, ...] = Field(min_length=1)
+    initial: SurfaceLevel
+    open: SurfaceLevel
+
+    @classmethod
+    def from_legacy_surfaces(cls, surfaces: dict[str, bool]) -> Self:
+        states: tuple[SurfaceLevel, ...] = ("node",) + tuple(
+            level for level, default in (("preview", True), ("inspector", True), ("workspace", False))
+            if surfaces.get(level, default)
+        )
+        initial = "preview" if "preview" in states else "node"
+        target = next((level for level in ("inspector", "workspace", "preview") if level in states), "node")
+        return cls(states=states, initial=initial, open=target)
+
+    @model_validator(mode="after")
+    def validate_states(self) -> Self:
+        if len(set(self.states)) != len(self.states):
+            raise ValueError("presentation states must be unique")
+        if self.initial not in self.states or self.open not in self.states:
+            raise ValueError("presentation initial and open must belong to states")
+        return self
+
+
 class NodeTypeCatalogItem(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -106,6 +136,7 @@ class NodeTypeCatalogItem(BaseModel):
     default_status: str
     traits: list[str]
     surfaces: dict[str, bool]
+    presentation: NodePresentation
     has_document: bool = False
     transformations: dict[str, dict[str, Any]] = Field(default_factory=dict)
     has_execution: bool = False
@@ -217,6 +248,7 @@ class NodeTypeDefinition:
             "workspace": False,
         }
     )
+    presentation: NodePresentation | None = None
     creation_fields: frozenset[str] = frozenset()
     # Persisted node types are not necessarily standalone objects. Managed
     # containers, for example, must be created through their domain operation.
@@ -232,8 +264,14 @@ class NodeTypeDefinition:
     # Ordinary creation is autonomous; plugins explicitly mark sensitive initialization.
     canvas_create_requires_confirmation: bool = False
 
+    def resolved_presentation(self) -> NodePresentation:
+        if self.presentation is not None:
+            return NodePresentation.model_validate(self.presentation)
+        return NodePresentation.from_legacy_surfaces(self.surfaces)
+
     def catalog_item(self, plugin_id: str) -> NodeTypeCatalogItem:
         default_config = self.config_model().model_dump(mode="json")
+        presentation = self.resolved_presentation()
         return NodeTypeCatalogItem(
             id=self.id,
             plugin_id=plugin_id,
@@ -255,10 +293,9 @@ class NodeTypeDefinition:
             default_status=self.default_status,
             traits=sorted(self.traits),
             surfaces={
-                "preview": bool(self.surfaces.get("preview", True)),
-                "inspector": bool(self.surfaces.get("inspector", True)),
-                "workspace": bool(self.surfaces.get("workspace", False)),
+                level: level in presentation.states for level in ("preview", "inspector", "workspace")
             },
+            presentation=presentation,
             default_config=default_config,
             config_schema=self.config_model.model_json_schema(),
             has_document=self.document is not None,
@@ -522,6 +559,7 @@ class PluginRegistry:
                 raise ValueError("state schema ids must be namespaced")
 
         for definition in staged.nodes.values():
+            definition.resolved_presentation()
             if definition.icon_asset is not None and definition.icon_asset not in staged.assets:
                 raise ValueError("node icon must reference an asset registered by the same plugin")
             for slot, reference in definition.frontend.items():

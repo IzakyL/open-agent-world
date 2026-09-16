@@ -4,6 +4,7 @@ import type { LegionSummary, WorldCard, WorldEdge, WorldSnapshot } from "../type
 import { buildCardDraft } from "./helpers";
 import { TEST_CATALOG } from "./catalog.fixture";
 import { mergeEdges, useWorldStore } from "./worldStore";
+import { useNodeSurfaceStore } from "./nodeSurfaces";
 
 function card(id: string, type: WorldCard["type"]): WorldCard {
   return { id, ...buildCardDraft(type, { x: 0, y: 0 }) };
@@ -38,6 +39,7 @@ function deferred<T>() {
 describe("authoritative world synchronization", () => {
   beforeEach(() => {
     vi.restoreAllMocks();
+    useNodeSurfaceStore.setState({ surfaceLevels: {}, baseLevels: {}, presentations: {}, dragging: false, connectingNodeId: undefined });
     vi.spyOn(worldApi, "getModelConnections").mockResolvedValue({ revision: 0, connections: [], default_model: null });
     vi.spyOn(worldApi, "getCatalog").mockResolvedValue(TEST_CATALOG);
     vi.spyOn(worldApi, "getLegions").mockResolvedValue([]);
@@ -85,6 +87,21 @@ describe("authoritative world synchronization", () => {
     useWorldStore.getState().ingestEvent({ id: "restored", type: "card_created", timestamp: node.created_at,
       payload: { node: { ...node, created_at: "2026-09-11T00:01:00Z" } } });
     expect(useWorldStore.getState().cards).toHaveLength(1);
+  });
+
+  it("initializes created and remotely ingested surfaces once and retains them across refresh", async () => {
+    const room = card("room", "conversation");
+    vi.spyOn(worldApi, "createNode").mockResolvedValue(room);
+    await useWorldStore.getState().createCard("conversation");
+    expect(useNodeSurfaceStore.getState().surfaceLevels.room).toBe("workspace");
+    useNodeSurfaceStore.getState().closeWorkspace("room");
+    const sandbox = card("lab", "sandbox");
+    useWorldStore.getState().ingestEvent({ id: "remote", type: "card_created", timestamp: "2026-09-16T00:00:00Z", payload: { node: sandbox } });
+    expect(useNodeSurfaceStore.getState().surfaceLevels).toMatchObject({ room: "preview", lab: "workspace" });
+    // Snapshot replacement and temporary chunk unloading do not reapply initial.
+    useWorldStore.setState({ cards: [sandbox] });
+    useWorldStore.setState({ cards: [{ ...room }, { ...sandbox }], catalog: { ...TEST_CATALOG } });
+    expect(useNodeSurfaceStore.getState().surfaceLevels).toMatchObject({ room: "preview", lab: "workspace" });
   });
 
   it("reconciles initialization when a background mutation arrives during loading", async () => {

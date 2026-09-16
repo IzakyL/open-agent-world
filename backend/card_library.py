@@ -10,7 +10,7 @@ from pydantic import BaseModel, ConfigDict, Field
 
 from backend.errors import ConflictError, GraphValidationError, NotFoundError, RevisionConflictError
 from backend.persistence.database import Database
-from backend.plugins.registry import NodeTypeCatalogItem, PackCatalogItem, PluginDescriptor, PluginRegistry
+from backend.plugins.registry import NodePresentation, NodeTypeCatalogItem, PackCatalogItem, PluginDescriptor, PluginRegistry
 
 KEY = "card_library.v1"
 CORE = "open-agent-world.core"
@@ -106,6 +106,16 @@ class CardLibraryStore:
                     if isinstance(definition, dict) and "compatibility" in definition:
                         del definition["compatibility"]
                         migrated = True
+            definitions = payload.get("card_definitions", {})
+            if isinstance(definitions, dict):
+                for definition in definitions.values():
+                    if isinstance(definition, dict) and "presentation" not in definition:
+                        surfaces = definition.get("surfaces")
+                        if isinstance(surfaces, dict):
+                            # Uninstalled plugins retain their last known surface policy.
+                            # Reconcile refreshes installed definitions from the registry.
+                            definition["presentation"] = NodePresentation.from_legacy_surfaces(surfaces).model_dump(mode="json")
+                            migrated = True
         state = LibraryState.model_validate(payload)
         if migrated:
             CardLibraryStore._write(db, state)

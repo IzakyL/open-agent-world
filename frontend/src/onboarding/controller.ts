@@ -417,7 +417,7 @@ export const tutorial = {
     if (step.id === 'finish') return tutorial.exit('completed');
     if (step.id === 'workflow') await visuals?.focus(state().session?.refs.demo ? [state().session!.refs.demo!] : []);
     if (step.action) return tutorial.perform(step.action);
-    if (!step.expects || step.optional) goNext();
+    if (!step.expects || step.optional || (step.review && state().ready)) goNext();
   },
   perform(action: Demonstration) {
     if (state().session?.completedDemo === currentStep().id) return;

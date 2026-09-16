@@ -181,8 +181,8 @@ test.describe('canvas onboarding', () => {
     await page.getByRole('button', { name: 'Show the connection', exact: true }).click();
     await page.locator('.tutorial-next').filter({ hasText: 'Continue' }).click();
     await at(page, 'conversation-open');
-    await conversation.locator('.card-kind-icon').click();
-    await conversation.getByRole('button', { name: 'Open workspace', exact: true }).click();
+    await expect(conversation.locator('.world-card')).toHaveAttribute('data-surface-level', 'workspace');
+    await page.locator('.tutorial-next').filter({ hasText: 'Continue' }).click();
     await at(page, 'message');
     await conversation.locator('.workspace-composer textarea').fill('Help me plan a small garden.');
     await conversation.getByRole('button', { name: 'Send message', exact: true }).click();
@@ -208,7 +208,8 @@ test.describe('canvas onboarding', () => {
     await page.locator('input[name="relationship"][value="execute"]').check();
     await page.getByRole('button', { name: 'Grant capability', exact: true }).click();
     await at(page, 'sandbox-open');
-    await sandbox.locator('.card-kind-icon').click();
+    await expect(sandbox.locator('.world-card')).toHaveAttribute('data-surface-level', 'workspace');
+    await page.locator('.tutorial-next').filter({ hasText: 'Continue' }).click();
     await at(page, 'sandbox-ready');
     await page.getByRole('button', { name: 'Try sticking cards', exact: true }).click();
     await at(page, 'glue-demo');

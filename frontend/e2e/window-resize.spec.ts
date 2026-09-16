@@ -7,13 +7,13 @@ for (const type of ["agent", "sandbox"]) {
     expect(response.ok()).toBe(true);
     const { id } = await response.json();
     try {
-      await page.addInitScript(nodeId => {
-        if (localStorage.getItem("resize-test")) return;
-        localStorage.setItem("oaw-node-surfaces-v1", JSON.stringify({ state: {
-          surfaceLevels: { [nodeId]: "workspace" }, baseLevels: {}, maximizedWorkspaces: {},
-        }, version: 3 }));
-        localStorage.setItem("resize-test", "true");
-      }, id);
+      const profile = await (await request.get('/api/application')).json();
+      expect((await request.patch('/api/application/preferences', { data: {
+        profile_id: profile.profile_id, generation: profile.generation, changes: {
+          'oaw-canvas-viewport-v1': null,
+          'oaw-node-surfaces-v1': JSON.stringify({ state: { surfaceLevels: { [id]: 'workspace' } }, version: 3 }),
+        },
+      } })).ok()).toBe(true);
       await page.goto("/");
       const card = page.locator(`.world-card[data-card-id="${id}"]`);
       await expect(card).toHaveAttribute("data-surface-level", "workspace");

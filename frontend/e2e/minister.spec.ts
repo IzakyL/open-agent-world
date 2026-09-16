@@ -349,8 +349,7 @@ test("the reported Chinese chat-setup scenario creates a usable separate Convers
     await expect(page.locator(`circle[data-edge-endpoint="source"][data-source-id="${participantId}"][data-target-id="${area.id}"]`)).toBeVisible();
     await page.screenshot({ path: "../.tmp/minister-chat-connection.png" });
     const card = page.locator(`[data-card-id="${area.id}"]`);
-    await card.click();
-    await card.getByRole("button", { name: "Open workspace", exact: true }).click();
+    await expect(card).toHaveAttribute("data-surface-level", "workspace");
     const workspace = page.locator(`[data-workspace-node-id="${area.id}"]`);
     await expect(workspace.getByText("1 active participants", { exact: true })).toBeVisible();
     await workspace.getByLabel("Conversation message", { exact: true }).fill("你好");

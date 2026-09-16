@@ -16,8 +16,7 @@ test("durable grouped sessions page both ways with stable scroll anchors", async
     }
     await page.goto("/");
     const card = page.locator(`[data-card-id="${room.id}"]`);
-    await card.click();
-    await card.getByRole("button", { name: "Open workspace" }).click();
+    await expect(card).toHaveAttribute("data-surface-level", "workspace");
     const workspace = page.locator(`[data-workspace-node-id="${room.id}"]`);
     const transcript = workspace.locator(".workspace-transcript");
     await expect(transcript.getByText("Historical message 220", { exact: true })).toBeVisible();
@@ -53,6 +52,7 @@ test("durable grouped sessions page both ways with stable scroll anchors", async
     await expect(transcript.getByText("Historical message 220", { exact: true })).toBeVisible();
     await workspace.getByRole("button", { name: "New session", exact: true }).click();
     await expect(transcript.getByText("Historical message 220", { exact: true })).toHaveCount(0);
+    await workspace.locator('.conversation-session-row:has(.workspace-session.is-active) summary').click();
     await workspace.getByRole("button", { name: "Rename session" }).click();
     await workspace.getByLabel("Session title").fill("Second topic");
     await workspace.getByRole("button", { name: "Save name" }).click();
@@ -91,8 +91,7 @@ test("sending shows the bubble while the request and automatic title are still p
     });
     await page.goto("/");
     const card = page.locator(`[data-card-id="${room.id}"]`);
-    await card.click();
-    await card.getByRole("button", { name: "Open workspace" }).click();
+    await expect(card).toHaveAttribute("data-surface-level", "workspace");
     const workspace = page.locator(`[data-workspace-node-id="${room.id}"]`);
     const composer = workspace.getByLabel("Conversation message");
     await composer.fill("Show immediately");

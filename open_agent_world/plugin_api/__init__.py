@@ -63,6 +63,7 @@ from backend.plugins import (
     NodeTemplateRestoreContext,
     NodeTemplateRestoreResources,
     NodeTypeDefinition,
+    NodePresentation,
     Plugin,
     PluginDescriptor,
     PluginDefinition,
@@ -79,6 +80,7 @@ from backend.world.models import Card, CardCreate, CardPatch, Edge
 __all__ = [
     "ToolImage", "VisualToolResult", "codex_tool_content",
     "PackDefinition",
+    "NodePresentation",
     "NodeDocumentTransformation",
     "ArtifactPublish",
     "ArtifactMaterialize",

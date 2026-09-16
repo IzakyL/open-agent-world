@@ -141,8 +141,7 @@ export function WorldCanvas() {
       useWorldStore.getState().pushToast({ tone: 'error', title: t("Glue could not synchronize"), detail: apiErrorMessage(reason) })), 120);
     return () => window.clearTimeout(timer);
   }, [glueEvent, glueSocket, dragging, activeGlueEdits]);
-  const closeInspector = useNodeSurfaceStore((state) => state.closeInspector);
-  const closeWorkspace = useNodeSurfaceStore((state) => state.closeWorkspace);
+  const closeExpanded = useNodeSurfaceStore((state) => state.closeExpanded);
   const dismissSurface = useNodeSurfaceStore((state) => state.dismiss);
   const beginConnection = useNodeSurfaceStore((state) => state.beginConnection);
   const endConnection = useNodeSurfaceStore((state) => state.endConnection);
@@ -537,14 +536,13 @@ export function WorldCanvas() {
         }
       }
       if (event.key === "Escape") {
-        if (Object.values(surfaceLevelsByNodeId).includes("workspace")) closeWorkspace();
-        else if (Object.values(surfaceLevelsByNodeId).includes("inspector")) closeInspector();
+        if (Object.values(surfaceLevelsByNodeId).some(level => level === "workspace" || level === "inspector")) closeExpanded();
         else if (selectedEdgeId) selectEdge(undefined);
       }
     };
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
-  }, [closeInspector, closeWorkspace, deleteCards, deleteSelectedEdge, dismissSurface, fitView, getNodes, redo, selectEdge, selectedCardIds, selectedEdgeId, surfaceLevelsByNodeId, undo]);
+  }, [closeExpanded, deleteCards, deleteSelectedEdge, dismissSurface, fitView, getNodes, redo, selectEdge, selectedCardIds, selectedEdgeId, surfaceLevelsByNodeId, undo]);
 
   const onNodeDragStart: OnNodeDrag<CanvasNode> = useCallback((_event, node, draggedNodes) => {
     cancelledDrag.current=false;

@@ -4425,9 +4425,9 @@
     "Show the connection",
     "演示连接"
   ],
-  "Click the Conversation, then its Open workspace button. That’s where your sessions and messages live.": [
-    "Click the Conversation, then its Open workspace button. That’s where your sessions and messages live.",
-    "点击对话卡片，再点击“打开工作区”，会话和消息都在里面。"
+  "Conversation opens as a window for your sessions and messages. If you fold it into a card, click the card to reopen the window.": [
+    "Conversation opens as a window for your sessions and messages. If you fold it into a card, click the card to reopen the window.",
+    "对话会直接以窗口打开，会话和消息都在里面。收起为卡片后，点击卡片即可重新打开窗口。"
   ],
   "Try “Help me plan a small garden.” Choose the Agent in the session or @mention it, then send. A configured model is needed for its reply.": [
     "Try “Help me plan a small garden.” Choose the Agent in the session or @mention it, then send. A configured model is needed for its reply.",
@@ -4461,9 +4461,9 @@
     "If a port is covered, move a card aside. Execute needs a running Sandbox; Start/Stop also lets the Agent manage it.",
     "端口被遮挡时，可移开卡片。“执行”需要已运行的沙箱，“启动/停止”还允许智能体管理沙箱。"
   ],
-  "Open the Sandbox to see its runtime and workspace settings. Start it here when you’re ready to execute. Connections compose what an Agent can do.": [
-    "Open the Sandbox to see its runtime and workspace settings. Start it here when you’re ready to execute. Connections compose what an Agent can do.",
-    "打开沙箱查看运行环境和工作区设置，准备执行时在这里启动。不同的连接组合决定智能体能做什么。"
+  "Sandbox opens as a window. Use the Settings tab to choose its runtime and working folder. Start it when you are ready to execute.": [
+    "Sandbox opens as a window. Use the Settings tab to choose its runtime and working folder. Start it when you are ready to execute.",
+    "沙箱会直接以窗口打开。在“设置”页选择运行环境和工作目录，准备执行时再启动。"
   ],
   "This is where you choose the runtime and workspace, then start your Sandbox. We can leave it stopped for now. Your three cards already describe a working system.": [
     "This is where you choose the runtime and workspace, then start your Sandbox. We can leave it stopped for now. Your three cards already describe a working system.",

@@ -1,6 +1,6 @@
 import { expect, test } from "@playwright/test";
 
-for (const type of ["agent", "conversation", "text", "sandbox", "environment", "oaw.tasks", "oaw.skills.skill", "core.artifact-collection"]) {
+for (const type of ["agent", "text", "environment", "oaw.tasks", "oaw.skills.skill", "core.artifact-collection"]) {
   test(`${type} inspector selects text and drags from empty content`, async ({ page, request }) => {
     const response = await request.post("/api/nodes", { data: { type, name: "Drag and copy", position: { x: 550, y: 340 } } });
     expect(response.ok()).toBe(true);

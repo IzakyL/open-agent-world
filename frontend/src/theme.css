@@ -1214,6 +1214,8 @@ button:disabled { cursor: not-allowed; opacity: 0.48; }
 .workspace-titlebar > div:nth-child(2) { min-width: 0; display: grid; gap: 1px; }
 .workspace-titlebar span { color: var(--ink-faint); font-size: 7px; text-transform: uppercase; letter-spacing: 0.1em; }
 .workspace-titlebar strong { overflow: hidden; font-size: 11px; text-overflow: ellipsis; white-space: nowrap; }
+.workspace-name-input { width: 100%; min-width: 0; padding: 0; border: 0; border-radius: 3px; background: transparent; color: var(--ink); font: inherit; font-size: 11px; font-weight: 700; text-overflow: ellipsis; }
+.workspace-name-input:focus { outline: 1px solid var(--line); background: var(--chrome-raised); }
 .workspace-window-actions { display: flex; gap: 5px; }
 .workspace-window-actions .icon-button { width: 29px; height: 29px; border-radius: 9px; }
 .workspace-content { min-height: 0; }

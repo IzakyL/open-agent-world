@@ -2162,3 +2162,16 @@ export const useWorldStore = create<WorldState>()(persist((set, get) => ({
   storage: createJSONStorage(() => profileStorage),
   partialize: (state) => ({ viewport: state.viewport, mapPins: state.mapPins }),
 }));
+
+// All ingestion paths (placement, imports, socket updates, templates, undo and reload)
+// initialize surfaces here. Persisted instance choices always win over type defaults.
+const unsubscribeSurfaces = useWorldStore.subscribe((state, previous) => {
+  if (state.cards === previous.cards && state.stressCards === previous.stressCards && state.catalog === previous.catalog) return;
+  const cards = [...state.cards, ...state.stressCards];
+  const before = [...previous.cards, ...previous.stressCards];
+  if (state.catalog !== previous.catalog || cards.length !== before.length
+    || cards.some((card, i) => card.id !== before[i]?.id || card.type !== before[i]?.type)) {
+    useNodeSurfaceStore.getState().syncCards(cards, state.catalog);
+  }
+});
+if (import.meta.hot) import.meta.hot.dispose(unsubscribeSurfaces);

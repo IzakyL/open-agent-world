@@ -36,8 +36,11 @@ test('MatterViz renders Conversation structures, pins selection, rotates locally
     await page.goto('/');
     for (const id of [room.id, viewer.id]) {
       const card = page.locator(`[data-card-id="${id}"]`);
-      await card.locator('.card-kind-icon').click();
-      await card.getByRole('button', { name: 'Open workspace' }).click();
+      if (id === viewer.id) {
+        await card.locator('.card-kind-icon').click();
+        await card.getByRole('button', { name: 'Open workspace' }).click();
+      }
+      await expect(card).toHaveAttribute('data-surface-level', 'workspace');
     }
     const source = page.locator(`[data-workspace-node-id="${room.id}"]`);
     const display = page.locator(`[data-workspace-node-id="${viewer.id}"]`);
@@ -157,8 +160,11 @@ test('a connected viewer reads a real Sandbox workspace file without starting a 
     await page.goto('/');
     for (const id of [sandbox.id, viewer.id]) {
       const card = page.locator(`[data-card-id="${id}"]`);
-      await card.locator('.card-kind-icon').click();
-      await card.getByRole('button', { name: 'Open workspace', exact: true }).click();
+      if (id === viewer.id) {
+        await card.locator('.card-kind-icon').click();
+        await card.getByRole('button', { name: 'Open workspace', exact: true }).click();
+      }
+      await expect(card).toHaveAttribute('data-surface-level', 'workspace');
     }
     const source = page.locator(`[data-workspace-node-id="${sandbox.id}"]`);
     const display = page.locator(`[data-workspace-node-id="${viewer.id}"]`);
