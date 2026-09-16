@@ -328,8 +328,8 @@ export const worldApi = {
     return normalizeWorldSnapshot(body);
   },
 
-  async formLegionGroup(name: string, nodeIds: string[]): Promise<WorldCard[]> {
-    const body = await request<unknown[]>("/legion-groups", { method: "POST", body: JSON.stringify({ name, node_ids: nodeIds }) });
+  async formLegionGroup(name: string, nodeIds: string[], contentBounds?: { position: { x: number; y: number }; size: { width: number; height: number } }): Promise<WorldCard[]> {
+    const body = await request<unknown[]>("/legion-groups", { method: "POST", body: JSON.stringify({ name, node_ids: nodeIds, content_bounds: contentBounds }) });
     return body.map(normalizeCard);
   },
 

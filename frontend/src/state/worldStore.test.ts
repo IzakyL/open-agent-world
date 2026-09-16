@@ -262,7 +262,7 @@ describe("authoritative world synchronization", () => {
     expect(useWorldStore.getState().cards).toEqual([]);
   });
 
-  it('saves a container resize with members as one batch and restores sizes and positions on undo', async () => {
+  it('saves only the resized frame, preserving member positions through undo and redo', async () => {
     const group = { ...card('group', 'legion'), size: { width: 1400, height: 700 } };
     const members = Array.from({ length: 4 }, (_, i) => ({ ...card(`member-${i}`, 'text'), parent_id: group.id, position: { x: 440 + i * 310, y: 160 } }));
     useWorldStore.setState({ cards: [group, ...members] });
@@ -271,7 +271,9 @@ describe("authoritative world synchronization", () => {
     const resized = useWorldStore.getState().cards.map(c => ({ ...c }));
     expect(update).toHaveBeenCalledTimes(1);
     expect(useWorldStore.getState().undoStack).toHaveLength(1);
-    expect(resized.find(c => c.id === group.id)!.size.height).toBeGreaterThan(550);
+    expect(resized.find(c => c.id === group.id)!.size.height).toBe(550);
+    expect(resized.filter(c => c.parent_id === group.id)).toEqual(members);
+    expect(update.mock.calls[0][0].map(p => p.node_id)).toEqual([group.id]);
     await useWorldStore.getState().undo();
     expect(useWorldStore.getState().cards).toEqual([group, ...members]);
     await useWorldStore.getState().redo();

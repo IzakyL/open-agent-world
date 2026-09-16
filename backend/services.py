@@ -14,6 +14,8 @@ from pathlib import Path, PureWindowsPath, PurePosixPath
 from typing import TYPE_CHECKING, Any, TypeVar
 from uuid import uuid4, uuid5, NAMESPACE_URL
 
+from backend.spatial import Rectangle
+
 if TYPE_CHECKING:
     from backend.skill_runtime import RunSkillScript
     from backend.canvas_control import CanvasControl, CanvasScope
@@ -1591,9 +1593,9 @@ class ApplicationServices:
         ):
             raise ConflictError("Stop the Agent's active Runs before changing container membership")
 
-    async def form_legion_group(self, name: str, node_ids: list[str]) -> list[Card]:
+    async def form_legion_group(self, name: str, node_ids: list[str], *, content_bounds: Rectangle | None = None) -> list[Card]:
         async with self._node_mutation():
-            request = self.preview_legion_group(name, node_ids)
+            request = self.preview_legion_group(name, node_ids, content_bounds=content_bounds)
             cards = [self.world.get_card(node_id) for node_id in dict.fromkeys(node_ids)]
             for card in cards:
                 self._validate_membership_change(card, card.model_copy(update={"parent_id": request.id}))
@@ -1606,15 +1608,26 @@ class ApplicationServices:
                                           payload={"node": self.enrich_card(member).model_dump(mode="json")})
             return [group, *[self.enrich_card(m) for m in members]]
 
-    def preview_legion_group(self, name: str, node_ids: list[str]) -> CardCreate:
+    def preview_legion_group(self, name: str, node_ids: list[str], *, content_bounds: Rectangle | None = None) -> CardCreate:
         """Use the same existing group geometry for review and commit."""
         cards = [self.world.get_card(node_id) for node_id in dict.fromkeys(node_ids)]
         if not cards or any(c.type == "legion" or c.parent_id for c in cards):
             raise GraphValidationError("Select ungrouped member cards to form a Legion")
-        x = min(c.position.x for c in cards) - 180
-        y = min(c.position.y for c in cards) - 90
-        width = max(1100, max(c.position.x + c.size.width for c in cards) - x + 60)
-        height = max(700, max(c.position.y + c.size.height for c in cards) - y + 60)
+        from backend.world.layout import card_footprints
+        spec = self.plugins.node_type("legion").container
+        assert spec is not None
+        bounds = list(card_footprints(cards, self.plugins).values())
+        # The browser knows expanded surfaces; reserve header space above them.
+        # API-only formation still encloses the standard preview surfaces.
+        bounds.extend(Rectangle(c.position.x - 64, c.position.y - 102, 224, 300)
+                      for c in cards if not c.equipment and not self.plugins.node_type(c.type).container)
+        if content_bounds is not None:
+            bounds.append(content_bounds)
+        left, top, right, bottom = spec.content_inset
+        x = min(rect.x for rect in bounds) - left
+        y = min(rect.y for rect in bounds) - top
+        width = max(spec.min_size[0], max(rect.x + rect.width for rect in bounds) - x + right)
+        height = max(spec.min_size[1], max(rect.y + rect.height for rect in bounds) - y + bottom)
         if width > 4096 or height > 4096:
             raise GraphValidationError("Move the selected cards closer together before grouping")
         return CardCreate(id=str(uuid4()), type="legion", name=name,

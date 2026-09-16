@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { resizeContainerLayout, memberSurfacePosition, containerSizes, containerDisplayOwners } from './containers';
+import { containerContentBounds, resizeContainerLayout, memberSurfacePosition, containerSizes, containerDisplayOwners } from './containers';
 import { TEST_CATALOG } from './catalog.fixture';
 import { buildCardDraft } from './helpers';
 import { NODE_SURFACE_SIZE, type NodeSurfaceLevel } from './nodeSurfaces';
@@ -22,34 +22,57 @@ describe('container resize reflow', () => {
     expect(resized.positions.size).toBe(0);
     expect(containerDisplayOwners(world, TEST_CATALOG, {}).size).toBe(0);
   });
-  it('wraps real preview and inspector rectangles within insets without overlap', () => {
-    const parent = { ...card('parent', 'legion', 200, 100), size: { width: 1400, height: 800 } };
-    const members = Array.from({ length: 6 }, (_, i) => ({ ...card(`m${i}`, 'text', 600 + i * 300, 250), parent_id: parent.id }));
-    const levels = new Map<string, NodeSurfaceLevel>(members.map(m => [m.id, 'preview'])); levels.set('m2', 'inspector');
-    const layout = resizeContainerLayout([parent, ...members], TEST_CATALOG, levels, parent.id, { width: 1000, height: 550 });
-    const boxes = members.map(m => ({ ...memberSurfacePosition({ ...m, position: layout.positions.get(m.id)! }, parent, levels.get(m.id)!, TEST_CATALOG), ...NODE_SURFACE_SIZE[levels.get(m.id)!] }));
-    for (const b of boxes) {
-      expect(b.x).toBeGreaterThanOrEqual(parent.position.x + 320);
-      expect(b.y).toBeGreaterThanOrEqual(parent.position.y + 100);
-      expect(b.x + b.width).toBeLessThanOrEqual(parent.position.x + layout.size.width - 24);
-      expect(b.y + b.height).toBeLessThanOrEqual(parent.position.y + layout.size.height - 24);
+  it('preserves manual member positions when shrinking and enlarging the frame', () => {
+    const parent = { ...card('parent', 'legion', 200, 100), size: { width: 2400, height: 1800 } };
+    const members = [
+      { ...card('a', 'text', 750, 380), parent_id: parent.id },
+      { ...card('b', 'text', 1300, 950), parent_id: parent.id },
+    ];
+    const levels = new Map<string, NodeSurfaceLevel>([['a', 'preview'], ['b', 'inspector']]);
+    const world = [parent, ...members];
+    const original = structuredClone(world);
+    const layout = resizeContainerLayout(world, TEST_CATALOG, levels, parent.id, { width: 800, height: 550 });
+    expect(layout.positions.size).toBe(0);
+    expect(layout.size.width).toBeLessThan(parent.size.width);
+    expect(layout.size.height).toBeLessThan(parent.size.height);
+    for (const member of members) {
+      const level = levels.get(member.id)!;
+      const surface = memberSurfacePosition(member, parent, level, TEST_CATALOG);
+      expect(surface.x + NODE_SURFACE_SIZE[level].width + 24).toBeLessThanOrEqual(parent.position.x + layout.size.width);
+      expect(surface.y + NODE_SURFACE_SIZE[level].height + 24).toBeLessThanOrEqual(parent.position.y + layout.size.height);
     }
-    for (let i = 0; i < boxes.length; i++) for (let j = i + 1; j < boxes.length; j++) {
-      const a = boxes[i], b = boxes[j];
-      expect(a.x + a.width <= b.x || b.x + b.width <= a.x || a.y + a.height <= b.y || b.y + b.height <= a.y).toBe(true);
-    }
-    const wider = resizeContainerLayout([parent, ...members], TEST_CATALOG, levels, parent.id, { width: 2000, height: 550 });
-    expect(wider.size.height).toBeLessThan(layout.size.height);
+    const wider = resizeContainerLayout(world, TEST_CATALOG, levels, parent.id, { width: 3000, height: 2200 });
+    expect(wider.size).toEqual({ width: 3000, height: 2200 });
+    expect(wider.positions.size).toBe(0);
+    expect(world).toEqual(original);
   });
 
-  it('moves nested descendants by the same delta and leaves external cards alone', () => {
+  it('preserves nested descendants and includes custom workspace bounds', () => {
     const parent = card('parent', 'legion');
     const nested = { ...card('nested', 'legion', 900, 500), parent_id: parent.id, size: { width: 900, height: 700 } };
     const child = { ...card('child', 'text', 1250, 650), parent_id: nested.id };
-    const external = card('external', 'text', 3000, 3000);
-    const layout = resizeContainerLayout([parent, nested, child, external], TEST_CATALOG, new Map(), parent.id, { width: 800, height: 550 });
-    expect(layout.positions.get(child.id)!.x - layout.positions.get(nested.id)!.x).toBe(child.position.x - nested.position.x);
-    expect(layout.positions.get(child.id)!.y - layout.positions.get(nested.id)!.y).toBe(child.position.y - nested.position.y);
-    expect(layout.positions.has(external.id)).toBe(false);
+    const workspace = { ...card('workspace', 'agent', 2200, 1500), parent_id: parent.id };
+    const external = card('external', 'text', 9000, 9000);
+    const world = [parent, nested, child, workspace, external];
+    const levels = new Map<string, NodeSurfaceLevel>([['workspace', 'workspace']]);
+    const sizes = { workspace: { width: 1600, height: 1200 } };
+    const layout = resizeContainerLayout(world, TEST_CATALOG, levels, parent.id, { width: 800, height: 550 }, sizes);
+    expect(layout.positions.size).toBe(0);
+    const surface = memberSurfacePosition(workspace, parent, 'workspace', TEST_CATALOG);
+    expect(layout.size.width).toBe(surface.x + 1600 + 24);
+    expect(layout.size.height).toBe(surface.y + 1200 + 24);
   });
+});
+
+it('places header space outside preview, inspector and custom workspace content bounds', () => {
+  for (const level of ['preview', 'inspector', 'workspace'] as const) {
+    const member = card('member', 'text', 600, 400);
+    const levels = new Map<string, NodeSurfaceLevel>([[member.id, level]]);
+    const workspaces = { member: { width: 1400, height: 900 } };
+    const bounds = containerContentBounds([member], TEST_CATALOG, levels, workspaces)!;
+    const spec = TEST_CATALOG.node_types.find(type => type.id === 'legion')!.container!;
+    const parent = card('parent', 'legion', bounds.position.x - spec.content_inset[0], bounds.position.y - spec.content_inset[1]);
+    expect(memberSurfacePosition(member, parent, level, TEST_CATALOG)).toEqual(bounds.position);
+    expect(bounds.size).toEqual(level === 'workspace' ? workspaces.member : NODE_SURFACE_SIZE[level]);
+  }
 });

@@ -29,7 +29,7 @@ import { filterCardsToChunks, getViewportChunkKeys, viewportCenterToWorld } from
 import { EMPTY_CATALOG, getNodeType } from "./catalog";
 import { buildCardDraft, makeStressCards, mergeCardPatch } from "./helpers";
 import { summarizeLegionSelection } from "./legions";
-import { ancestors, containerDefinition, descendants, ownedDescendants, isContainer, parentFirst, resizeContainerLayout } from "./containers";
+import { ancestors, containerContentBounds, containerDefinition, descendants, ownedDescendants, isContainer, parentFirst, resizeContainerLayout } from "./containers";
 import { surfaceLevelForNode, useNodeSurfaceStore } from "./nodeSurfaces";
 import { isEquipmentConnection } from "./equipment";
 import { validateConnection, type RelationshipOption } from "./relationships";
@@ -616,9 +616,13 @@ export const useWorldStore = create<WorldState>()(persist((set, get) => ({
   },
 
   formLegionGroup: (nodeIds) => withHistoryTransaction(async () => {
+    await get().waitForPositionCommits();
     const before = get().cards.filter((c) => nodeIds.includes(c.id)).map(copyCard);
+    const surfaces = useNodeSurfaceStore.getState();
+    const levels = new Map(before.map(card => [card.id, surfaceLevelForNode(card.id, surfaces.surfaceLevels)]));
+    const bounds = containerContentBounds(before, get().catalog, levels, surfaces.workspaceSizes);
     try {
-      const result = await worldApi.formLegionGroup("New Legion", nodeIds);
+      const result = await worldApi.formLegionGroup("New Legion", nodeIds, bounds);
       const group = result.find((c) => c.type === "legion")!;
       markWorldMutation();
       set((state) => ({ cards: mergeCards(state.cards, result, state.cardTombstones), selectedCardIds: [group.id], selectionRevision: state.selectionRevision + 1,

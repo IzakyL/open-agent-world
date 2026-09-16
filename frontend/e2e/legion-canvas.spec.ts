@@ -250,3 +250,35 @@ test("form a Legion, configure variables, then save and deploy an independent pr
     }
   }
 });
+
+
+test("formation reserves its header above the existing member surfaces", async ({ page, request }) => {
+  await page.setViewportSize({ width: 1800, height: 1100 });
+  const suffix = `header-${Date.now()}`;
+  const first = await createAgent(request, `${suffix}-first`, "Header first", { x: 600, y: 400 });
+  const second = await createAgent(request, `${suffix}-second`, "Header second", { x: 1000, y: 460 });
+  try {
+    await page.goto('/');
+    const firstCard = page.locator(`[data-card-id="${first.id}"]`);
+    const secondCard = page.locator(`[data-card-id="${second.id}"]`);
+    await expect(firstCard).toBeVisible();
+    await expect(secondCard).toBeVisible();
+    const before = [await firstCard.boundingBox(), await secondCard.boundingBox()];
+    await selectRectangle(firstCard, secondCard);
+    await page.getByRole('button', { name: 'Form Legion', exact: true }).click();
+    const group = page.locator('[data-card-type="legion"]');
+    await expect(group).toHaveCount(1);
+    await expect.poll(async () => {
+      const after = [await firstCard.boundingBox(), await secondCard.boundingBox()];
+      return Math.max(...after.flatMap((box, i) => [Math.abs(box!.x - before[i]!.x), Math.abs(box!.y - before[i]!.y)]));
+    }).toBeLessThan(1);
+    const header = await group.locator(':scope > .container-header').boundingBox();
+    expect(header!.y + header!.height).toBeLessThan(before[0]!.y);
+    expect(await positionOf(request, first.id)).toEqual({ x: 600, y: 400 });
+    await page.screenshot({ path: 'test-results/legion-header-preserves-layout.png' });
+  } finally {
+    const nodes = await (await request.get('/api/nodes')).json();
+    const ids = nodes.filter((node: { id: string; type: string }) => node.id.startsWith(suffix) || node.type === 'legion').map((node: { id: string }) => node.id);
+    if (ids.length) await request.post('/api/nodes/batch-delete', { data: { node_ids: ids } });
+  }
+});
