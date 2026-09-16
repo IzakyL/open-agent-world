@@ -8,6 +8,9 @@ export function clearConnectionHoverHint(element: HTMLElement | null) {
 /** Updates the shared, boundary-projected connection affordance for any card surface. */
 export function updateConnectionHoverHint(event: ReactPointerEvent<HTMLElement>, element: HTMLElement | null) {
   if (!element) return;
+  // While dragging, the affordance is irrelevant and geometry reads would
+  // force layout immediately after React Flow moves the node wrapper.
+  if (event.buttons) { clearConnectionHoverHint(element); return; }
   if ((event.target as Element).closest("button, input, textarea, select, a")) {
     clearConnectionHoverHint(element);
     return;

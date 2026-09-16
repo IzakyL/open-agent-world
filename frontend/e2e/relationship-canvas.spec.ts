@@ -16,7 +16,7 @@ async function createCard(
   position: { x: number; y: number },
 ): Promise<CreatedCard> {
   const response = await request.post("/api/nodes", {
-    data: { id, type, name, position },
+    data: { id, type, name, position, size: { width: 96, height: 96 } },
   });
   expect(response.status()).toBe(201);
   return response.json() as Promise<CreatedCard>;
@@ -239,6 +239,10 @@ test("compact connection endpoints stay fixed throughout dragging and cancellati
     await page.waitForTimeout(450);
     const sourceBefore = await cardBox(sourceCard, "Source before connection");
     const targetBefore = await cardBox(targetCard, "Target before connection");
+    const expectStableGeometry = (actual: typeof sourceBefore, expected: typeof sourceBefore) => {
+      // Browser transforms can settle by a few thousandths of a pixel.
+      for (const key of ['x', 'y', 'width', 'height'] as const) expect(actual[key]).toBeCloseTo(expected[key], 1);
+    };
     const start = await handleCenter(sourceCard, "right");
     const end = await handleCenter(targetCard, "left");
     await page.mouse.move(start.x, start.y);
@@ -247,14 +251,14 @@ test("compact connection endpoints stay fixed throughout dragging and cancellati
     await page.waitForTimeout(600);
     await expect(sourceCard).toHaveAttribute("data-surface-level", "node");
     await expect(targetCard).toHaveAttribute("data-surface-level", "node");
-    expect(await cardBox(sourceCard, "Source during connection")).toEqual(sourceBefore);
-    expect(await cardBox(targetCard, "Target during connection")).toEqual(targetBefore);
+    expectStableGeometry(await cardBox(sourceCard, "Source during connection"), sourceBefore);
+    expectStableGeometry(await cardBox(targetCard, "Target during connection"), targetBefore);
     await page.mouse.move(end.x + 100, end.y + 100);
     await page.mouse.up();
     await page.waitForTimeout(400);
     await expect(sourceCard).toHaveAttribute("data-surface-level", "node");
     await expect(targetCard).toHaveAttribute("data-surface-level", "node");
-    expect(await cardBox(sourceCard, "Source after cancellation")).toEqual(sourceBefore);
+    expectStableGeometry(await cardBox(sourceCard, "Source after cancellation"), sourceBefore);
     await dragConnection(sourceCard, targetCard);
     await expect(page.getByRole("dialog", { name: "Choose a capability" })).toBeVisible();
     await expect(sourceCard).toHaveAttribute("data-surface-level", "node");
@@ -336,6 +340,13 @@ test("close compact nodes remain independently draggable and persist both positi
     await expect(firstCard).toHaveAttribute("data-surface-level", "node");
     await expect(secondCard).toHaveAttribute("data-surface-level", "node");
 
+    // The level changes before the collapse finishes. Wait for a stable hit
+    // area so the gesture measures dragging rather than the collapse itself.
+    await expect(firstCard).toHaveCSS('width', '96px');
+    await expect(firstCard).toHaveCSS('height', '96px');
+    await expect(secondCard).toHaveCSS('width', '96px');
+    await expect(secondCard).toHaveCSS('height', '96px');
+    await firstCard.hover({ position: { x: 48, y: 72 } });
     await dragCardBy(firstCard, { x: -120, y: 70 }, { expectedLevelWhilePressed: "node", startRatio: { x: 0.5, y: 0.75 } });
     await expectPersistedMovement(request, first.id, firstPosition);
 
@@ -591,7 +602,7 @@ test("inspector-displaced compact and preview surfaces can be dragged without ho
 
     await previewSurface.hover();
     await expect(previewSurface).toHaveAttribute("data-surface-level", "preview");
-    await expect.poll(async () => (await cardBox(previewSurface, "Displaced preview")).width).toBeGreaterThan(280);
+    await expect.poll(async () => (await cardBox(previewSurface, "Displaced preview")).width).toBe(224);
     await page.waitForTimeout(420);
     const inspectorBox = await cardBox(inspectorSurface, "Inspector obstacle");
     const previewBefore = await cardBox(previewSurface, "Preview before drag");

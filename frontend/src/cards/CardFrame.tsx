@@ -99,7 +99,7 @@ function statusLabel(status: WorldCard["status"]): string {
   return status.replaceAll("_", " ");
 }
 
-function WorldCardNodeComponent({ data, selected, dragging }: NodeProps<CanvasNode>) {
+const WorldCardNodeComponent = memo(function WorldCardNodeComponent({ data, selected, dragging }: Pick<NodeProps<CanvasNode>, 'data' | 'selected' | 'dragging'>) {
   useLocale();
   const card = data.card;
   const activity = useNodeActivity(card);
@@ -107,7 +107,7 @@ function WorldCardNodeComponent({ data, selected, dragging }: NodeProps<CanvasNo
   const generationPhase = generation?.targetId === card.id ? generation.phase : undefined;
   const displayStatus = activity.phase === "idle" ? card.status : activity.phase;
   const catalog = useWorldStore((state) => state.catalog);
-  const surfaceLevels = useNodeSurfaceStore((state) => state.surfaceLevels);
+  const level = useNodeSurfaceStore((state) => surfaceLevelForNode(card.id, state.surfaceLevels));
   const showPreview = useNodeSurfaceStore((state) => state.showPreview);
   const hidePreview = useNodeSurfaceStore((state) => state.hidePreview);
   const openInspector = useNodeSurfaceStore((state) => state.openInspector);
@@ -121,8 +121,11 @@ function WorldCardNodeComponent({ data, selected, dragging }: NodeProps<CanvasNo
   const cardRef = useRef<HTMLElement>(null);
   const [ministerNodeHovered, setMinisterNodeHovered] = useState(false);
   const pointerStart = useRef<{ x: number; y: number; moved: boolean }>();
-  const level = surfaceLevelForNode(card.id, surfaceLevels);
   const visualLevel = level;
+  // Preview cards do not need editors, plugin bodies or their subscriptions.
+  // Once visited, retain the body on collapse so local unsaved drafts survive.
+  const [inspectorVisited, setInspectorVisited] = useState(level === 'inspector');
+  useEffect(() => { if (level === 'inspector') setInspectorVisited(true); }, [level]);
   const definition = catalog.node_types.find((item) => item.id === card.type);
   const label = t(definition?.label ?? card.type);
   const eligible = canAppointMinister(card, catalog);
@@ -263,7 +266,7 @@ function WorldCardNodeComponent({ data, selected, dragging }: NodeProps<CanvasNo
         </div>
 
         <div className="card-body node-inspector-content" aria-hidden={visualLevel !== "inspector"}>
-          <CardContent card={card} level={level} />
+          {(visualLevel === 'inspector' || inspectorVisited) && <CardContent card={card} level={level} />}
         </div>
 
         <footer className="card-footer node-inspector-footer">
@@ -287,20 +290,23 @@ function WorldCardNodeComponent({ data, selected, dragging }: NodeProps<CanvasNo
     </article>
     {card.minister && <MinisterAgent card={card} nodeHovered={ministerNodeHovered && level === 'node'} />}
   </>);
-}
+});
 
-function CollectionAwareCard(props:NodeProps<CanvasNode>) {
+function StackedCard(props:NodeProps<CanvasNode>) {
   useLocale();
-  const owner=props.data.collectionOwner as string|undefined;
+  const owner=props.data.collectionOwner as string;
   const hovered=useCollectionHover(s=>owner?s.members[owner]:undefined);
   const setHover=useCollectionHover(s=>s.set);
   const cards=useWorldStore(s=>s.cards);
-  if(!owner)return <WorldCardNodeComponent {...props}/>;
   const collection=cards.find(c=>c.id===owner);
   const neighbor=hovered&&Math.abs(cards.filter(c=>c.parent_id===owner).findIndex(c=>c.id===hovered)-Number(props.data.stackIndex))===1;
   return <div className={`shadow-stack-member ${hovered===props.id?"is-hovered":neighbor?"is-neighbor":""}`} onPointerEnter={()=>setHover(owner,props.id)} onPointerLeave={()=>setHover(owner)}>
-    <div className="shadow-stack-face" {...{inert:""}} aria-hidden="true"><WorldCardNodeComponent {...props}/></div>
+    <div className="shadow-stack-face" {...{inert:""}} aria-hidden="true"><WorldCardNodeComponent data={props.data} selected={props.selected} dragging={props.dragging}/></div>
     <button className="nodrag nopan" disabled={Boolean(props.data.collectionFading)} aria-label={t("展开集合 · {v0}", { v0: String(props.data.card.name) })} onClick={e=>{e.stopPropagation();if(collection)void useWorldStore.getState().updateCard(owner,{config:{...collection.config,display_state:"expanded"}});}}/>
   </div>;
+}
+function CollectionAwareCard(props: NodeProps<CanvasNode>) {
+  return props.data.collectionOwner ? <StackedCard {...props} />
+    : <WorldCardNodeComponent data={props.data} selected={props.selected} dragging={props.dragging} />;
 }
 export const WorldCardNode = memo(CollectionAwareCard);

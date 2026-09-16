@@ -5,6 +5,8 @@ import { reportInteraction } from "../state/interactions";
 import { findGlue, glueGroup, reflowGlueSurfaces, refreshGlue, beginGlueEdit, cancelGlueRefresh, persistGlue, useGlueStore, type GlueBox, type GlueCandidate } from "../state/glue";
 import { MapAtlas } from "./MapAtlas";
 import { WorldBackground } from './WorldBackground';
+import { stableNode, stableNodeList } from './stableNodes';
+import { cardIndex } from '../state/cardIndex';
 import {
   ConnectionMode,
   Controls,
@@ -43,7 +45,8 @@ import { SemanticEdge, type CanvasEdge } from "../edges/SemanticEdge";
 import { filterCardsToChunks } from "../state/chunks";
 import { getNodeType } from "../state/catalog";
 import { buildCardDraft } from "../state/helpers";
-import { hasPaletteDrag, readPaletteDrag } from "../palette/dragPayload";
+import { hasPaletteDrag, readPaletteDrag, type PaletteDragPayload } from "../palette/dragPayload";
+import { usePaletteDropTarget, type PalettePointerLocation } from "../palette/pointerDrag";
 import { getConnectionOptions, validateConnection } from "../state/relationships";
 import { useWorldStore } from "../state/worldStore";
 import { NODE_SURFACE_SIZE, surfaceLevelForNode, useNodeSurfaceStore, type NodeSurfaceLevel, type SurfaceSize } from "../state/nodeSurfaces";
@@ -324,7 +327,7 @@ export function WorldCanvas() {
     const applyProgress = (eased: number) => {
       setNodes((currentNodes) => {
         const liveById = new Map(currentNodes.map((node) => [node.id, node]));
-        return mappedNodes.map((node) => {
+        const next = mappedNodes.map((node) => {
           const live = liveById.get(node.id);
           if (live && activeDragIds.current.has(node.id)) {
             return {
@@ -338,14 +341,15 @@ export function WorldCanvas() {
           // Commit canonical geometry without discarding React Flow's live
           // selection. Updates can arrive mid-marquee; its membership cache
           // will not reselect nodes whose selected flag we accidentally erase.
-          if (eased === 1) return { ...node, selected: live?.selected };
+          if (eased === 1) return stableNode(live, { ...node, selected: live?.selected,
+            ...(live?.width === node.width && live?.height === node.height && live?.measured ? { measured: live.measured } : {}) });
           const start = starts.get(node.id) ?? node.position;
           const previous=currentById.get(node.id);
           const outline=node.data.shadowOutline as {x:number;y:number}[]|undefined;
           const oldOutline=previous?.data.shadowOutline as typeof outline;
           const width=Number(previous?.style?.width??node.style?.width)+(Number(node.style?.width)-Number(previous?.style?.width??node.style?.width))*eased;
           const height=Number(previous?.style?.height??node.style?.height)+(Number(node.style?.height)-Number(previous?.style?.height??node.style?.height))*eased;
-          return {
+          return stableNode(live, {
             ...live,
             ...node,
             ...(node.hidden&&previous&&!previous.hidden&&eased<1?{hidden:false,style:{...node.style,opacity:1-eased,pointerEvents:"none" as const},data:{...node.data,collectionFading:true}}:{}),
@@ -354,8 +358,9 @@ export function WorldCanvas() {
               x: start.x + (node.position.x - start.x) * eased,
               y: start.y + (node.position.y - start.y) * eased,
             },
-          };
+          });
         });
+        return stableNodeList(currentNodes, next);
       });
     };
 
@@ -399,20 +404,20 @@ export function WorldCanvas() {
     if (appliedSelectionRevision.current === selectionRevision) return;
     appliedSelectionRevision.current = selectionRevision;
     const selected = new Set(selectedCardIds);
-    setNodes((currentNodes) => currentNodes.map((node) => ({
-      ...node,
-      selected: selected.has(node.id),
-    })));
+    setNodes((currentNodes) => stableNodeList(currentNodes, currentNodes.map((node) =>
+      Boolean(node.selected) === selected.has(node.id) ? node : { ...node, selected: selected.has(node.id) })));
   }, [selectedCardIds, selectionRevision, setNodes]);
 
   const visibleNodeIds = useMemo(() => new Set(renderCards.map((card) => card.id)), [renderCards]);
+  // Endpoint ownership changes with layout, never with live pointer coordinates.
+  const hiddenNodeIds = useMemo(() => new Set(mappedNodes.filter(node => node.hidden).map(node => node.id)), [mappedNodes]);
   const displayEndpoint = useCallback((id: string) => {
     if (displayOwners.has(id)) return displayOwners.get(id)!;
     const card = cards.find((item) => item.id === id);
     const folded=card&&foldedAncestor(card,cards);
     if(folded)return folded.id;
-    return card && nodes.find((node) => node.id === id)?.hidden ? equipmentOwner(card, cards)?.id ?? id : id;
-  }, [cards, nodes, displayOwners]);
+    return card && hiddenNodeIds.has(id) ? equipmentOwner(card, cards)?.id ?? id : id;
+  }, [cards, hiddenNodeIds, displayOwners]);
   const flowEdges = useMemo<CanvasEdge[]>(
     () => edges
       .filter(edge => !glueBonds.some(b => glueBoxes[b.a] && glueBoxes[b.b] && (b.a === edge.source && b.b === edge.target || b.b === edge.source && b.a === edge.target)))
@@ -564,17 +569,24 @@ export function WorldCanvas() {
   }, [cancelPositionAnimation, setDragging, glueActive, glueBoxes, glueBonds]);
 
   const equipmentDropOwner = useCallback((resource: CanvasNodeData["card"], x: number, y: number) => {
-    return cards.find((candidate) => {
-      if (!tutorialAllowsCanvasTarget(candidate.id, 'transform') || activeDragIds.current.has(candidate.id) || !canEquip(resource, candidate, catalog, cards)) return false;
-      const box = wrapper.current?.querySelector(`[data-equip-target="${candidate.id}"]`)?.getBoundingClientRect();
-      return box && x > box.left && x < box.right && y > box.top && y < box.bottom;
-    });
+    // Only open, eligible panels have hit areas. Avoid scanning every world card
+    // and issuing a separate DOM query for each possible Agent on every move.
+    for (const element of wrapper.current?.querySelectorAll<HTMLElement>('[data-equip-target]') ?? []) {
+      const candidate = cardIndex(cards).get(element.dataset.equipTarget!);
+      if (!candidate || !tutorialAllowsCanvasTarget(candidate.id, 'transform') || activeDragIds.current.has(candidate.id) || !canEquip(resource, candidate, catalog, cards)) continue;
+      const box = element.getBoundingClientRect();
+      if (x > box.left && x < box.right && y > box.top && y < box.bottom) return candidate;
+    }
   }, [cards, catalog]);
-  const transformationTarget = useCallback((event: MouseEvent | TouchEvent, node: CanvasNode) => {
-    if (!("clientX" in event)) return;
+  const transformationSourceTypes = useMemo(() => new Set(catalog.node_types.filter(source =>
+    source.id === MINISTER_ROLE_CARD || catalog.node_types.some(target =>
+      Object.values(target.transformations ?? {}).some(operation => operation.source_traits.every(trait => source.traits.includes(trait)))))
+    .map(source => source.id)), [catalog]);
+  const transformationTarget = useCallback((event: Pick<MouseEvent, "clientX" | "clientY"> | TouchEvent, node: CanvasNode) => {
+    if (!("clientX" in event) || !transformationSourceTypes.has(node.data.card.type)) return;
     const stackedIds = [...new Set(document.elementsFromPoint(event.clientX, event.clientY).map(element => element.closest('.react-flow__node')?.getAttribute('data-id')).filter(Boolean))];
     for (const id of stackedIds) {
-      const target = cards.find(card => card.id === id);
+      const target = id ? cardIndex(cards).get(id) : undefined;
       if (!target || !tutorialAllowsCanvasTarget(target.id, 'transform')) continue;
       const option = transformationOptions(catalog, node.data.card, target)[0];
       if (!option) continue;
@@ -583,8 +595,17 @@ export function WorldCanvas() {
       const inset = option[0] === 'appoint-minister' ? 8 : 32;
       if (rect && event.clientX > rect.left + inset && event.clientX < rect.right - inset && event.clientY > rect.top + (option[0] === 'appoint-minister' ? 8 : 70) && event.clientY < rect.bottom - inset) return { target, option, element };
     }
-  }, [cards, catalog]);
-  const clearTransformationHints = () => wrapper.current?.querySelectorAll("[data-transformation-hint]").forEach(element => element.removeAttribute("data-transformation-hint"));
+  }, [cards, catalog, transformationSourceTypes]);
+  const transformationHint = useRef<HTMLElement>();
+  const showTransformationHint = (target?: ReturnType<typeof transformationTarget>, name?: string) => {
+    if (transformationHint.current !== target?.element) transformationHint.current?.removeAttribute('data-transformation-hint');
+    transformationHint.current = target?.element ?? undefined;
+    if (target?.element) {
+      const label = `${t(target.option[1].label)}: ${name}`;
+      if (target.element.dataset.transformationHint !== label) target.element.dataset.transformationHint = label;
+    }
+  };
+  const clearTransformationHints = () => showTransformationHint();
   const clearContainerDropHint = useCallback(() => {
     wrapper.current?.querySelectorAll<HTMLElement>("[data-member-drop]").forEach((frame) => {
       delete frame.dataset.memberDrop;
@@ -614,8 +635,6 @@ export function WorldCanvas() {
     // Whole collections translate through React Flow's parent transform. Defer
     // drop hit testing to release instead of scanning/morphing the world per move.
     if(isShadow(node.data.card))return;
-    clearContainerDropHint();
-    clearTransformationHints();
     const gluing = glueDrag.current;
     if (gluing) {
       const dx = node.position.x - gluing.origin.x, dy = node.position.y - gluing.origin.y;
@@ -629,7 +648,11 @@ export function WorldCanvas() {
       return;
     }
     const transformation = transformationTarget(event, node);
-    transformation?.element?.setAttribute("data-transformation-hint", `${t(transformation.option[1].label)}: ${node.data.card.name}`);
+    const resource = useEquipmentDrag.getState().resource;
+    const owner = resource?.id === node.id && 'clientX' in event ? equipmentDropOwner(resource, event.clientX, event.clientY) : undefined;
+    // Read all hit geometry before updating visual feedback.
+    clearContainerDropHint();
+    showTransformationHint(transformation, node.data.card.name);
     const member = node.data.card;
     if (!node.data.equipmentDetail && !member.ephemeral) {
       const parent = cards.find((c) => c.id === node.parentId);
@@ -654,9 +677,8 @@ export function WorldCanvas() {
         if (destination) paint(destination.id, "enter");
       }
     }
-    const resource = useEquipmentDrag.getState().resource;
     if (resource?.id !== node.id || !("clientX" in event)) return;
-    useEquipmentDrag.getState().set(resource, equipmentDropOwner(resource, event.clientX, event.clientY)?.id);
+    useEquipmentDrag.getState().set(resource, owner?.id);
   }, [equipmentDropOwner, clearContainerDropHint, cards, catalog, transformationTarget, glueActive, getViewport, setNodes]);
 
   const onNodeDragStop: OnNodeDrag<CanvasNode> = useCallback((_event, node, draggedNodes) => {
@@ -776,39 +798,14 @@ export function WorldCanvas() {
     selectCards(selectedNodes.map((node) => node.id));
   }, [selectCards]);
 
-  const onDrop = useCallback((event: React.DragEvent<HTMLDivElement>) => {
-    event.preventDefault();
+  const placePaletteCard = useCallback((payload: PaletteDragPayload, event: Pick<MouseEvent, "clientX" | "clientY">) => {
     clearTransformationHints();
-    if(event.dataTransfer.files.length){
-      const files=Array.from(event.dataTransfer.files).filter(f=>/\.pdf$/i.test(f.name));
-      if(!files.length||importingPdf.current)return;
-      if(!getNodeType(catalog,"library.paper")){setImportStatus(t("请先启用 Library 插件"));return;}
-      const position=screenToFlowPosition({x:event.clientX,y:event.clientY});
-      const parent=dropContainer(cards,{id:"",type:"library.paper"} as typeof cards[number],position,catalog);
-      importingPdf.current=true;
-      void (async()=>{
-        let completed=0;
-        try {
-          for(const [i,file] of files.entries()) {
-            setImportStatus(`${i+1} / ${files.length} · ${file.name}`);
-            const card=await importPdf(file,{x:position.x+(i%3)*40,y:position.y+Math.floor(i/3)*40},parent?.id,setImportProgress);
-            useWorldStore.getState().acceptImportedCard(card);
-            completed++;
-          }
-          setImportStatus(t("已导入 {v0} 篇 PDF", { v0: String(completed) }));
-        } catch(e) { setImportStatus(t("已导入 {v0} 篇；{v1}", { v0: String(completed), v1: String(String(e)) })); }
-        finally { importingPdf.current=false;setImportProgress(undefined); }
-      })();
-      return;
-    }
-    const payload = readPaletteDrag(event.dataTransfer);
-    if (!payload) return;
     const position = screenToFlowPosition({ x: event.clientX, y: event.clientY });
     if (payload.kind === "node") {
       const definition = getNodeType(catalog, payload.type);
       if (!definition) return;
       const resource = { ...buildCardDraft(payload.type, position, definition), id: "" };
-      const transformation = transformationTarget(event.nativeEvent, { data: { card: resource } } as CanvasNode);
+      const transformation = transformationTarget(event, { data: { card: resource } } as CanvasNode);
       if (transformation) {
         useEquipmentDrag.getState().set();
         if (transformation.option[0] === 'appoint-minister') {
@@ -835,15 +832,60 @@ export function WorldCanvas() {
         return;
       }
       const parent = dropContainer(cards, { id: "", type: payload.type } as typeof cards[number], position, catalog);
-      void createCard(payload.type, position).then((created) => {
-        if (created && parent) void updateCard(created.id, { parent_id: parent.id });
-      });
+      void createCard(payload.type, position, parent ? { parent_id: parent.id } : undefined);
       return;
     }
     const legion = legions.find((item) => item.id === payload.id);
     if (!legion || legion.revision !== payload.revision) return;
     void instantiateLegion(payload.id, position);
-  }, [cards, catalog, createCard, instantiateLegion, legions, screenToFlowPosition, updateCard, equipmentDropOwner, transformationTarget]);
+  }, [cards, catalog, createCard, instantiateLegion, legions, screenToFlowPosition, equipmentDropOwner, transformationTarget]);
+
+  const onDrop = useCallback((event: React.DragEvent<HTMLDivElement>) => {
+    event.preventDefault();
+    clearTransformationHints();
+    if(event.dataTransfer.files.length){
+      const files=Array.from(event.dataTransfer.files).filter(f=>/\.pdf$/i.test(f.name));
+      if(!files.length||importingPdf.current)return;
+      if(!getNodeType(catalog,"library.paper")){setImportStatus(t("请先启用 Library 插件"));return;}
+      const position=screenToFlowPosition({x:event.clientX,y:event.clientY});
+      const parent=dropContainer(cards,{id:"",type:"library.paper"} as typeof cards[number],position,catalog);
+      importingPdf.current=true;
+      void (async()=>{
+        let completed=0;
+        try {
+          for(const [i,file] of files.entries()) {
+            setImportStatus(`${i+1} / ${files.length} · ${file.name}`);
+            const card=await importPdf(file,{x:position.x+(i%3)*40,y:position.y+Math.floor(i/3)*40},parent?.id,setImportProgress);
+            useWorldStore.getState().acceptImportedCard(card);
+            completed++;
+          }
+          setImportStatus(t("已导入 {v0} 篇 PDF", { v0: String(completed) }));
+        } catch(e) { setImportStatus(t("已导入 {v0} 篇；{v1}", { v0: String(completed), v1: String(String(e)) })); }
+        finally { importingPdf.current=false;setImportProgress(undefined); }
+      })();
+      return;
+    }
+    const payload = readPaletteDrag(event.dataTransfer);
+    if (payload) placePaletteCard(payload, event);
+  }, [cards, catalog, placePaletteCard, screenToFlowPosition]);
+
+  const hoverPaletteCard = (point: Pick<PalettePointerLocation, "clientX" | "clientY">) => {
+    const resource = useEquipmentDrag.getState().resource;
+    const transformation = resource ? transformationTarget(point, { data: { card: resource } } as CanvasNode) : undefined;
+    const owner = resource ? equipmentDropOwner(resource, point.clientX, point.clientY) : undefined;
+    showTransformationHint(transformation, resource?.name);
+    if (resource) useEquipmentDrag.getState().set(resource, owner?.id);
+  };
+  usePaletteDropTarget(wrapper, {
+    accepts: item => Boolean(item.payload),
+    over: (_item, point) => hoverPaletteCard(point),
+    leave: () => {
+      clearTransformationHints();
+      const resource = useEquipmentDrag.getState().resource;
+      if (resource) useEquipmentDrag.getState().set(resource);
+    },
+    drop: (item, point) => { if (item.payload) placePaletteCard(item.payload, point); },
+  });
 
   return (
     <div
@@ -873,13 +915,7 @@ export function WorldCanvas() {
         if (!hasPaletteDrag(event.dataTransfer)&&!event.dataTransfer.types.includes(t("Files"))) return;
         event.preventDefault();
         event.dataTransfer.dropEffect = "copy";
-        const resource = useEquipmentDrag.getState().resource;
-        clearTransformationHints();
-        if (resource) {
-          const transformation = transformationTarget(event.nativeEvent, { data: { card: resource } } as CanvasNode);
-          transformation?.element?.setAttribute("data-transformation-hint", `${t(transformation.option[1].label)}: ${resource.name}`);
-        }
-        if (resource) useEquipmentDrag.getState().set(resource, equipmentDropOwner(resource, event.clientX, event.clientY)?.id);
+        hoverPaletteCard(event);
       }}
     >
       {importStatus&&<PdfImportIndicator status={importStatus} progress={importProgress} onDismiss={()=>setImportStatus("")} />}

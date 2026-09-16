@@ -15,6 +15,8 @@ export function DeckHand({ children, className, style }: {
     const surfaces = slots.map((slot) => slot.querySelector<HTMLElement>("[data-deck-visual]")!);
     const positions = slots.map(() => [0, 0, 0]);
     const velocities = slots.map(() => [0, 0, 0]);
+    const restingAngles = slots.map((_, index) => count < 2 ? 0 : (index / (count - 1) * 2 - 1) * Math.min(10, 3 + count * 0.8));
+    let goals = slots.map(() => [0, 0, 0]);
     const reduced = window.matchMedia("(prefers-reduced-motion: reduce)");
     let frame = 0;
     let previous = 0;
@@ -24,15 +26,16 @@ export function DeckHand({ children, className, style }: {
       previous = now;
       const selected = target.current;
       let moving = selected !== lastActive;
-      slots.forEach((slot, index) => {
+      if (moving) goals = slots.map((slot, index) => {
         const distance = selected === null ? 0 : index - selected;
-        const restingAngle = count < 2 ? 0 : (index / (count - 1) * 2 - 1) * Math.min(10, 3 + count * 0.8);
-        const goal = [
+        slot.style.zIndex = String(selected === index ? count + 2 : selected === null ? index : count - Math.abs(distance));
+        return [
           selected === null || !distance ? 0 : Math.sign(distance) * 34 * Math.exp(-0.65 * (Math.abs(distance) - 1)),
           selected === index ? -16 : 0,
-          selected === index ? 0 : restingAngle,
+          selected === index ? 0 : restingAngles[index],
         ];
-        slot.style.zIndex = String(selected === index ? count + 2 : selected === null ? index : count - Math.abs(distance));
+      });
+      goals.forEach((goal, index) => {
         goal.forEach((value, axis) => {
           if (reduced.matches) { positions[index][axis] = value; velocities[index][axis] = 0; return; }
           const delta = value - positions[index][axis];
@@ -67,7 +70,7 @@ export function DeckHand({ children, className, style }: {
     onBlur={(event) => { if (!event.currentTarget.contains(event.relatedTarget)) setActive(null); }}>
     {Children.map(children, (child, index) => <div className="deck-hover-slot"
       data-active={active === index || undefined}
-      onPointerEnter={() => setActive(index)} onPointerMove={() => setActive(index)}
+      onPointerEnter={() => setActive(index)}
       onFocus={() => setActive(index)}>{child}</div>)}
   </div>;
 }

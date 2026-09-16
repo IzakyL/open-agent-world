@@ -1,0 +1,28 @@
+.component-palette .deck-hover-button { touch-action: none; }
+body.is-palette-dragging, body.is-palette-dragging * { cursor: grabbing !important; }
+.component-palette.palette-drag-preview {
+  position: fixed;
+  inset: 0 auto auto 0;
+  z-index: 120;
+  margin: 0;
+  padding: 0;
+  min-width: 0;
+  border: 0;
+  border-radius: 0;
+  background: none;
+  box-shadow: none;
+  backdrop-filter: none;
+  pointer-events: none;
+  contain: layout style;
+  will-change: transform;
+  transition: none;
+}
+.component-palette.palette-drag-preview .palette-item {
+  position: relative;
+  inset: auto;
+  margin: 0;
+  min-width: 0;
+  min-height: 0;
+  pointer-events: none;
+  transition: none;
+}

@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { installTutorialInteractionGuard, tutorialAllowsCanvasTarget, tutorialAllows, type InteractionScope } from './interactionGuard';
+import { installTutorialInteractionGuard, tutorialAllowsCanvasTarget, tutorialAllows, tutorialAllowsDrop, type InteractionScope } from './interactionGuard';
 import { STEPS } from './steps';
 const scope = (id: string): InteractionScope => ({ active: true, busy: false, step: STEPS.find(s => s.id === id)!, refs: { practice: 'practice', agent: 'agent', sandbox: 'sandbox' } });
 function el(html: string) { document.body.innerHTML = html; return document.body.firstElementChild!; }
@@ -27,6 +27,26 @@ describe('tutorial interaction ownership', () => {
     const canvas = el('<div class="react-flow__pane" />');
     expect(tutorialAllows(canvas, scope('place'))).toBe(false);
     expect(tutorialAllows(canvas, scope('place'), 'drop')).toBe(true);
+  });
+  it('applies the current tutorial boundary to pointer drops and lets Escape cancel a preview first', () => {
+    let current = scope('place');
+    const pause = vi.fn();
+    const remove = installTutorialInteractionGuard(() => current, pause);
+    try {
+      const canvas = el('<div class="react-flow__pane" />');
+      expect(tutorialAllowsDrop(canvas)).toBe(true);
+      expect(tutorialAllowsDrop(el('<div class="deck-trash" />'))).toBe(false);
+      current = { ...current, busy: true };
+      expect(tutorialAllowsDrop(canvas)).toBe(false);
+      current = scope('place');
+      document.body.classList.add('is-palette-dragging');
+      const key = () => window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', cancelable: true }));
+      expect(key()).toBe(true);
+      expect(pause).not.toHaveBeenCalled();
+      document.body.classList.remove('is-palette-dragging');
+      expect(key()).toBe(false);
+      expect(pause).toHaveBeenCalledOnce();
+    } finally { document.body.classList.remove('is-palette-dragging'); remove(); }
   });
   it('keeps model inputs available but blocks other settings', () => {
     const input = el('<div data-tutorial="model-list"><input /></div>').firstElementChild!;

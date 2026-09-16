@@ -1,4 +1,5 @@
 import type { PluginCatalog, WorldCard, WorldPosition, WorldSize } from "../types/world";
+import { cardIndex } from './cardIndex';
 import { NODE_SURFACE_SIZE, type NodeSurfaceLevel, type SurfaceSize } from "./nodeSurfaces";
 import { nodePositionFromSurfacePosition, positionSurfaceAtNodeCenter } from "../canvas/nodeDisplacement";
 import { isShadow, shadowLayout, insideShadow } from "./shadowCollection";
@@ -40,7 +41,8 @@ export function ownedDescendants(cards: WorldCard[], id: string): WorldCard[] {
   return cards.filter((c) => c.parent_id === id || c.equipment?.owner_id === id).flatMap((c) => [c, ...ownedDescendants(cards, c.id)]);
 }
 export function ancestors(cards: WorldCard[], card: WorldCard): WorldCard[] {
-  const parent = cards.find((candidate) => candidate.id === (card.equipment?.owner_id ?? card.parent_id));
+  const parentId = card.equipment?.owner_id ?? card.parent_id;
+  const parent = parentId ? cardIndex(cards).get(parentId) : undefined;
   return parent ? [parent, ...ancestors(cards, parent)] : [];
 }
 export function parentFirst<T extends WorldCard>(cards: T[]): T[] {

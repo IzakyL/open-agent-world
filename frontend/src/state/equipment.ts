@@ -1,6 +1,7 @@
 import { create } from "zustand";
 import type { PluginCatalog, WorldCard, WorldPosition } from "../types/world";
 import { getConnectionOptions } from "./relationships";
+import { cardIndex } from './cardIndex';
 
 export function canEquip(resource: WorldCard, owner: WorldCard, catalog: PluginCatalog, cards: WorldCard[]): boolean {
   if (resource.ephemeral || owner.ephemeral || resource.id === owner.id || resource.equipment?.owner_id === owner.id) return false;
@@ -10,7 +11,7 @@ export function canEquip(resource: WorldCard, owner: WorldCard, catalog: PluginC
   while (ancestor) {
     if (ancestor.id === resource.id) return false;
     const id: string | null | undefined = ancestor.equipment?.owner_id ?? ancestor.parent_id;
-    ancestor = cards.find((c) => c.id === id);
+    ancestor = id ? cardIndex(cards).get(id) : undefined;
   }
   return true;
 }
@@ -19,7 +20,8 @@ export function canEquip(resource: WorldCard, owner: WorldCard, catalog: PluginC
 export const useEquipmentDrag = create<{
   resource?: WorldCard; targetId?: string;
   set: (resource?: WorldCard, targetId?: string) => void;
-}>((set) => ({ set: (resource, targetId) => set({ resource, targetId }) }));
+}>((set) => ({ set: (resource, targetId) => set(state =>
+  state.resource === resource && state.targetId === targetId ? state : { resource, targetId }) }));
 
 export const useEquipmentPanel = create<{
   openIds: string[];
@@ -31,11 +33,13 @@ export const useEquipmentPanel = create<{
 })) }));
 
 export function equipmentOwner(card: WorldCard, cards: WorldCard[]): WorldCard | undefined {
-  const parent = cards.find((c) => c.id === card.parent_id);
+  if (!card.equipment && !card.parent_id) return undefined;
+  const byId = cardIndex(cards);
   if (card.equipment) {
-    const owner = cards.find((c) => c.id === card.equipment!.owner_id);
+    const owner = byId.get(card.equipment.owner_id);
     return owner ? equipmentOwner(owner, cards) ?? owner : undefined;
   }
+  const parent = card.parent_id ? byId.get(card.parent_id) : undefined;
   return parent ? equipmentOwner(parent, cards) : undefined;
 }
 

@@ -1,16 +1,17 @@
 import { CardFace } from "../components/CardFace";
 import { t, useLocale } from "../i18n";
 import { AlertTriangle, Layers3, LibraryBig, Plus, Trash2, X } from "lucide-react";
-import { useEffect, useRef, useState, type CSSProperties, type DragEvent } from "react";
+import { useEffect, useRef, useState, type CSSProperties } from "react";
 import { DECK_ICONS, DeckIcon } from "../components/DeckIcon";
 import { DeckHand } from "./DeckHand";
-import { writePaletteDrag, type PaletteDragPayload } from "./dragPayload";
+import type { PaletteDragPayload } from "./dragPayload";
 import { useWorldStore } from "../state/worldStore";
 import { displayDeckName } from "../shell/libraryCatalog";
 import { useCardLibrary } from "../state/cardLibrary";
 import { CatalogIcon } from "../components/CatalogIcon";
 import { useEquipmentDrag } from "../state/equipment";
 import { buildCardDraft } from "../state/helpers";
+import { startPalettePointerDrag, usePaletteDropTarget } from "./pointerDrag";
 
 // Compatibility helpers have no role in ongoing deck population.
 export { defaultDecks, normalizeDecks } from "./legacyDecks";
@@ -31,6 +32,9 @@ export function ComponentPalette() {
   const [removing, setRemoving] = useState(false);
   const [trashActive, setTrashActive] = useState(false);
   const [dropDeck, setDropDeck] = useState<string>();
+  const root = useRef<HTMLElement>(null);
+  const cancelPointer = useRef<() => void>();
+  const suppressClick = useRef(false);
   const dragged = useRef<{ kind: "node" | "legion"; id: string; sourceDeckId?: string }>();
   const endDrag = () => { dragged.current = undefined; setTrashActive(false); setDropDeck(undefined); useEquipmentDrag.getState().set(); };
   useEffect(() => { void library.refresh(); }, [library.refresh]);
@@ -38,30 +42,50 @@ export function ComponentPalette() {
   const deck = showLegions ? { id: "legion-library", name: t("Legions"), icon: "layers",
     entries: legions.map(item => ({ kind: "legion" as const, id: item.id })) }
     : snapshot?.decks.find(item => item.id === snapshot.active_deck_id);
-  const beginDrag = (event: DragEvent<HTMLButtonElement>, payload: PaletteDragPayload) => {
-    writePaletteDrag(event.dataTransfer, payload);
-    if (payload.kind === "node") useEquipmentDrag.getState().set({ ...buildCardDraft(payload.type, { x: 0, y: 0 }, catalog.node_types.find(item => item.id === payload.type)), id: "" });
+  useEffect(() => () => cancelPointer.current?.(), [deck?.id]);
+  const moveToDeck = async (id: string) => {
+    const entry = dragged.current;
+    endDrag();
+    if (!entry || entry.sourceDeckId === id || library.busy || removing) return;
+    const saved = await library.edit({ action: "move_entry", id, source_deck_id: entry.sourceDeckId,
+      entry: { kind: entry.kind, id: entry.id } });
+    if (saved) { setEditingDeck(false); setShowLegions(false); }
   };
-  return <aside className="component-palette" aria-label={t("Active card deck")} data-tutorial="deck"
+  const discard = async () => {
+    const entry = dragged.current;
+    endDrag();
+    if (!entry || !deck || removing || library.busy || !deck.entries.some(item => item.kind === entry.kind && item.id === entry.id)) return;
+    const label = legions.find(item => item.id === entry.id)?.name ?? entry.id;
+    if (showLegions && !window.confirm(t("Delete saved Legion \"{v0}\"? Existing formations in the world will remain.", { v0: String(label) }))) return;
+    setRemoving(true);
+    try {
+      if (showLegions) await deleteLegion(entry.id);
+      else await library.edit({ action: "update_deck", id: deck.id,
+        entries: deck.entries.filter(item => item.kind !== entry.kind || item.id !== entry.id) });
+    } finally { setRemoving(false); }
+  };
+  usePaletteDropTarget(root, {
+    accepts: (item, point) => {
+      const id = point.target.closest<HTMLElement>("[data-deck-destination]")?.dataset.deckDestination;
+      return !library.busy && !removing && Boolean(point.target.closest(".deck-trash") || (id && id !== item.entry.sourceDeckId));
+    },
+    over: (_item, point) => {
+      setTrashActive(Boolean(point.target.closest(".deck-trash")));
+      setDropDeck(point.target.closest<HTMLElement>("[data-deck-destination]")?.dataset.deckDestination);
+    },
+    leave: () => { setTrashActive(false); setDropDeck(undefined); },
+    drop: (_item, point) => {
+      const id = point.target.closest<HTMLElement>("[data-deck-destination]")?.dataset.deckDestination;
+      if (id) void moveToDeck(id);
+      else if (point.target.closest(".deck-trash")) void discard();
+    },
+  });
+  return <aside ref={root} className="component-palette" aria-label={t("Active card deck")} data-tutorial="deck"
     style={{ "--deck-tab-count": (snapshot?.decks.length ?? 0) + 1, "--deck-hand-count": deck?.entries.length ?? 0 } as CSSProperties}>
     <div className="deck-tabs">
       <div className="deck-tab-scroll" role="tablist" aria-label={t("Card decks")}>
-        {snapshot?.decks.map(item => <button type="button" role="tab" key={item.id} aria-selected={item.id === deck?.id}
+        {snapshot?.decks.map(item => <button type="button" role="tab" key={item.id} data-deck-destination={item.id} aria-selected={item.id === deck?.id}
           aria-controls="active-card-deck" className={`${item.id === deck?.id ? "is-active" : ""} ${dropDeck === item.id ? "is-drop-target" : ""}`} disabled={library.busy}
-          onDragOver={event => {
-            if (!dragged.current || dragged.current.sourceDeckId === item.id || library.busy || removing) return;
-            event.preventDefault(); event.stopPropagation(); event.dataTransfer.dropEffect = "move"; setDropDeck(item.id);
-          }}
-          onDragLeave={event => { if (!event.currentTarget.contains(event.relatedTarget as Node | null)) setDropDeck(undefined); }}
-          onDrop={async event => {
-            event.preventDefault(); event.stopPropagation();
-            const entry = dragged.current;
-            endDrag();
-            if (!entry || entry.sourceDeckId === item.id || library.busy || removing) return;
-            const saved = await library.edit({ action: "move_entry", id: item.id, source_deck_id: entry.sourceDeckId,
-              entry: { kind: entry.kind, id: entry.id } });
-            if (saved) { setEditingDeck(false); setShowLegions(false); }
-          }}
           onClick={() => { setEditingDeck(false); setShowLegions(false); void library.edit({ action: "activate_deck", id: item.id }); }}>
           <span className="deck-tab-summary"><DeckIcon icon={item.icon} /><small>{item.entries.length}</small></span>
           <span className="deck-tab-label">{displayDeckName(item)}</span>
@@ -89,26 +113,7 @@ export function ComponentPalette() {
       </form> : <>
       <div className="deck-caption"><span><DeckIcon icon={deck?.icon} size={13} /> {deck ? displayDeckName(deck) : t("Your deck")}</span><small>{t("Drag into the world")}</small>
         <div className={`deck-trash ${trashActive ? "is-active" : ""}`} role="region" aria-label={t("Discard card")}
-          title={showLegions ? t("Drop to delete saved Legion") : t("Drop to remove from this deck")} aria-busy={removing}
-          onDragOver={event => {
-            if (!dragged.current || removing || library.busy) return;
-            event.preventDefault(); event.stopPropagation(); event.dataTransfer.dropEffect = "move"; setTrashActive(true);
-          }}
-          onDragLeave={event => { if (!event.currentTarget.contains(event.relatedTarget as Node | null)) setTrashActive(false); }}
-          onDrop={async event => {
-            event.preventDefault(); event.stopPropagation();
-            const entry = dragged.current;
-            endDrag();
-            if (!entry || !deck || removing || library.busy || !deck.entries.some(item => item.kind === entry.kind && item.id === entry.id)) return;
-            const label = legions.find(item => item.id === entry.id)?.name ?? entry.id;
-            if (showLegions && !window.confirm(t("Delete saved Legion \"{v0}\"? Existing formations in the world will remain.", { v0: String(label) }))) return;
-            setRemoving(true);
-            try {
-              if (showLegions) await deleteLegion(entry.id);
-              else await library.edit({ action: "update_deck", id: deck.id,
-                entries: deck.entries.filter(item => item.kind !== entry.kind || item.id !== entry.id) });
-            } finally { setRemoving(false); }
-          }}><Trash2 size={20} /></div>
+          title={showLegions ? t("Drop to delete saved Legion") : t("Drop to remove from this deck")} aria-busy={removing}><Trash2 size={20} /></div>
       </div>
       {library.error ? <button className="deck-library-error" onClick={library.show}><AlertTriangle size={13} /> {t("Library needs attention")}</button> : null}
       {showLegions && legionError ? <small role="alert">{legionError}</small> : null}
@@ -122,12 +127,27 @@ export function ComponentPalette() {
           const payload: PaletteDragPayload = entry.kind === "node" ? { version: 1, kind: "node", type: entry.id }
             : { version: 1, kind: "legion", id: entry.id, revision: legion?.revision ?? 0 };
           return <button type="button" key={`${entry.kind}:${entry.id}`} className="deck-hover-button" data-palette-card={entry.id} aria-disabled={!available}
-            draggable={!removing && !library.busy} onDragStart={event => {
-              dragged.current = { ...entry, sourceDeckId: showLegions ? undefined : deck.id };
-              if (available) beginDrag(event, payload);
-              else { event.dataTransfer.setData("text/plain", label); event.dataTransfer.effectAllowed = "move"; }
-            }} onDragEnd={endDrag}
-            onClick={() => { if (available) entry.kind === "node" ? void createCard(entry.id) : void instantiateLegion(entry.id); }}
+            draggable={false} onPointerDown={event => {
+              if (removing || library.busy || event.button !== 0 || !event.isPrimary) return;
+              suppressClick.current = false;
+              const draggedEntry = { ...entry, sourceDeckId: showLegions ? undefined : deck.id };
+              cancelPointer.current = startPalettePointerDrag(event.nativeEvent, event.currentTarget,
+                { entry: draggedEntry, payload: available ? payload : undefined }, {
+                  start: () => {
+                    suppressClick.current = true;
+                    dragged.current = draggedEntry;
+                    if (available && payload.kind === "node") useEquipmentDrag.getState().set({
+                      ...buildCardDraft(payload.type, { x: 0, y: 0 }, catalog.node_types.find(item => item.id === payload.type)), id: "",
+                    });
+                  },
+                  end: endDrag,
+                });
+            }}
+            onClick={event => {
+              if (dragged.current) { event.preventDefault(); return; }
+              if (suppressClick.current && event.detail !== 0) { suppressClick.current = false; event.preventDefault(); return; }
+              if (available) entry.kind === "node" ? void createCard(entry.id) : void instantiateLegion(entry.id);
+            }}
             aria-label={available ? t("Place {v0}", { v0: String(label) }) : t("{v0} unavailable", { v0: String(label) })} title={available ? (definition ? t(definition.description) : undefined) ?? t("Deploy saved formation") : t("Content unavailable. Inspect it in the Library.")}>
             <span style={{ "--collection-color": definition?.color ?? "#78967b" } as CSSProperties} className={`card-stock palette-item palette-item--${entry.kind === "node" ? entry.id : "legion"}`} data-deck-visual>
               <CardFace icon={available ? definition ? <CatalogIcon definition={definition} /> : <Layers3 /> : <AlertTriangle />} label={label}

@@ -1,12 +1,12 @@
 import { t, useLocale } from "../i18n";
 import { Panel, useReactFlow, useStore } from '@xyflow/react';
-import { useRef } from 'react';
+import { memo, useRef } from 'react';
 import { shallow } from 'zustand/shallow';
 import type { CanvasNodeData } from '../cards/types';
 import { getNodeType } from '../state/catalog';
 import { useWorldStore } from '../state/worldStore';
 
-function LocalNode({ id }: { id: string }) {
+const LocalNode = memo(function LocalNode({ id }: { id: string }) {
   useLocale();
   const catalog = useWorldStore(state => state.catalog);
   const rect = useStore(state => {
@@ -21,10 +21,10 @@ function LocalNode({ id }: { id: string }) {
   }, shallow);
   return rect && <rect x={rect.x} y={rect.y} width={rect.width} height={rect.height}
     rx={5} fill={getNodeType(catalog, rect.type)?.color ?? 'var(--ink-soft)'} />;
-}
+});
 
 /** A local lens: bounds depend only on the live viewport, never on node extents. */
-export function LocalMiniMap() {
+export const LocalMiniMap = memo(function LocalMiniMap() {
   useLocale();
   const { setViewport, getViewport } = useReactFlow();
   const { x, y, zoom, width, height } = useStore(state => ({
@@ -73,4 +73,4 @@ export function LocalMiniMap() {
         strokeWidth={1.5} vectorEffect="non-scaling-stroke" pointerEvents="none" />
     </svg>
   </Panel>;
-}
+});

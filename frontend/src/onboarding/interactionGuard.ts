@@ -8,6 +8,11 @@ export interface InteractionScope {
   selectedIds?: string[];
 }
 let currentScope: (() => InteractionScope) | undefined;
+/** Pointer previews bypass native drag events, but share the same placement boundary. */
+export function tutorialAllowsDrop(target: Element): boolean {
+  const scope = currentScope?.();
+  return !scope || tutorialAllows(target, scope, 'drop');
+}
 /** Gesture target filtering complements event capture: a released drag must still clean up. */
 export function tutorialAllowsCanvasTarget(id: string, action: 'connect' | 'glue' | 'transform'): boolean {
   const scope = currentScope?.();
@@ -87,7 +92,10 @@ export function installTutorialInteractionGuard(getScope: () => InteractionScope
     }
     if (event.type === 'keydown') {
       const key = event as KeyboardEvent;
-      if (key.key === 'Escape') { stop(event); if (!scope.busy) pause(); return; }
+      if (key.key === 'Escape') {
+        if (document.body.classList.contains('is-palette-dragging')) return;
+        stop(event); if (!scope.busy) pause(); return;
+      }
       if (key.key === 'Tab') {
         const allowed = [...document.querySelectorAll<HTMLElement>(controls)].filter(el => el.tabIndex >= 0 && !el.matches(':disabled') && el.getClientRects().length && tutorialAllows(el, scope));
         const index = allowed.indexOf(document.activeElement as HTMLElement);

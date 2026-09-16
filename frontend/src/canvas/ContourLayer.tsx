@@ -1,6 +1,6 @@
 import { useOnViewportChange, useStore, type Viewport } from "@xyflow/react";
 import { ViewportPortal } from "./FlowPortal";
-import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
+import { memo, useCallback, useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
 import { CHUNK_SIZE, getViewportChunkKeys } from "../state/chunks";
 import { useWorldStore } from "../state/worldStore";
 import type { FlowViewportState } from "../types/world";
@@ -18,7 +18,7 @@ function terrainViewFor(viewport: FlowViewportState): TerrainView {
   return { keys, resolution, signature: `${resolution}|${keys.join(",")}` };
 }
 
-export function ContourLayer() {
+export const ContourLayer = memo(function ContourLayer() {
   // React Flow scales an HTML ancestor. SVG vector-effect does not compensate
   // that outer CSS transform, so convert screen pixels back to world units.
   const zoom = useStore(state => state.transform[2]);
@@ -70,4 +70,4 @@ export function ContourLayer() {
       ))}
     </ViewportPortal>
   );
-}
+});

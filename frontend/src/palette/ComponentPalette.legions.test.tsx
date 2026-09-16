@@ -1,12 +1,38 @@
 // @vitest-environment jsdom
 import { act, cleanup, fireEvent, render, waitFor } from "@testing-library/react";
-import { afterEach, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { ComponentPalette } from "./ComponentPalette";
 import { useWorldStore } from "../state/worldStore";
 import { useCardLibrary } from "../state/cardLibrary";
 import type { LegionSummary } from "../types/world";
 
+let hit: Element;
+let frame: FrameRequestCallback | undefined;
+beforeEach(() => {
+  vi.stubGlobal("PointerEvent", class extends MouseEvent {
+    pointerId = 1;
+    isPrimary = true;
+  });
+  Object.defineProperty(document, "elementFromPoint", { configurable: true, value: () => hit });
+  vi.stubGlobal("requestAnimationFrame", (callback: FrameRequestCallback) => { frame = callback; return 1; });
+  vi.stubGlobal("cancelAnimationFrame", () => { frame = undefined; });
+});
 afterEach(() => { cleanup(); vi.restoreAllMocks(); vi.unstubAllGlobals(); });
+function startDrag(source: HTMLElement) {
+  source.setPointerCapture = vi.fn(); source.hasPointerCapture = () => false;
+  fireEvent.pointerDown(source, { button: 0, buttons: 1, clientX: 10, clientY: 10 });
+  hit = source;
+  fireEvent.pointerMove(window, { buttons: 1, clientX: 30, clientY: 30 });
+}
+function moveOver(target: HTMLElement) {
+  hit = target;
+  fireEvent.pointerMove(window, { buttons: 1, clientX: 50, clientY: 50 });
+  act(() => { const callback = frame; frame = undefined; callback?.(performance.now()); });
+}
+function dropOn(target: HTMLElement) {
+  hit = target;
+  fireEvent.pointerUp(window, { button: 0, clientX: 50, clientY: 50 });
+}
 
 it("exposes saved Legions without deck membership and tracks library changes", () => {
   vi.stubGlobal("matchMedia", () => ({ matches: true, addEventListener() {}, removeEventListener() {} }));
@@ -18,7 +44,15 @@ it("exposes saved Legions without deck membership and tracks library changes", (
   const screen = render(<ComponentPalette />);
   fireEvent.click(screen.getByRole("tab", { name: /Legions/ }));
   const place = screen.getByRole("button", { name: "Place Research team" });
-  expect(place.draggable).toBe(true);
+  expect(place.draggable).toBe(false); // Deck previews use Pointer Events, not an OS drag image.
+  fireEvent.click(place);
+  expect(instantiate).toHaveBeenCalledWith("saved-team");
+  instantiate.mockClear();
+  startDrag(place);
+  fireEvent.click(place); // Keyboard activation must not instantiate an in-flight preview.
+  expect(instantiate).not.toHaveBeenCalled();
+  fireEvent.keyDown(window, { key: "Escape" });
+  expect(document.querySelector(".palette-drag-preview")).toBeNull();
   fireEvent.click(place);
   expect(instantiate).toHaveBeenCalledWith("saved-team");
   act(() => useWorldStore.setState({ legions: [{ ...legion, compatible: false }] }));
@@ -38,12 +72,12 @@ it("deletes a saved Legion directly with confirmation without placing it", async
     deleteLegion: remove, instantiateLegion: place });
   const screen = render(<ComponentPalette />);
   fireEvent.click(screen.getByRole("tab", { name: /Legions/ }));
-  fireEvent.dragStart(screen.getByRole("button", { name: "Team unavailable" }), { dataTransfer: { setData: vi.fn() } });
-  fireEvent.drop(screen.getByRole("region", { name: "Discard card" }));
+  startDrag(screen.getByRole("button", { name: "Team unavailable" }));
+  dropOn(screen.getByRole("region", { name: "Discard card" }));
   expect(remove).not.toHaveBeenCalled();
   confirm.mockReturnValue(true);
-  fireEvent.dragStart(screen.getByRole("button", { name: "Team unavailable" }), { dataTransfer: { setData: vi.fn() } });
-  fireEvent.drop(screen.getByRole("region", { name: "Discard card" }));
+  startDrag(screen.getByRole("button", { name: "Team unavailable" }));
+  dropOn(screen.getByRole("region", { name: "Discard card" }));
   await waitFor(() => expect(remove).toHaveBeenCalledWith("team"));
   expect(place).not.toHaveBeenCalled();
 });
@@ -60,15 +94,13 @@ it("removes an unavailable entry only from the current deck", async () => {
         entries: [{ kind: "node", id: "missing" }, { kind: "legion", id: "saved" }] }] } });
   const screen = render(<ComponentPalette />);
   const trash = screen.getByRole("region", { name: "Discard card" });
-  fireEvent.drop(trash);
+  dropOn(trash);
   expect(edit).not.toHaveBeenCalled();
   const card = screen.getByRole("button", { name: "missing unavailable" });
-  const dataTransfer = { setData: vi.fn(), dropEffect: "none" };
-  fireEvent.dragStart(card, { dataTransfer });
-  fireEvent.dragOver(trash, { dataTransfer });
+  startDrag(card);
+  moveOver(trash);
   expect(trash.classList.contains("is-active")).toBe(true);
-  expect(dataTransfer.dropEffect).toBe("move");
-  fireEvent.drop(trash);
+  dropOn(trash);
   expect(trash.classList.contains("is-active")).toBe(false);
   await waitFor(() => expect(edit).toHaveBeenCalledWith({ action: "update_deck", id: "custom",
     entries: [{ kind: "legion", id: "saved" }] }));
@@ -87,16 +119,15 @@ it("moves a dragged entry to a deck tab using one revisioned library action", as
         { id: "target", name: "Target", icon: "folder", entries: [] }] } });
   const screen = render(<ComponentPalette />);
   const target = screen.getByRole("tab", { name: /Target/ });
-  const transfer = { setData: vi.fn(), dropEffect: "none" };
-  fireEvent.drop(target);
+  dropOn(target);
   expect(edit).not.toHaveBeenCalled();
-  fireEvent.dragStart(screen.getByRole("button", { name: "missing unavailable" }), { dataTransfer: transfer });
-  fireEvent.dragOver(screen.getByRole("tab", { name: /Source/ }), { dataTransfer: transfer });
-  expect(transfer.dropEffect).toBe("none");
-  fireEvent.dragOver(target, { dataTransfer: transfer });
+  startDrag(screen.getByRole("button", { name: "missing unavailable" }));
+  const sourceTab = screen.getByRole("tab", { name: /Source/ });
+  moveOver(sourceTab);
+  expect(sourceTab.classList.contains("is-drop-target")).toBe(false);
+  moveOver(target);
   expect(target.classList.contains("is-drop-target")).toBe(true);
-  expect(transfer.dropEffect).toBe("move");
-  fireEvent.drop(target);
+  dropOn(target);
   await waitFor(() => expect(edit).toHaveBeenCalledWith({ action: "move_entry", source_deck_id: "source", id: "target", entry: { kind: "node", id: "missing" } }));
   expect(target.classList.contains("is-drop-target")).toBe(false);
   expect(place).not.toHaveBeenCalled();
