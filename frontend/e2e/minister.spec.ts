@@ -116,12 +116,10 @@ test("an Agent is placed from the deck, promoted by dragging, restored and revok
   await decks.getByRole('button', { name: 'Create deck', exact: true }).click();
   await library.getByLabel('Search cards', { exact: true }).fill('Agent');
   await library.getByRole('button', { name: 'Add Agent to deck', exact: true }).click();
-  await library.locator('.library-deck-destination.is-selected > button').click();
-  await expect(library.locator('.library-deck-destination.is-selected li')).toHaveCount(1);
+  await expect(page.locator('.component-palette [data-palette-card]')).toHaveCount(1);
   await library.getByLabel('Search cards', { exact: true }).fill('Minister role');
   await library.getByRole('button', { name: 'Add Minister role to deck', exact: true }).click();
-  await library.locator('.library-deck-destination.is-selected > button').click();
-  await expect(library.locator('.library-deck-destination.is-selected li')).toHaveCount(2);
+  await expect(page.locator('.component-palette [data-palette-card]')).toHaveCount(2);
   await library.getByRole('button', { name: 'Close Library' }).click();
   const tray = page.getByRole('complementary', { name: 'Active card deck' });
   await tray.hover();
@@ -214,7 +212,6 @@ test('Codex keeps its own identity and configuration when a role card is dropped
     await decks.getByRole('button', { name: 'Create deck', exact: true }).click();
     await library.getByLabel('Search cards', { exact: true }).fill('Minister role');
     await library.getByRole('button', { name: 'Add Minister role to deck', exact: true }).click();
-    await library.locator('.library-deck-destination.is-selected > button').click();
     await library.getByRole('button', { name: 'Close Library' }).click();
     const tray = page.getByRole('complementary', { name: 'Active card deck' });
     await tray.hover();

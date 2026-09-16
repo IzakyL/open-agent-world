@@ -1485,7 +1485,7 @@ button:disabled { cursor: not-allowed; opacity: 0.48; }
 
 .deck-tabs {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) 34px;
+  grid-template-columns: minmax(0, 1fr) auto;
   gap: 4px;
   padding: 2px;
 }
@@ -1500,7 +1500,7 @@ button:disabled { cursor: not-allowed; opacity: 0.48; }
 }
 
 .deck-tab-scroll > button,
-.deck-add-button {
+.deck-tool-button {
   min-width: 0;
   height: 34px;
   display: flex;
@@ -1521,12 +1521,12 @@ button:disabled { cursor: not-allowed; opacity: 0.48; }
 .deck-tab-scroll > button { flex: 0 0 var(--deck-tab-width); height: 44px; flex-direction: column; gap: 3px; padding: 4px; }
 .deck-tab-summary { display: flex; align-items: center; justify-content: center; gap: 5px; }
 .deck-tab-label { width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; line-height: 13px; }
-.deck-add-button { align-self: center; width: 34px; min-width: 34px; flex: 0 0 34px; padding: 0; box-shadow: none; }
+.deck-tool-button { align-self: center; width: 34px; min-width: 34px; flex: 0 0 34px; padding: 0; box-shadow: none; }
 
 .deck-tab-scroll > button:hover,
-.deck-add-button:hover { color: var(--ink); background: var(--surface-soft); }
+.deck-tool-button:hover { color: var(--ink); background: var(--surface-soft); }
 .deck-tab-scroll > button.is-active,
-.deck-add-button.is-active {
+.deck-tool-button.is-active {
   color: var(--accent-strong);
   border-color: color-mix(in srgb, var(--accent) 22%, var(--line));
   background: var(--accent-soft);
@@ -1926,9 +1926,9 @@ body:has(.tutorial-bubble[data-step="place-demo"]) .component-palette .deck-stag
 @media (max-width: 620px) {
   .top-bar { width: 222px; }
   .top-bar .top-icon-button { width: 36px; height: 31px; }
-  .deck-tabs { grid-template-columns: minmax(0, 1fr) 30px; }
+  .deck-tabs { grid-template-columns: minmax(0, 1fr) auto; }
   .component-palette { --deck-tab-width: 60px; --deck-tab-step: 64px; --deck-tab-chrome: 50px; }
-  .deck-add-button { width: 30px; min-width: 30px; flex-basis: 30px; }
+  .deck-tool-button { width: 30px; min-width: 30px; flex-basis: 30px; }
   .deck-stage { grid-template-columns: 84px minmax(0, 1fr); padding-inline: 9px; }
   .deck-caption small { max-width: 72px; }
   .component-palette .palette-items { padding-inline: 6px; }
@@ -2381,3 +2381,15 @@ body:has(.tutorial-bubble[data-step="place-demo"]) .component-palette .deck-stag
 .node-surface.is-node .card-name { margin-inline: auto; }
 .card-name:hover .card-name-edit, .card-name:focus-within .card-name-edit { opacity: 1; pointer-events: auto; }
 @media (hover: none) { .card-name .card-name-edit { opacity: 1; pointer-events: auto; } }
+
+.deck-editor > .deck-delete-button { grid-column: 2 / -1; margin: 0; }
+
+.deck-tool-button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.deck-tool-button:disabled { opacity: .45; cursor: default; }
+
+.deck-current-actions { display: flex; align-items: center; gap: 6px; margin-top: 8px; }
+.deck-current-actions .deck-trash { width: 34px; flex: 0 0 34px; margin-top: 0; }
+.deck-edit-button { display: grid; place-items: center; width: 34px; height: 34px; flex: 0 0 34px; padding: 0; border: 1px solid var(--line); border-radius: 8px; color: var(--ink-faint); background: transparent; cursor: pointer; transition: color 140ms ease, background 140ms ease, border-color 140ms ease; }
+.deck-edit-button:hover { color: var(--accent-strong); border-color: var(--line-strong); background: var(--surface-raised); }
+.deck-edit-button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.deck-edit-button:disabled { opacity: .45; cursor: default; }

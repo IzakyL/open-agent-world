@@ -408,7 +408,7 @@ export const tutorial = {
       if (!baseline || !stepComplete(step, state().session!.refs, baseline, observation())) return;
       return runTask(async signal => {
         const library = useCardLibrary.getState();
-        const id = library.selectedDeckId || library.snapshot!.active_deck_id;
+        const id = library.snapshot!.active_deck_id;
         if (!await library.edit({ action: 'activate_deck', id })) throw new Error(library.error || 'Your deck could not be activated. Retry.');
         ensureActive(signal); library.close(); goNext();
       });

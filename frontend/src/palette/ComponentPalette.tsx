@@ -1,6 +1,6 @@
 import { CardFace, CardStock } from "../components/CardFace";
 import { t, useLocale } from "../i18n";
-import { AlertTriangle, Layers3, LibraryBig, Plus, Trash2, X } from "lucide-react";
+import { AlertTriangle, Layers3, LibraryBig, Pencil, Plus, Save, Trash2, X } from "lucide-react";
 import { useEffect, useRef, useState, type CSSProperties } from "react";
 import { DECK_ICONS, DeckIcon } from "../components/DeckIcon";
 import { DeckHand } from "./DeckHand";
@@ -11,7 +11,7 @@ import { useCardLibrary } from "../state/cardLibrary";
 import { CatalogIcon } from "../components/CatalogIcon";
 import { useEquipmentDrag } from "../state/equipment";
 import { buildCardDraft } from "../state/helpers";
-import { startPalettePointerDrag, usePaletteDropTarget } from "./pointerDrag";
+import { startPalettePointerDrag, usePaletteDropTarget, type PalettePointerItem } from "./pointerDrag";
 
 // Compatibility helpers have no role in ongoing deck population.
 export { defaultDecks, normalizeDecks } from "./legacyDecks";
@@ -19,7 +19,9 @@ export { defaultDecks, normalizeDecks } from "./legacyDecks";
 export function ComponentPalette() {
   useLocale();
   const library = useCardLibrary();
-  const [editingDeck, setEditingDeck] = useState(false);
+  const [editingDeck, setEditingDeck] = useState<"create" | "edit" | null>(null);
+  const deckNameInput = useRef<HTMLInputElement>(null);
+  useEffect(() => { if (editingDeck) deckNameInput.current?.focus({ preventScroll: true }); }, [editingDeck]);
   const [showLegions, setShowLegions] = useState(false);
   const [deckName, setDeckName] = useState("");
   const [deckIcon, setDeckIcon] = useState("folder");
@@ -38,18 +40,29 @@ export function ComponentPalette() {
   const dragged = useRef<{ kind: "node" | "legion"; id: string; sourceDeckId?: string }>();
   const endDrag = () => { dragged.current = undefined; setTrashActive(false); setDropDeck(undefined); useEquipmentDrag.getState().set(); };
   useEffect(() => { void library.refresh(); }, [library.refresh]);
+  useEffect(() => { if (library.open) setShowLegions(false); }, [library.open]);
+  useEffect(() => {
+    const element = root.current;
+    const shell = element?.closest<HTMLElement>('.world-shell');
+    if (!element || !shell || !library.open) return;
+    const measure = () => shell.style.setProperty('--library-deck-space', `${window.innerHeight - element.getBoundingClientRect().top + 16}px`);
+    measure();
+    const observer = new ResizeObserver(measure);
+    observer.observe(element);
+    window.addEventListener('resize', measure);
+    return () => { observer.disconnect(); window.removeEventListener('resize', measure); shell.style.removeProperty('--library-deck-space'); };
+  }, [library.open]);
   const snapshot = library.snapshot;
   const deck = showLegions ? { id: "legion-library", name: t("Legions"), icon: "layers",
     entries: legions.map(item => ({ kind: "legion" as const, id: item.id })) }
     : snapshot?.decks.find(item => item.id === snapshot.active_deck_id);
   useEffect(() => () => cancelPointer.current?.(), [deck?.id]);
-  const moveToDeck = async (id: string) => {
-    const entry = dragged.current;
+  const moveToDeck = async (id: string, entry: PalettePointerItem['entry']) => {
     endDrag();
     if (!entry || entry.sourceDeckId === id || library.busy || removing) return;
     const saved = await library.edit({ action: "move_entry", id, source_deck_id: entry.sourceDeckId,
       entry: { kind: entry.kind, id: entry.id } });
-    if (saved) { setEditingDeck(false); setShowLegions(false); }
+    if (saved) { setEditingDeck(null); setShowLegions(false); }
   };
   const discard = async () => {
     const entry = dragged.current;
@@ -67,53 +80,60 @@ export function ComponentPalette() {
   usePaletteDropTarget(root, {
     accepts: (item, point) => {
       const id = point.target.closest<HTMLElement>("[data-deck-destination]")?.dataset.deckDestination;
-      return !library.busy && !removing && Boolean(point.target.closest(".deck-trash") || (id && id !== item.entry.sourceDeckId));
+      if (point.target.closest('.deck-edit-button')) return false;
+      if (point.target.closest('.deck-trash')) return !library.busy && !removing && Boolean(dragged.current);
+      return !library.busy && !removing && Boolean(id && id !== item.entry.sourceDeckId);
     },
     over: (_item, point) => {
-      setTrashActive(Boolean(point.target.closest(".deck-trash")));
-      setDropDeck(point.target.closest<HTMLElement>("[data-deck-destination]")?.dataset.deckDestination);
+      const overTrash = Boolean(point.target.closest(".deck-trash"));
+      setTrashActive(overTrash);
+      setDropDeck(overTrash ? undefined : point.target.closest<HTMLElement>("[data-deck-destination]")?.dataset.deckDestination);
     },
     leave: () => { setTrashActive(false); setDropDeck(undefined); },
-    drop: (_item, point) => {
+    drop: (item, point) => {
       const id = point.target.closest<HTMLElement>("[data-deck-destination]")?.dataset.deckDestination;
-      if (id) void moveToDeck(id);
+      if (id && !point.target.closest('.deck-trash')) void moveToDeck(id, item.entry);
       else if (point.target.closest(".deck-trash")) void discard();
     },
   });
-  return <aside ref={root} className="component-palette" aria-label={t("Active card deck")} data-tutorial="deck"
+  return <aside ref={root} className={`component-palette ${library.open ? 'is-library-open' : ''}`} aria-label={t("Active card deck")} data-tutorial="deck"
     style={{ "--deck-tab-count": (snapshot?.decks.length ?? 0) + 1, "--deck-hand-count": deck?.entries.length ?? 0 } as CSSProperties}>
     <div className="deck-tabs">
       <div className="deck-tab-scroll" role="tablist" aria-label={t("Card decks")}>
         {snapshot?.decks.map(item => <button type="button" role="tab" key={item.id} data-deck-destination={item.id} aria-selected={item.id === deck?.id}
           aria-controls="active-card-deck" className={`${item.id === deck?.id ? "is-active" : ""} ${dropDeck === item.id ? "is-drop-target" : ""}`} disabled={library.busy}
-          onClick={() => { setEditingDeck(false); setShowLegions(false); void library.edit({ action: "activate_deck", id: item.id }); }}>
+          onClick={() => { setEditingDeck(null); setShowLegions(false); void library.edit({ action: "activate_deck", id: item.id }); }}>
           <span className="deck-tab-summary"><DeckIcon icon={item.icon} /><small>{item.entries.length}</small></span>
           <span className="deck-tab-label">{displayDeckName(item)}</span>
         </button>)}
-        <button type="button" role="tab" aria-selected={showLegions} aria-controls="active-card-deck"
-          className={showLegions ? "is-active" : ""} onClick={() => { setEditingDeck(false); setShowLegions(true); }}>
+        <button type="button" role="tab" disabled={library.open} aria-selected={showLegions} aria-controls="active-card-deck"
+          className={showLegions ? "is-active" : ""} onClick={() => { setEditingDeck(null); setShowLegions(true); }}>
           <span className="deck-tab-summary"><Layers3 size={16} /><small>{legions.length}</small></span>
           <span className="deck-tab-label">{t("Legions")}</span>
         </button>
       </div>
-      <button type="button" className={`deck-add-button ${editingDeck ? "is-active" : ""}`} onClick={() => setEditingDeck(true)} aria-label={t("Create a new card deck")} aria-expanded={editingDeck} title={t("Create a new deck")}><Plus size={16} /></button>
+      <button type="button" className={`deck-tool-button deck-add-button ${editingDeck === "create" ? "is-active" : ""}`} onClick={() => { setDeckName(""); setDeckIcon("folder"); setEditingDeck("create"); }} aria-label={t("Create a new card deck")} aria-expanded={editingDeck === "create"} title={t("Create a new deck")}><Plus size={16} /></button>
     </div>
-    <div className={`deck-stage ${editingDeck ? "is-editor" : ""}`} id="active-card-deck" role="tabpanel">
+    <div className={`deck-stage ${editingDeck ? "is-editor" : ""} ${dropDeck === deck?.id ? 'is-drop-target' : ''}`} data-deck-destination={!showLegions && !editingDeck ? deck?.id : undefined} id="active-card-deck" role="tabpanel">
       {editingDeck ? <form className="deck-editor" onSubmit={async event => {
         event.preventDefault();
         if (!deckName.trim()) return;
-        const saved = await library.edit({ action: "create_deck", name: deckName.trim(), icon: deckIcon });
-        if (saved) { setEditingDeck(false); setShowLegions(false); setDeckName(""); setDeckIcon("folder"); }
+        const saved = await library.edit({ action: editingDeck === "edit" ? "update_deck" : "create_deck", id: editingDeck === "edit" ? deck?.id : undefined, name: deckName.trim(), icon: deckIcon });
+        if (saved) { setEditingDeck(null); setShowLegions(false); setDeckName(""); setDeckIcon("folder"); }
       }}>
-        <div className="deck-editor-heading"><div><strong>{t("New deck")}</strong><small>{t("Choose a name and icon.")}</small></div><button type="button" aria-label={t("Cancel creating deck")} onClick={() => setEditingDeck(false)}><X size={15} /></button></div>
-        <label className="deck-name-field"><span>{t("Deck name")}</span><input autoFocus aria-label={t("Deck name")} maxLength={120} value={deckName} onChange={event => setDeckName(event.target.value)} required /></label>
+        <div className="deck-editor-heading"><div><strong>{t(editingDeck === "edit" ? "Edit deck" : "New deck")}</strong><small>{t("Choose a name and icon.")}</small></div><button type="button" aria-label={t(editingDeck === "edit" ? "Cancel" : "Cancel creating deck")} onClick={() => setEditingDeck(null)}><X size={15} /></button></div>
+        <label className="deck-name-field"><span>{t("Deck name")}</span><input ref={deckNameInput} aria-label={t("Deck name")} maxLength={120} value={deckName} onChange={event => setDeckName(event.target.value)} required /></label>
         <div className="deck-quick-create"><label><DeckIcon icon={deckIcon} /><select aria-label={t("Deck icon")} value={deckIcon} onChange={event => setDeckIcon(event.target.value)}>{Object.keys(DECK_ICONS).map(icon => <option key={icon}>{icon}</option>)}</select></label>
-          <button className="deck-create-button" disabled={library.busy || !deckName.trim()}><Plus size={14} /> {t("Create deck")}</button></div>
+          <button className="deck-create-button" disabled={library.busy || !deckName.trim()}>{editingDeck === "edit" ? <Save size={14} /> : <Plus size={14} />} {t(editingDeck === "edit" ? "Save" : "Create deck")}</button></div>
+        {editingDeck === "edit" && <button type="button" className="deck-delete-button" disabled={library.busy || !deck || (snapshot?.decks.length ?? 0) < 2} title={t("Deleting a deck keeps its cards in your collection.")} onClick={async () => { if (deck && await library.edit({ action: "delete_deck", id: deck.id })) setEditingDeck(null); }}><Trash2 size={12} />{t("Delete deck")}</button>}
         {library.error ? <small role="alert">{library.error}</small> : null}
       </form> : <>
-      <div className="deck-caption"><span><DeckIcon icon={deck?.icon} size={13} /> {deck ? displayDeckName(deck) : t("Your deck")}</span><small>{t("Drag into the world")}</small>
+      <div className="deck-caption"><span><DeckIcon icon={deck?.icon} size={13} /> {deck ? displayDeckName(deck) : t("Your deck")}</span><small>{t(library.open ? "Drop cards here to add" : "Drag into the world")}</small>
+        <div className="deck-current-actions">
         <div className={`deck-trash ${trashActive ? "is-active" : ""}`} role="region" aria-label={t("Discard card")}
-          title={showLegions ? t("Drop to delete saved Legion") : t("Drop to remove from this deck")} aria-busy={removing}><Trash2 size={20} /></div>
+          title={showLegions ? t("Drop to delete saved Legion") : t("Drop to remove from this deck")} aria-busy={removing}><Trash2 size={18} /><span className="deck-trash-hint" aria-hidden="true">{showLegions ? t("Drop to delete saved Legion") : t("Drop to remove from this deck")}</span></div>
+        {!showLegions && deck && <button type="button" className="deck-edit-button" disabled={library.busy} aria-label={t("Edit deck")} aria-controls="active-card-deck" title={t("Edit deck")} onClick={() => { setDeckName(deck.name); setDeckIcon(deck.icon); setEditingDeck("edit"); }}><Pencil size={16} /></button>}
+        </div>
       </div>
       {library.error ? <button className="deck-library-error" onClick={library.show}><AlertTriangle size={13} /> {t("Library needs attention")}</button> : null}
       {showLegions && legionError ? <small role="alert">{legionError}</small> : null}
@@ -141,12 +161,13 @@ export function ComponentPalette() {
                     });
                   },
                   end: endDrag,
+                  discardTarget: () => !useCardLibrary.getState().busy && !removing ? root.current?.querySelector<HTMLElement>('.deck-trash') ?? null : null,
                 });
             }}
             onClick={event => {
               if (dragged.current) { event.preventDefault(); return; }
               if (suppressClick.current && event.detail !== 0) { suppressClick.current = false; event.preventDefault(); return; }
-              if (available) entry.kind === "node" ? void createCard(entry.id) : void instantiateLegion(entry.id);
+              if (available && !library.open) entry.kind === "node" ? void createCard(entry.id) : void instantiateLegion(entry.id);
             }}
             aria-label={available ? t("Place {v0}", { v0: String(label) }) : t("{v0} unavailable", { v0: String(label) })} title={available ? (definition ? t(definition.description) : undefined) ?? t("Deploy saved formation") : t("Content unavailable. Inspect it in the Library.")}>
             <CardStock style={{ "--collection-color": definition?.color ?? "#78967b" } as CSSProperties} className={`palette-item palette-item--${entry.kind === "node" ? entry.id : "legion"}`} data-deck-visual>

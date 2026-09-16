@@ -31,7 +31,7 @@ export const STEPS: readonly TutorialStep[] = [
   { id: 'deck', chapter: 1, dialogue: 'Let’s prepare your hand together. Open the Library here to find your first pack.', target: 'library', expects: 'library-open', action: 'library', button: 'Open Library' },
   { id: 'starter-pack', chapter: 1, dialogue: 'This pack contains the essentials. Click it to tear it open and collect its cards.', target: 'library-pack', expects: 'pack-open' },
   { id: 'starter-cards', chapter: 1, dialogue: 'Your cards are collected! Click the opened wrapper to browse them.', target: 'library-pack', expects: 'library-cards' },
-  { id: 'deck-build', chapter: 1, dialogue: 'Drag Text, Agent, Conversation and Sandbox into a deck on the right. You can create a new deck there, too.', hint: 'You can also click Add to… and choose a destination.', target: 'library-decks', expects: 'deck-ready', review: true, button: 'Use this deck' },
+  { id: 'deck-build', chapter: 1, dialogue: 'Drag Text, Agent, Conversation and Sandbox into your deck below. You can create a new deck there, too.', hint: 'You can also click Add to current deck. Switch decks using the tabs below.', target: 'library-decks', expects: 'deck-ready', review: true, button: 'Use this deck' },
   { id: 'place-demo', result: { target: 'demo', dialogue: 'The Text card is here. Take a moment to look; when you are ready, we will place yours.' }, chapter: 1, dialogue: 'Watch this Text card travel from the deck into the world. This one is my temporary prop.', target: 'deck', action: 'place', button: 'Show me' },
   { id: 'place', chapter: 1, dialogue: 'Your turn! Drag a Text card from the deck onto a clear patch. Clicking the deck card also places it.', target: 'deck', expects: 'place', role: 'practice' },
   { id: 'move', chapter: 1, dialogue: 'Give your card a new home. Drag its title or an empty part of its frame.', target: 'practice', expects: 'move', role: 'practice' },
@@ -79,7 +79,7 @@ export interface Observation {
   viewport: FlowViewportState;
   settled: boolean;
   settingsOpen?: boolean;
-  library?: { open: boolean; tab: string; snapshot: LibrarySnapshot | null; selectedDeckId: string };
+  library?: { open: boolean; tab: string; snapshot: LibrarySnapshot | null };
   deleted: string[];
 }
 export interface Baseline { position?: { x: number; y: number }; viewport: FlowViewportState; config?: string }
@@ -94,7 +94,7 @@ export function stepComplete(step: TutorialStep, refs: Partial<Record<Role, stri
     case 'library-cards': return Boolean(state.library?.open && state.library.tab === 'cards');
     case 'deck-ready': {
       const library = state.library, snapshot = library?.snapshot;
-      const deck = snapshot?.decks.find(item => item.id === (library?.selectedDeckId || snapshot.active_deck_id));
+      const deck = snapshot?.decks.find(item => item.id === snapshot.active_deck_id);
       return Boolean(library?.open && library.tab === 'cards' && deck && STARTER_CARDS.every(id => snapshot?.available_card_ids.includes(id) && deck.entries.some(entry => entry.kind === 'node' && entry.id === id)));
     }
     case 'settings-open': return Boolean(state.settingsOpen);

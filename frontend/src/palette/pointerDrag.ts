@@ -2,6 +2,7 @@ import { useLayoutEffect, useRef, type RefObject } from "react";
 import { tutorialAllowsDrop } from "../onboarding/interactionGuard";
 import type { PaletteDragPayload } from "./dragPayload";
 import "./pointerDrag.css";
+import { createDiscardPreview, discardProximity } from './discardPreview';
 
 export interface PalettePointerItem {
   payload?: PaletteDragPayload;
@@ -41,7 +42,7 @@ let cancelCurrent: (() => void) | undefined;
 
 /** Only this disposable visual moves. No world node or React position state exists yet. */
 export function startPalettePointerDrag(event: PointerEvent, source: HTMLElement, item: PalettePointerItem,
-  callbacks: { start(): void; end(): void }): () => void {
+  callbacks: { start(): void; end(): void; discardTarget?(): HTMLElement | null }): () => void {
   if (event.button !== 0 || !event.isPrimary) return () => {};
   cancelCurrent?.();
   const pointerId = event.pointerId;
@@ -49,6 +50,13 @@ export function startPalettePointerDrag(event: PointerEvent, source: HTMLElement
   let x = origin.x, y = origin.y;
   let offsetX = 0, offsetY = 0;
   let preview: HTMLElement | undefined;
+  let shred: ((progress: number) => void) | undefined;
+  let discardTarget: HTMLElement | null = null;
+  const clearDiscard = () => {
+    discardTarget?.removeAttribute('data-discard-near');
+    discardTarget?.style.removeProperty('--discard-progress');
+    discardTarget = null;
+  };
   let active = false, ended = false, frame = 0;
   let hovered: DropTarget | undefined;
   const resolve = () => {
@@ -65,7 +73,17 @@ export function startPalettePointerDrag(event: PointerEvent, source: HTMLElement
     const hit = resolve();
     if (hovered !== hit?.destination) { hovered?.leave?.(); hovered = hit?.destination; }
     hovered?.over?.(item, hit!.point);
-    // Hit-test reads happen before the only per-frame visual write.
+    const candidate = callbacks.discardTarget?.() ?? null;
+    const box = candidate?.getBoundingClientRect();
+    const visible = candidate && box && box.width > 0 && box.height > 0 && tutorialAllowsDrop(candidate)
+      && candidate.contains(document.elementFromPoint(box.left + box.width / 2, box.top + box.height / 2));
+    if (discardTarget !== (visible ? candidate : null)) clearDiscard();
+    discardTarget = visible ? candidate : null;
+    const progress = discardTarget && box ? discardProximity(x, y, box) : 0;
+    shred?.(progress);
+    discardTarget?.toggleAttribute('data-discard-near', progress > 0);
+    discardTarget?.style.setProperty('--discard-progress', String(progress));
+    // The source card remains intact; only this disposable preview moves.
     if (preview) preview.style.transform = `translate3d(${x - offsetX}px, ${y - offsetY}px, 0)`;
   };
   const finish = (drop = false) => {
@@ -82,6 +100,7 @@ export function startPalettePointerDrag(event: PointerEvent, source: HTMLElement
     source.removeEventListener("lostpointercapture", cancelPointer);
     if (source.hasPointerCapture(pointerId)) source.releasePointerCapture(pointerId);
     preview?.remove();
+    clearDiscard();
     document.body.classList.remove("is-palette-dragging");
     hovered?.leave?.();
     if (cancelCurrent === cancel) cancelCurrent = undefined;
@@ -111,6 +130,7 @@ export function startPalettePointerDrag(event: PointerEvent, source: HTMLElement
       copy.style.transform = "none";
       copy.style.width = `${width}px`; copy.style.height = `${height}px`;
       preview.append(copy);
+      if (callbacks.discardTarget) shred = createDiscardPreview(preview, copy);
       document.body.append(preview);
       document.body.classList.add("is-palette-dragging");
       active = true;

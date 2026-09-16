@@ -298,7 +298,7 @@ export function Onboarding() {
         const pack = starterPack(library.snapshot);
         return pack ? document.querySelector<HTMLElement>(`[data-pack-id="${CSS.escape(pack.definition.id)}"]`) : null;
       }
-      return document.querySelector<HTMLElement>('[data-tutorial="library-decks"]') ?? document.querySelector<HTMLElement>('[data-tutorial="library-tab-cards"]');
+      return document.querySelector<HTMLElement>('[data-tutorial="deck"]') ?? document.querySelector<HTMLElement>('[data-tutorial="library-tab-cards"]');
     }
     if (target === 'zoom-controls') return document.querySelector<HTMLElement>('.world-canvas .world-controls');
     if (target === 'deck' || target === 'tools' || target === 'settings' || target.startsWith('model-')) {
@@ -349,7 +349,7 @@ export function Onboarding() {
         ? [...document.querySelectorAll<HTMLElement>(`[data-minister-for="${CSS.escape(s.session.refs.minister)}"], [data-tutorial-card-id="${CSS.escape(s.session.refs.minister)}"]`)]
           .filter(control => !control.hidden).map((element, i) => ({ id: `minister-control-${i}`, element })) : [];
       const library = useCardLibrary.getState();
-      const deck = library.snapshot?.decks.find(item => item.id === (library.selectedDeckId || library.snapshot?.active_deck_id));
+      const deck = library.snapshot?.decks.find(item => item.id === library.snapshot?.active_deck_id);
       const candidates = s.view === 'active' && step.id === 'deck-build' && library.open && library.tab === 'cards'
         ? STARTER_CARDS.filter(id => !deck?.entries.some(entry => entry.kind === 'node' && entry.id === id)).flatMap(id => {
           const card = document.querySelector<HTMLElement>(`[data-library-card="${id}"]`);
@@ -383,7 +383,7 @@ export function Onboarding() {
         }
       }
       const source = visible.find(box => candidates.some(item => item.id === box.id));
-      const destination = document.querySelector<HTMLElement>('.library-deck-destination.is-selected .library-deck-destination-select');
+      const destination = document.querySelector<HTMLElement>('.component-palette .deck-stage[data-deck-destination]');
       const end = destination ? visibleBounds(destination) : undefined;
       if (deckArrow.current) {
         const show = source && end && end.width > 0 && end.height > 0;
@@ -442,7 +442,7 @@ export function Onboarding() {
         const bubbleHeight = guide.current?.querySelector<HTMLElement>('.tutorial-bubble')?.offsetHeight ?? 180;
         const obstacles = [...document.querySelectorAll<HTMLElement>(target.startsWith('model-')
           ? '.settings-dialog input, .settings-dialog select, .settings-dialog button, .settings-dialog .field-label'
-          : libraryOpen ? '.library-tabs button, .pack-touch-area, .library-card-inspect, .library-card-add, .library-deck-rail' : '.world-canvas .react-flow__node, .top-bar, .component-palette, .map-tools, .world-controls, .react-flow__minimap, .minister-presence:not([hidden]), .minister-panel, .toast-stack, .edge-inspector, .connection-dialog')]
+          : libraryOpen ? '.library-tabs button, .pack-touch-area, .library-card-inspect, .library-card-add, .component-palette' : '.world-canvas .react-flow__node, .top-bar, .component-palette, .map-tools, .world-controls, .react-flow__minimap, .minister-presence:not([hidden]), .minister-panel, .toast-stack, .edge-inspector, .connection-dialog')]
           .map(element => element.getBoundingClientRect()).filter(box => box.width > 0 && box.height > 0);
         const key = source ? source.id : chooser ? 'capability-chooser' : participants.length ? participants.map(item => item.id).join(':') : target;
         const placed = placeGuide({ x, y }, rect, { width: bubbleWidth, height: bubbleHeight }, { width, height }, obstacles, mascotOffset, anchor.current?.key === key ? anchor.current : undefined);
@@ -488,7 +488,7 @@ export function Onboarding() {
     : needsModelsTab ? 'Click Models here.'
     : needsConnection ? 'Add or select a connection first.' : reviewing ? step.result!.dialogue : step.dialogue;
   const missing = role && step.expects !== 'place' && step.expects !== 'delete' && !cards.some(card => card.id === s.session?.refs[role]);
-  return createPortal(<div className={`onboarding-layer ${welcome ? 'is-welcome' : 'is-tutorial'} ${settingsStep ? 'is-settings-guide' : ''} ${libraryOpen ? 'is-library-guide' : ''} ${step.participants ? 'is-interaction-guide' : ''}`}>
+  return createPortal(<div hidden={welcome && libraryOpen} className={`onboarding-layer ${welcome ? 'is-welcome' : 'is-tutorial'} ${settingsStep ? 'is-settings-guide' : ''} ${libraryOpen && !welcome ? 'is-library-guide' : ''} ${step.participants ? 'is-interaction-guide' : ''}`}>
     <Spotlight ref={spotlight} />
     <div ref={placementArrow} className="tutorial-placement-arrow" aria-hidden="true" style={{ display: 'none' }}>
       <svg viewBox="0 0 52 72"><path d="M 18 4 H 34 V 40 H 47 L 26 65 L 5 40 H 18 Z" /></svg>
@@ -541,5 +541,5 @@ export function Onboarding() {
       </div>}
       <div className="tutorial-mascot"><div className="tutorial-portal" aria-hidden="true" /><div className="tutorial-traveler"><OawGuide motion={motion} inLogo={welcome} movementTarget={guide} celebration={s.celebration} /></div></div>
     </div>
-  </div>, libraryOpen ? document.querySelector('.card-library-modal') ?? document.body : document.body);
+  </div>, document.body);
 }

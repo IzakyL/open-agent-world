@@ -40,7 +40,7 @@ export function tutorialAllows(target: Element, scope: InteractionScope, kind = 
     const type = step.role === 'ministerRole' ? 'core.minister-role' : step.role === 'agent' ? 'agent' : step.role === 'conversation' ? 'conversation' : step.role === 'sandbox' ? 'sandbox' : 'text';
     return within(`[data-palette-card="${type}"]`) || (kind === 'drop' && isCanvas);
   }
-  if (step.id === 'deck-build') return within('.library-deck-rail, .library-card[data-tutorial-highlight], .library-card-add-menu');
+  if (step.id === 'deck-build') return within('.component-palette, .library-card[data-tutorial-highlight]');
   if (step.target.startsWith('model-') || step.id === 'model-settings') {
     if (within('[data-tutorial="settings"], [data-tutorial="models-tab"]')) return true;
     // The close control remains a recovery route; the guide then points to Settings.

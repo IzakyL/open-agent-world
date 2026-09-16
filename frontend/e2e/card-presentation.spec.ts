@@ -18,7 +18,6 @@ test('shared collection faces and portrait canvas previews', async ({ page, requ
   await inspect.click();
   await page.screenshot({ path: '../.tmp/card-presentation-library.png' });
   await library.getByRole('button', { name: 'Add Agent to deck', exact: true }).click();
-  await library.locator('.library-deck-destination.is-selected > button').click();
   await library.getByRole('button', { name: 'Close Library' }).click();
   const tray = page.getByRole('complementary', { name: 'Active card deck' });
   await tray.hover();

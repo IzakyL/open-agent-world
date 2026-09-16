@@ -6620,5 +6620,33 @@
   "Codex Agents without a custom project folder use the shared codex-workspace subfolder here. Changes apply on their next run; existing files stay in the old location.": [
     "Codex Agents without a custom project folder use the shared codex-workspace subfolder here. Changes apply on their next run; existing files stay in the old location.",
     "未指定项目目录的 Codex Agent 共用这里的 codex-workspace 子文件夹。更改后下次运行生效，已有文件保留在原位置。"
+  ],
+  "Drop cards here to add": [
+    "Drop cards here to add",
+    "将卡片拖到这里添加"
+  ],
+  "Add to current deck": [
+    "Add to current deck",
+    "添加到当前卡组"
+  ],
+  "Drag cards into your deck below": [
+    "Drag cards into your deck below",
+    "将卡片拖入下方卡组"
+  ],
+  "Drag Text, Agent, Conversation and Sandbox into your deck below. You can create a new deck there, too.": [
+    "Drag Text, Agent, Conversation and Sandbox into your deck below. You can create a new deck there, too.",
+    "将 Text、Agent、Conversation 和 Sandbox 拖入下方卡组。也可以在那里新建卡组。"
+  ],
+  "You can also click Add to current deck. Switch decks using the tabs below.": [
+    "You can also click Add to current deck. Switch decks using the tabs below.",
+    "也可以点击“添加到当前卡组”，通过下方标签切换卡组。"
+  ],
+  "Edit deck": [
+    "Edit deck",
+    "编辑卡组"
+  ],
+  "Deleting a deck keeps its cards in your collection.": [
+    "Deleting a deck keeps its cards in your collection.",
+    "删除卡组会保留卡片库中的卡片。"
   ]
 }

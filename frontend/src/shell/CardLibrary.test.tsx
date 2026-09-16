@@ -2,6 +2,7 @@
 import React from "react";
 import { act, cleanup, fireEvent, render, screen, within } from "@testing-library/react";
 import { afterEach, expect, it, vi } from "vitest";
+import { ComponentPalette } from "../palette/ComponentPalette";
 import { CardLibrary } from "./CardLibrary";
 import { useCardLibrary, type LibrarySnapshot } from "../state/cardLibrary";
 import { TEST_CATALOG } from "../state/catalog.fixture";
@@ -21,8 +22,8 @@ function snapshot(revision = 1): LibrarySnapshot {
 }
 
 afterEach(() => {
-  cleanup(); vi.restoreAllMocks();
-  useCardLibrary.setState({ snapshot: null, busy: false, open: false, tab: "packs", selectedDeckId: "", error: "", refresh: originalRefresh });
+  cleanup(); vi.restoreAllMocks(); vi.unstubAllGlobals();
+  useCardLibrary.setState({ snapshot: null, busy: false, open: false, tab: "packs", error: "", refresh: originalRefresh });
 });
 
 it("browses a large collection in bounded pages and resets pagination for search and filters", () => {
@@ -174,37 +175,43 @@ it("does not replace a successful edit with an older read", async () => {
   expect(useCardLibrary.getState().snapshot?.revision).toBe(9);
 });
 
-it("asks for a destination before adding and supports dropping into a different deck without duplicates", async () => {
+it("adds to the visible deck and accepts library pointer drags on the hand and other tabs", async () => {
+  vi.stubGlobal('matchMedia', () => ({ matches: true, addEventListener() {}, removeEventListener() {} }));
+  vi.stubGlobal('PointerEvent', class extends MouseEvent { pointerId = 1; isPrimary = true; });
+  let hit: Element;
+  Object.defineProperty(document, 'elementFromPoint', { configurable: true, value: () => hit });
   const state = packSnapshot();
   state.decks.push({ id: 'research', name: 'Research', icon: 'layers', entries: [] });
   const edit = vi.spyOn(worldApi, 'editCardLibrary').mockImplementation(async request => {
     const current = useCardLibrary.getState().snapshot!;
-    return { ...current, revision: current.revision + 1, decks: current.decks.map(deck => deck.id === request.id ? { ...deck, entries: request.entries ?? deck.entries } : deck) };
+    return { ...current, revision: current.revision + 1,
+      active_deck_id: request.action === 'move_entry' ? request.id! : current.active_deck_id,
+      decks: current.decks.map(deck => deck.id === request.id ? { ...deck,
+        entries: request.entry && !deck.entries.some(entry => entry.id === request.entry!.id)
+          ? [...deck.entries, request.entry] : request.entries ?? deck.entries } : deck) };
   });
   openCards(state);
+  render(<ComponentPalette />);
+  expect(screen.queryByRole('complementary', { name: 'Deck destinations' })).toBeNull();
   fireEvent.change(screen.getByLabelText('Source pack'), { target: { value: 'pack:alpha' } });
-  fireEvent.click(screen.getByRole('button', { name: 'Add Review toolbox to deck' }));
-  expect(edit).not.toHaveBeenCalled();
-  const rail = screen.getByRole('complementary', { name: 'Deck destinations' });
-  await act(async () => fireEvent.click(within(rail).getByRole('button', { name: /Research/ })));
-  expect(edit).toHaveBeenCalledWith(expect.objectContaining({ id: 'research', entries: [{ kind: 'node', id: 'card.1' }] }));
-  expect(useCardLibrary.getState().snapshot!.decks[0].entries).toEqual([]);
-  const transfer = { setData: vi.fn(), effectAllowed: '', dropEffect: '' };
+  await act(async () => fireEvent.click(screen.getByRole('button', { name: 'Add Review toolbox to deck' })));
+  expect(edit).toHaveBeenCalledWith(expect.objectContaining({ action: 'move_entry', id: 'test', entry: { kind: 'node', id: 'card.1' } }));
   const source = screen.getByRole('button', { name: 'Inspect Review toolbox' });
-  const card = source.closest('.library-card')!;
-  expect(source.querySelector('.card-stock--compact')).toBeTruthy();
-  expect(card.querySelector('.card-stock')?.contains(screen.getByRole('button', { name: 'Remove Review toolbox from deck' }))).toBe(false);
-  expect(card.classList.contains('is-in-deck')).toBe(true);
-  fireEvent.change(screen.getByLabelText('Selected deck'), { target: { value: 'test' } });
-  expect(card.classList.contains('is-in-deck')).toBe(false);
-  fireEvent.dragStart(source, { dataTransfer: transfer });
-  const destination = rail.querySelector('[data-deck-id="test"]')!;
-  await act(async () => fireEvent.drop(destination, { dataTransfer: transfer }));
-  expect(useCardLibrary.getState().snapshot!.decks[0].entries).toEqual([{ kind: 'node', id: 'card.1' }]);
-  expect(card.classList.contains('is-in-deck')).toBe(true);
+  source.setPointerCapture = vi.fn(); source.hasPointerCapture = () => false;
+  const drag = async (target: Element) => {
+    fireEvent.pointerDown(source, { button: 0, buttons: 1, clientX: 10, clientY: 10 });
+    hit = target;
+    fireEvent.pointerMove(window, { buttons: 1, clientX: 40, clientY: 40 });
+    await act(async () => fireEvent.pointerUp(window, { button: 0, clientX: 40, clientY: 40 }));
+  };
+  await drag(screen.getByRole('tab', { name: /Research/ }));
+  expect(useCardLibrary.getState().snapshot!.active_deck_id).toBe('research');
+  expect(useCardLibrary.getState().snapshot!.decks.every(deck => deck.entries.length === 1)).toBe(true);
+  await drag(screen.getByRole('tabpanel'));
+  expect(useCardLibrary.getState().snapshot!.decks[1].entries).toHaveLength(1);
   const calls = edit.mock.calls.length;
-  fireEvent.dragStart(source, { dataTransfer: transfer });
-  await act(async () => fireEvent.drop(destination, { dataTransfer: transfer }));
+  await drag(screen.getByRole('region', { name: 'Discard card' }));
   expect(edit).toHaveBeenCalledTimes(calls);
-  expect(useCardLibrary.getState().snapshot!.decks[1].entries).toEqual([{ kind: 'node', id: 'card.1' }]);
+  fireEvent.keyDown(window, { key: 'Escape' });
+  expect(useCardLibrary.getState().open).toBe(false);
 });

@@ -21,7 +21,7 @@ export function MapAtlas({ active, onActiveChange, glueActive, onGlueChange }: {
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
       const target = event.target instanceof HTMLElement ? event.target : null;
-      if (event.defaultPrevented || event.isComposing || event.repeat || event.ctrlKey || event.metaKey || event.altKey || event.shiftKey
+      if (event.defaultPrevented || document.querySelector('.card-library-modal[open]') || event.isComposing || event.repeat || event.ctrlKey || event.metaKey || event.altKey || event.shiftKey
         || target?.isContentEditable || target?.closest('input, textarea, select, [role="textbox"], .xterm, [role="dialog"]')
         || useNodeSurfaceStore.getState().dragging) return;
       if (event.key === 'Escape' && (active || glueActive)) {

@@ -22,7 +22,7 @@ let detach: (() => void) | undefined;
 
 beforeEach(() => {
   vi.restoreAllMocks();
-  useCardLibrary.setState({ snapshot: null, open: false, busy: false, tab: "packs", selectedDeckId: "" });
+  useCardLibrary.setState({ snapshot: null, open: false, busy: false, tab: "packs" });
   useTutorialStore.setState({ status: 'new', view: 'hidden', session: undefined, error: undefined, busy: false, ready: false });
   useWorldStore.setState({ cards: [], edges: [], catalog: TEST_CATALOG, syncState: 'online', stressCards: [], viewport,
     modelCatalog: { revision: 0, connections: [], default_model: null }, settingsOpen: false,
@@ -56,18 +56,18 @@ describe('tutorial progression', () => {
     const entries = ['text', 'agent', 'conversation', 'sandbox'].map(id => ({ kind: 'node' as const, id }));
     const library: LibrarySnapshot = { schema_version: 1, revision: 1, migration_pending: false, plugins: {}, packs: {}, card_definitions: {}, collection: {},
       decks: [{ id: 'starter', name: 'My deck', icon: 'folder', entries: [] }, { id: 'chosen', name: 'Research', icon: 'layers', entries: entries.slice(0, 3) }],
-      active_deck_id: 'starter', available_card_ids: entries.map(entry => entry.id), available_pack_ids: [] };
+      active_deck_id: 'chosen', available_card_ids: entries.map(entry => entry.id), available_pack_ids: [] };
     useTutorialStore.setState({ status: 'started', view: 'active', session: { id: 'deck', step: 'deck-build', initialIds: [], refs: {}, demos: [] } });
-    useCardLibrary.setState({ snapshot: library, open: true, tab: 'cards', selectedDeckId: 'chosen' });
+    useCardLibrary.setState({ snapshot: library, open: true, tab: 'cards' });
     tutorial.resume(); detach = tutorial.attach(bridge);
     await tutorial.continue();
     expect(useTutorialStore.getState().session?.step).toBe('deck-build');
     const complete = { ...library, decks: library.decks.map(deck => deck.id === 'chosen' ? { ...deck, entries } : deck) };
     useCardLibrary.setState({ snapshot: complete });
     expect(useTutorialStore.getState().ready).toBe(true);
-    useCardLibrary.setState({ selectedDeckId: 'starter' });
+    useCardLibrary.setState({ snapshot: { ...complete, active_deck_id: 'starter' } });
     expect(useTutorialStore.getState().ready).toBe(false);
-    useCardLibrary.setState({ selectedDeckId: 'chosen' });
+    useCardLibrary.setState({ snapshot: complete });
     const edit = vi.spyOn(worldApi, 'editCardLibrary').mockResolvedValue({ ...complete, revision: 2, active_deck_id: 'chosen' });
     await tutorial.continue();
     expect(edit).toHaveBeenCalledWith(expect.objectContaining({ action: 'activate_deck', id: 'chosen' }));

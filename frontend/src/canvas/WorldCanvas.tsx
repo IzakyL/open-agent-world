@@ -474,7 +474,7 @@ export function WorldCanvas() {
     const onKeyDown = (event: KeyboardEvent) => {
       const target = event.target as HTMLElement | null;
       // Modal workspaces and embedded readers own their keyboard shortcuts.
-      if (event.defaultPrevented || document.querySelector("dialog:modal") || target?.closest(".library-reader, input, textarea, select, [contenteditable='true']")) return;
+      if (event.defaultPrevented || document.querySelector("dialog:modal, .card-library-modal[open]") || target?.closest(".library-reader, input, textarea, select, [contenteditable='true']")) return;
       const modifier = event.ctrlKey || event.metaKey;
       const key = event.key.toLowerCase();
       if (modifier && !event.altKey && !event.shiftKey && ["c", "x", "v"].includes(key)) {

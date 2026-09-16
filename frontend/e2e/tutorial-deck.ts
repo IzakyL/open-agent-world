@@ -11,11 +11,12 @@ export async function prepareTutorialDeck(page: Page, verifyNarrow = false) {
   await expect(page.locator('.tutorial-bubble')).toHaveAttribute('data-step', 'deck-build');
   const useDeck = page.getByRole('button', { name: 'Use this deck', exact: true });
   // Choose a new destination explicitly, leaving the original hand untouched.
-  const rail = page.getByRole('complementary', { name: 'Deck destinations' });
-  await rail.getByRole('textbox', { name: 'New deck name' }).fill('My first workflow');
+  const rail = page.getByRole('complementary', { name: 'Active card deck' });
+  await rail.getByRole('button', { name: 'Create a new card deck' }).click();
+  await rail.getByRole('textbox', { name: 'Deck name' }).fill('My first workflow');
   await rail.getByRole('button', { name: 'Create deck', exact: true }).click();
   await expect(useDeck).toBeDisabled();
-  const destination = rail.locator('.library-deck-destination.is-selected');
+  const destination = rail.locator('.deck-stage');
   await expect(destination).toBeVisible();
   const originalViewport = page.viewportSize()!;
   await expect(page.locator('.tutorial-deck-arrow-path')).toBeVisible();
@@ -36,8 +37,13 @@ export async function prepareTutorialDeck(page: Page, verifyNarrow = false) {
         * Math.max(0, Math.min(cardBox.y + cardBox.height, bubbleBox.y + bubbleBox.height) - Math.max(cardBox.y, bubbleBox.y))).toBe(0);
       await page.screenshot({ path: 'test-results/tutorial-deck-guidance-720.png' });
     }
-    await page.locator(`[data-library-card="${id}"]`).dragTo(destination.locator('.library-deck-destination-select'));
-    await expect(destination.locator('li')).toHaveCount(['text', 'agent', 'conversation', 'sandbox'].indexOf(id) + 1);
+    const sourceBox = (await page.locator(`[data-library-card="${id}"]`).boundingBox())!;
+    const targetBox = (await destination.boundingBox())!;
+    await page.mouse.move(sourceBox.x + sourceBox.width / 2, sourceBox.y + sourceBox.height / 2);
+    await page.mouse.down();
+    await page.mouse.move(targetBox.x + targetBox.width / 2, targetBox.y + targetBox.height / 2, { steps: 12 });
+    await page.mouse.up();
+    await expect(destination.locator('[data-palette-card]')).toHaveCount(['text', 'agent', 'conversation', 'sandbox'].indexOf(id) + 1);
     await expect(page.locator(`.library-card[data-tutorial-highlight]:has([data-library-card="${id}"])`)).toHaveCount(0);
   }
   const savedLibrary = await (await page.request.get('/api/card-library')).json();
