@@ -249,6 +249,15 @@ test("sandbox window keeps files, preview and terminal together with separate se
   await window.getByRole("button", { name: "Close workspace" }).click();
   await expect(panel).toHaveAttribute("data-surface-level", "preview");
   await panel.locator(".card-kind-icon").click();
+  await expect(panel).toHaveAttribute("data-surface-level", "workspace");
+  // Let this card finish expanding before Playwright scrolls a toolbar control
+  // into view; scrolling during the size transition can shift its click point.
+  await panel.evaluate(async element => {
+    const node = element.closest(".react-flow__node")!;
+    await Promise.all(node.getAnimations({ subtree: true })
+      .filter(animation => animation.effect?.getTiming().iterations !== Infinity)
+      .map(animation => animation.finished.catch(() => {})));
+  });
   await window.getByRole("tab", { name: "Settings", exact: true }).click();
   await expect(window.getByRole("tab", { name: "Settings", exact: true })).toHaveAttribute("aria-selected", "true");
   await window.getByRole("tab", { name: "Workspace", exact: true }).click();

@@ -64,9 +64,10 @@ def preset_record(preset_id: str, registry: PluginRegistry) -> LegionRecord:
     # Layout references use the same portable keys as the formation itself.
     if preset_id == "coding":
         nodes[0].config["workspace_layout"] = {
-            "version": 1, "root": {"kind": "split", "axis": "horizontal", "ratio": 0.35,
-                "first": {"kind": "pane", "card_id": "conversation"},
-                "second": {"kind": "pane", "card_id": "sandbox"}},
+            "version": 2, "root": {"kind": "split", "axis": "horizontal", "ratio": 0.35,
+                "first": {"kind": "pane", "view": {"card_id": "conversation"}},
+                "second": {"kind": "pane", "view": {"card_id": "sandbox"}}},
+            "hidden_sections": [],
         }
     now = datetime(2026, 9, 16, tzinfo=UTC)
     return LegionRecord(

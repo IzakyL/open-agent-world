@@ -15,11 +15,22 @@ import { useWorldStore } from "../state/worldStore";
 import { useOpenFiles } from "../state/openFiles";
 import type { ConversationAgent, ConversationAttachment, ConversationMessage, ConversationSession, WorldCard } from "../types/world";
 import { reportInteraction } from '../state/interactions';
+import { WorkspaceSection, useWorkspaceSections } from '../workspace/WorkspaceSection';
+import './conversationWorkspace.css';
 
 type OutgoingMessage = { message: ConversationMessage; status: "sending" | "confirmed" | "unconfirmed"; error?: string };
 
 export function ConversationWorkspace({ card }: { card: WorldCard }) {
   useLocale();
+  const sections = useWorkspaceSections();
+  const sessionsInline = sections.isInline("sessions");
+  const conversationInline = sections.isInline("conversation");
+  const participantsInline = sections.isInline("participants");
+  const columns = [
+    sessionsInline && (conversationInline ? "minmax(0, min(24%, 210px))" : "minmax(0, 1fr)"),
+    conversationInline && "minmax(0, 1fr)",
+    participantsInline && (conversationInline ? "minmax(0, min(24%, 220px))" : "minmax(0, 1fr)"),
+  ].filter(Boolean).join(" ");
   const runtimeEvents = useWorldStore((state) => state.events);
   const accessEvent = useWorldStore((state) => state.events.find((event) => {
     if (event.type !== "permission_changed") return false;
@@ -292,8 +303,9 @@ export function ConversationWorkspace({ card }: { card: WorldCard }) {
   };
 
   return (
-    <div className="conversation-workspace-grid">
-      <nav className="workspace-session-sidebar" aria-label={t("Conversation sessions and agents")}>
+    <div className="conversation-workspace-grid" style={{ gridTemplateColumns: columns }}>
+      <WorkspaceSection id="sessions" title={t("Sessions")} className={`conversation-sessions-section${conversationInline || participantsInline ? " has-neighbor" : ""}`}>
+      <nav className="workspace-session-sidebar conversation-session-navigation nodrag nopan nowheel" aria-label={t("Conversation sessions and agents")}>
         <button type="button" className="workspace-new-session" onClick={() => setCreatingGroup(true)}>
           <Plus size={13} /> {t("New group")} </button>
         {creatingGroup ? (
@@ -326,9 +338,43 @@ export function ConversationWorkspace({ card }: { card: WorldCard }) {
           ))}
           {connectedAgents.length === 0 ? <p>{t("Connect an Agent using Participate.")}</p> : null}
         </div>
+        <div className="conversation-session-list">
+          <div className="workspace-nav-label"><MessageSquare size={11} /> {t("Sessions")}</div>
+          <button type="button" className="workspace-new-session" disabled={!activeSession || busy} onClick={() => void createSession(t("New session"), activeSession?.participant_ids ?? [], activeGroupId)}><Plus size={13} /> {t("New session")}</button>
+          <div className="conversation-sidebar-scroll">
+            {groupSessions.map((session) => (
+              <div className="conversation-session-row" key={session.id}>
+                <button type="button" className={`workspace-session ${session.id === activeSessionId ? "is-active" : ""}`} title={session.title} aria-current={session.id === activeSessionId ? "true" : undefined} onClick={() => setActiveSessionId(session.id)}>
+                  <MessageSquare size={13} /><span><strong>{session.title}</strong><small>{new Date(session.created_at).toLocaleString(useLocale.getState().locale)}</small></span>
+                </button>
+                <details className="conversation-session-actions" onBlur={(event) => { if (!event.currentTarget.contains(event.relatedTarget)) event.currentTarget.open = false; }} onKeyDown={(event) => { if (event.key === "Escape") { event.currentTarget.open = false; event.currentTarget.querySelector("summary")?.focus(); } }}>
+                  <summary aria-label={t("Session actions for {v0}", { v0: String(session.title) })} title={t("Session actions")}><MoreHorizontal size={15} /></summary>
+                  <div className="conversation-session-menu">
+                    <button type="button" disabled={busy} onClick={(event) => { event.currentTarget.closest("details")?.removeAttribute("open"); setSessionTitle(session.title); setRenaming(session.id); }}><Pencil size={12} /> {t("Rename session")}</button>
+                    <button type="button" className="is-danger" disabled={busy || session.is_default} onClick={(event) => { event.currentTarget.closest("details")?.removeAttribute("open"); void deleteSession(session); }}><Trash2 size={12} /> {t("Delete session")}</button>
+                  </div>
+                </details>
+                {renaming === session.id ? <form className="conversation-session-rename" onSubmit={(event) => {
+                  event.preventDefault();
+                  if (!sessionTitle.trim() || busy) return;
+                  setBusy(true);
+                  void worldApi.renameConversationSession(card.id, session.id, sessionTitle.trim()).then((updated) => {
+                    setSessions((current) => current.map((item) => item.id === updated.id ? updated : item));
+                    setRenaming(undefined);
+                  }).catch((reason) => pushToast({ tone: "error", title: t("Session was not renamed"), detail: apiErrorMessage(reason) })).finally(() => setBusy(false));
+                }}>
+                  <input autoFocus aria-label={t("Session title")} maxLength={200} value={sessionTitle} onChange={(event) => setSessionTitle(event.target.value)} onKeyDown={(event) => { if (event.key === "Escape") setRenaming(undefined); }} />
+                  <button type="submit" disabled={busy || !sessionTitle.trim()}>{t("Save name")}</button><button type="button" onClick={() => setRenaming(undefined)}>{t("Cancel")}</button>
+                </form> : null}
+              </div>
+            ))}
+          </div>
+        </div>
       </nav>
+      </WorkspaceSection>
 
-      <main className="workspace-conversation">
+      <WorkspaceSection id="conversation" title={t("Conversation")} className="conversation-thread-section">
+      <main className="workspace-conversation conversation-thread nodrag nopan nowheel">
         <header>
           <div className="conversation-heading"><strong title={activeSession?.title}>{activeSession?.title ?? t("Conversation")}</strong><span>{participants.length} {t("active participants")}</span></div>
           <div className="conversation-header-tools">
@@ -464,8 +510,10 @@ export function ConversationWorkspace({ card }: { card: WorldCard }) {
           </footer>
         </div>
       </main>
+      </WorkspaceSection>
 
-      <aside className="workspace-context-panel conversation-participant-panel">
+      <WorkspaceSection id="participants" title={t("Participants")} className={`conversation-participants-section${sessionsInline || conversationInline ? " has-neighbor" : ""}`}>
+      <aside className="workspace-context-panel conversation-participant-panel nodrag nopan nowheel">
         <div className="conversation-participant-details">
         <header><Users size={13} /><strong>{t("Participants")}</strong></header>
         <section>
@@ -488,39 +536,8 @@ export function ConversationWorkspace({ card }: { card: WorldCard }) {
           <p>{t("Canvas connections authorize access. Session membership selects the group. Removing an edge keeps history but blocks future turns.")}</p>
         </section>
         </div>
-        <div className="conversation-session-list">
-          <div className="workspace-nav-label"><MessageSquare size={11} /> {t("Sessions")}</div>
-          <button type="button" className="workspace-new-session" disabled={!activeSession || busy} onClick={() => void createSession(t("New session"), activeSession?.participant_ids ?? [], activeGroupId)}><Plus size={13} /> {t("New session")}</button>
-          <div className="conversation-sidebar-scroll">
-            {groupSessions.map((session) => (
-              <div className="conversation-session-row" key={session.id}>
-                <button type="button" className={`workspace-session ${session.id === activeSessionId ? "is-active" : ""}`} title={session.title} aria-current={session.id === activeSessionId ? "true" : undefined} onClick={() => setActiveSessionId(session.id)}>
-                  <MessageSquare size={13} /><span><strong>{session.title}</strong><small>{new Date(session.created_at).toLocaleString(useLocale.getState().locale)}</small></span>
-                </button>
-                <details className="conversation-session-actions" onBlur={(event) => { if (!event.currentTarget.contains(event.relatedTarget)) event.currentTarget.open = false; }} onKeyDown={(event) => { if (event.key === "Escape") { event.currentTarget.open = false; event.currentTarget.querySelector("summary")?.focus(); } }}>
-                  <summary aria-label={t("Session actions for {v0}", { v0: String(session.title) })} title={t("Session actions")}><MoreHorizontal size={15} /></summary>
-                  <div className="conversation-session-menu">
-                    <button type="button" disabled={busy} onClick={(event) => { event.currentTarget.closest("details")?.removeAttribute("open"); setSessionTitle(session.title); setRenaming(session.id); }}><Pencil size={12} /> {t("Rename session")}</button>
-                    <button type="button" className="is-danger" disabled={busy || session.is_default} onClick={(event) => { event.currentTarget.closest("details")?.removeAttribute("open"); void deleteSession(session); }}><Trash2 size={12} /> {t("Delete session")}</button>
-                  </div>
-                </details>
-                {renaming === session.id ? <form className="conversation-session-rename" onSubmit={(event) => {
-                  event.preventDefault();
-                  if (!sessionTitle.trim() || busy) return;
-                  setBusy(true);
-                  void worldApi.renameConversationSession(card.id, session.id, sessionTitle.trim()).then((updated) => {
-                    setSessions((current) => current.map((item) => item.id === updated.id ? updated : item));
-                    setRenaming(undefined);
-                  }).catch((reason) => pushToast({ tone: "error", title: t("Session was not renamed"), detail: apiErrorMessage(reason) })).finally(() => setBusy(false));
-                }}>
-                  <input autoFocus aria-label={t("Session title")} maxLength={200} value={sessionTitle} onChange={(event) => setSessionTitle(event.target.value)} onKeyDown={(event) => { if (event.key === "Escape") setRenaming(undefined); }} />
-                  <button type="submit" disabled={busy || !sessionTitle.trim()}>{t("Save name")}</button><button type="button" onClick={() => setRenaming(undefined)}>{t("Cancel")}</button>
-                </form> : null}
-              </div>
-            ))}
-          </div>
-        </div>
       </aside>
+      </WorkspaceSection>
     </div>
   );
 }

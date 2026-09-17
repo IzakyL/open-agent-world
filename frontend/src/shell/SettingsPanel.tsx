@@ -1,3 +1,4 @@
+import { createPortal } from 'react-dom';
 import { reportInteraction } from "../state/interactions";
 import { t, useLocale } from "../i18n";
 import { Box, Cpu, HardDrive, Settings2, X } from "lucide-react";
@@ -115,11 +116,11 @@ export function SettingsPanel() {
     }
   };
 
-  return (
+  return createPortal(
     <div className="dialog-backdrop settings-backdrop" onMouseDown={(event) => {
       if (event.target === event.currentTarget && !busy) setOpen();
     }}>
-      <form className="settings-dialog" onKeyDown={event => { if (event.key === "Escape" && !busy) setOpen(); }} role="dialog" aria-modal="true" aria-labelledby="settings-title" onSubmit={submit}>
+      <form className="settings-dialog" onKeyDown={event => { if (event.key === "Escape") { event.preventDefault(); event.stopPropagation(); if (!busy) setOpen(); } }} role="dialog" aria-modal="true" aria-labelledby="settings-title" onSubmit={submit}>
         <header>
           <div className="dialog-icon"><Settings2 size={19} /></div>
           <div>
@@ -199,6 +200,7 @@ export function SettingsPanel() {
           {section !== "deepl" && <button data-tutorial={section === "model" ? "model-save" : undefined} type="submit" className="primary-button" disabled={busy || (section === "storage" && (!storage?.editable || !storagePath.trim() || storagePath.trim() === storage.pending_path)) || (section === "sandbox" && !loaded) || (section === "model" && !modelLoaded)}>{saving ? t("Saving…") : t("Save settings")}</button>}
         </footer>
       </form>
-    </div>
+    </div>,
+    document.querySelector('dialog.legion-workspace[open]') ?? document.body,
   );
 }

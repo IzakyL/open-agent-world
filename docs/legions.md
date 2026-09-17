@@ -60,12 +60,29 @@ Regions tile without gaps or overlapping windows. Drag a divider to change its
 ratio in both editing and ordinary use; focused dividers also accept arrow keys
 and Home/End. In ordinary use, releasing a divider or resize key automatically
 saves its ratio, while moving, adding and removing panes requires edit mode.
-**Done editing** or **Save layout** saves the arrangement and opens the real card
-interfaces using their existing workspace or inspector surfaces, including plugin
-surfaces. The Save button appears only in edit mode. Failed automatic saves retain
+Editing displays the real card interfaces with a small inset around each region.
+**Done editing** or **Save layout** saves the arrangement and removes the editing
+insets and controls. Cards use their workspace or inspector surfaces, including
+plugin surfaces. The Save button appears only in edit mode. Failed automatic saves retain
 the draft and offer a retry. **Cancel layout changes** restores the
 saved arrangement. Closing with an unsaved layout offers a discard action.
 Small windows scroll once the panes reach their minimum usable sizes.
+
+Cards may expose named functional sections through the plugin SDK's
+`WorkspaceSection` component. In edit mode, hover or focus a section to reveal
+its arrangement handle and hide control. Drag the handle onto a region edge to
+split, or onto a title strip to add a tab; selecting the handle also enables the
+docking buttons. The sidebar's **Card sections** list provides the same controls
+and **Restore to card** for hidden or extracted sections. Removing a section pane
+hides that section; removing a whole-card pane leaves its extracted sections in
+place. Both operations preserve the owning card and its data. Missing plugin
+sections retain their saved location with an unavailable message.
+
+Sandbox exposes Files, File preview, and Terminal; Conversation exposes Sessions,
+Conversation (messages and composer), and Participants. Shared state stays in
+the original card, and moving a section preserves its live component and inputs.
+Plugins can adopt the same API incrementally; cards without sections remain
+usable as whole-card panes. See [plugin section API](plugins.md#composable-workspace-sections).
 
 The window is a presentation of existing members: canvas positions, Glue, team
 settings, connections and runtime ownership stay independent. Cards omitted from
@@ -74,26 +91,32 @@ window and adjacent regions expand. Nested containers are not dockable in this
 first version. The window supports splits and tab groups; floating subwindows
 are not implemented.
 
-Layouts live in `config.workspace_layout`, with `version: 1` and a nullable `root`.
-A single-card leaf is `{kind: "pane", card_id: "..."}`. A tab group is
-`{kind: "tabs", card_ids: ["editor", "notes"], active_card_id: "editor"}`.
-A branch is
+Layouts live in `config.workspace_layout`, with `version: 2`, a nullable `root`,
+and `hidden_sections` (an array, defaulting to empty). A view is a reference:
+`{card_id: "..."}` for a whole card, or `{card_id: "...", section_id: "files"}`
+for a section owned by that card. A leaf is `{kind: "pane", view: ...}`; a tab
+group is `{kind: "tabs", views: [...], active_view: ...}`. `views` defines tab
+order and `active_view` must match one of its references. A branch is
 `{kind: "split", axis: "horizontal" | "vertical", ratio: 0.5, first: ..., second: ...}`.
-Horizontal splits place children side by side. Ratios are bounded to 0.15–0.85;
-layouts have at most 100 unique cards and 16 levels. **Save to library** includes
-the saved layout. Capture maps card IDs to template keys; deployment maps those
-keys to new member IDs. Older templates open with an empty workspace. The bundled
-Coding workspace preset supplies a Conversation/Sandbox split when deployed with
-a Legion wrapper; welcome-screen unwrapped deployment has no Legion window.
+Horizontal splits place children side by side. Ratios are bounded to 0.15-0.85;
+layouts have at most 100 view references (including hidden sections) and 16 levels.
 
-Developers and presets use the same `workspace_layout` contract via
-`PATCH /api/nodes/{legion_id}`. `card_ids` defines tab order and `active_card_id`
-must reference one of those cards. Each card may occur only once across all
-regions, including hidden tabs. Existing version-1 `pane` layouts remain valid.
-Capture and deployment remap both the ordered IDs and the active ID. When a tab
-is removed or detached, the group keeps its active page if possible, otherwise
-selects its first remaining page. Empty groups disappear; single-tab groups can
-collapse to a `pane`. This works with plugin cards through their existing surfaces.
+Each `(card_id, section_id)` pair may occur once across all regions and hidden
+sections. Whole-card views and their extracted sections may coexist: the card's
+presentation omits extracted or hidden sections, while runtime ownership stays
+with that card. `hidden_sections` accepts only section references. Hiding a
+section does not delete its card, files, connections, or runtime state.
+
+Developers and presets use the same contract via `PATCH /api/nodes/{legion_id}`.
+Version-1 panes and tabs are accepted and normalized to version 2 when read or
+saved. **Save to library** includes the layout. Capture maps every owner card ID
+to a template key; deployment maps it back to a new member ID, preserving section
+IDs, order, active views, and hidden sections. Missing owners remove their placed
+and hidden references. A tab group retains its active view if possible, otherwise
+selects its first remaining view; empty regions disappear and single-tab groups
+can collapse to a pane. Templates without a layout open with an empty workspace.
+The bundled Coding workspace preset supplies a Conversation/Sandbox split when
+deployed with a Legion wrapper; unwrapped deployment has no Legion window.
 
 ## Runtime settings and state
 

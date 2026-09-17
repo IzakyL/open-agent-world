@@ -10,6 +10,7 @@ import type {
   WorldCard,
 } from "../types/world";
 import { ConversationWorkspace } from "./ConversationWorkspace";
+import { WorkspaceSectionProvider, type WorkspaceSectionRegistration } from "../workspace/WorkspaceSection";
 
 const card: WorldCard = {
   id: "conversation-1",
@@ -60,6 +61,41 @@ describe("ConversationWorkspace snapshots", () => {
   });
 
   afterEach(() => cleanup());
+
+  it("keeps the active conversation and composer alive when detached and returned", async () => {
+    const hosts = new Map<string, HTMLDivElement>();
+    const register = ({ id, host }: WorkspaceSectionRegistration) => {
+      hosts.set(id, host);
+      return () => { hosts.delete(id); };
+    };
+    const noop = () => {};
+    const workspace = (detachedSectionIds: Set<string>) => <WorkspaceSectionProvider cardId={card.id}
+      editing={false} detachedSectionIds={detachedSectionIds} hiddenSectionIds={new Set()}
+      register={register} onSelect={noop} onDragStart={noop} onHide={noop}>
+      <ConversationWorkspace card={card} />
+    </WorkspaceSectionProvider>;
+    const view = render(workspace(new Set()));
+    await screen.findByText(historicalMessage.content);
+    const composer = screen.getByRole("textbox", { name: "Conversation message" }) as HTMLTextAreaElement;
+    fireEvent.change(composer, { target: { value: "Unsent draft" } });
+    const historyCalls = vi.mocked(worldApi.getConversationTimeline).mock.calls.length;
+    const detached = document.createElement("div");
+    view.container.append(detached);
+
+    view.rerender(workspace(new Set(["conversation", "sessions"])));
+    detached.append(hosts.get("conversation")!, hosts.get("sessions")!);
+    expect(screen.getByRole("textbox", { name: "Conversation message" })).toBe(composer);
+    expect(composer.value).toBe("Unsent draft");
+    expect(within(detached).getByText(historicalMessage.content)).toBeTruthy();
+    expect(within(detached).getByRole("button", { name: "New session" })).toBeTruthy();
+    expect(worldApi.getConversationTimeline).toHaveBeenCalledTimes(historyCalls);
+    fireEvent.change(composer, { target: { value: "Draft edited outside the card" } });
+
+    view.rerender(workspace(new Set()));
+    expect(screen.getByRole("textbox", { name: "Conversation message" })).toBe(composer);
+    expect(composer.value).toBe("Draft edited outside the card");
+    expect(detached.childElementCount).toBe(0);
+  });
 
   it("shows start and stop events immediately while the history refresh is stalled", async () => {
     vi.mocked(worldApi.getConversation).mockResolvedValue({

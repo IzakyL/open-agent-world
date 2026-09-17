@@ -9,6 +9,7 @@ import type { WorldCard } from "../types/world";
 import { IconButton } from "../components/IconButton";
 import { SandboxRuntimeControls, SandboxSettings } from "./SandboxCard";
 import { PublishFiles } from "./Artifacts";
+import { WorkspaceSection, useWorkspaceSections } from "../workspace/WorkspaceSection";
 import "./sandboxWorkspace.css";
 
 interface Root { id: string; label: string; access: string; directory: boolean }
@@ -32,6 +33,11 @@ const boundedSize = (value: number, min: number, max: number, fallback: number) 
 
 export function SandboxWorkspace({ card }: { card: WorldCard }) {
   useLocale();
+  const sections = useWorkspaceSections();
+  const filesInline = sections.isInline("files");
+  const previewInline = sections.isInline("preview");
+  const terminalInline = sections.isInline("terminal");
+  const hasWorkArea = previewInline || terminalInline;
   const refreshSandbox = useWorldStore(s => s.refreshSandbox);
   const info = useWorldStore(s => s.sandboxInfo[card.id]);
   const execute = useWorldStore(s => s.executeSandbox);
@@ -282,7 +288,8 @@ export function SandboxWorkspace({ card }: { card: WorldCard }) {
     </header>
     {(error || (tab === "workspace" && runtimeError)) && <p className="sandbox-workspace-error" role="alert">{error || runtimeError}</p>}
     <div className="sandbox-workbench" role="tabpanel" id={`${card.id}-workspace-panel`} aria-labelledby={`${card.id}-workspace-tab`} hidden={tab !== "workspace"}>
-      <aside ref={sidebarElement} className="sandbox-files" aria-label={t("Sandbox files")} style={{ width: sidebarWidth }}>
+      <WorkspaceSection id="files" title={t("Files")} className={`sandbox-files-section${hasWorkArea ? "" : " is-only-section"}`} style={{ width: hasWorkArea ? sidebarWidth : "100%" }}>
+      <aside ref={sidebarElement} className="sandbox-files nodrag nopan nowheel" aria-label={t("Sandbox files")}>
         <header className="sandbox-pane-heading"><span><FolderOpen size={13} /> {t("Files")}</span>
           <IconButton icon={RefreshCw} size="xs" quiet label={t("Refresh files")} disabled={loading.roots} onClick={() => { void refreshFiles(); if (selection) void select(selection.root, selection.path, selection.label); }} />
         </header>
@@ -304,7 +311,8 @@ export function SandboxWorkspace({ card }: { card: WorldCard }) {
           <Folder size={11} /><span>{info?.workspace_path ?? info?.workspace ?? t("Managed workspace")}</span>
         </footer>
       </aside>
-      <div className="sandbox-file-divider" role="separator" aria-label={t("Resize file sidebar")} aria-orientation="vertical"
+      </WorkspaceSection>
+      {filesInline && hasWorkArea && <div className="sandbox-file-divider" role="separator" aria-label={t("Resize file sidebar")} aria-orientation="vertical"
         aria-valuemin={180} aria-valuemax={420} aria-valuenow={sidebarWidth} tabIndex={0}
         onPointerDown={e => {
           e.preventDefault(); e.stopPropagation(); e.currentTarget.setPointerCapture(e.pointerId);
@@ -314,9 +322,10 @@ export function SandboxWorkspace({ card }: { card: WorldCard }) {
         onPointerMove={e => { if (resizing.current) setSidebarWidth(boundedSize(resizing.current.width + (e.clientX - resizing.current.x) / resizing.current.scale, 180, 420, 224)); }}
         onPointerUp={e => { if (resizing.current) saveSidebarWidth(resizing.current.width + (e.clientX - resizing.current.x) / resizing.current.scale); resizing.current = undefined; e.currentTarget.releasePointerCapture(e.pointerId); }}
         onPointerCancel={() => { resizing.current = undefined; }}
-        onKeyDown={e => { if (e.key === "ArrowLeft" || e.key === "ArrowRight") { e.preventDefault(); e.stopPropagation(); saveSidebarWidth(sidebarWidth + (e.key === "ArrowRight" ? 16 : -16)); } }} />
-      <main ref={workArea} className="sandbox-work-area">
-        <section className="sandbox-preview" aria-label={t("File preview")}>
+        onKeyDown={e => { if (e.key === "ArrowLeft" || e.key === "ArrowRight") { e.preventDefault(); e.stopPropagation(); saveSidebarWidth(sidebarWidth + (e.key === "ArrowRight" ? 16 : -16)); } }} />}
+      <main ref={workArea} className="sandbox-work-area" hidden={!hasWorkArea}>
+        <WorkspaceSection id="preview" title={t("File preview")} className="sandbox-preview-section">
+        <section className="sandbox-preview nodrag nopan nowheel" aria-label={t("File preview")}>
           <PublishFiles card={card} paths={publishPaths.length ? publishPaths : selection?.root === "workspace" ? [selection.path] : []}>
             {Object.entries(tree).filter(([key]) => key.startsWith("workspace:")).flatMap(([key, value]) =>
               (value.entries ?? []).filter(entry => !entry.blocked).map(entry => {
@@ -344,7 +353,8 @@ export function SandboxWorkspace({ card }: { card: WorldCard }) {
             </div>
           </> : <div className="sandbox-pane-empty"><FileText size={26} strokeWidth={1.2} /><span>{t("Select a file to preview")}</span></div>}
         </section>
-        <div className="sandbox-terminal-divider" role="separator" aria-label={t("Resize terminal")} aria-orientation="horizontal"
+        </WorkspaceSection>
+        {previewInline && terminalInline && <div className="sandbox-terminal-divider" role="separator" aria-label={t("Resize terminal")} aria-orientation="horizontal"
           aria-valuemin={28} aria-valuemax={65} aria-valuenow={terminalHeight} aria-valuetext={t("{v0}% terminal height", { v0: String(Math.round(terminalHeight)) })} tabIndex={0}
           onPointerDown={e => {
             e.preventDefault(); e.stopPropagation(); e.currentTarget.setPointerCapture(e.pointerId);
@@ -353,8 +363,9 @@ export function SandboxWorkspace({ card }: { card: WorldCard }) {
           onPointerMove={e => { if (terminalResize.current) setTerminalHeight(boundedSize(terminalResize.current.height + (terminalResize.current.y - e.clientY) / terminalResize.current.area * 100, 28, 65, 42)); }}
           onPointerUp={e => { if (terminalResize.current) saveTerminalHeight(terminalResize.current.height + (terminalResize.current.y - e.clientY) / terminalResize.current.area * 100); terminalResize.current = undefined; e.currentTarget.releasePointerCapture(e.pointerId); }}
           onPointerCancel={() => { terminalResize.current = undefined; }}
-          onKeyDown={e => { if (e.key === "ArrowUp" || e.key === "ArrowDown") { e.preventDefault(); e.stopPropagation(); saveTerminalHeight(terminalHeight + (e.key === "ArrowUp" ? 4 : -4)); } }} />
-        <section className="sandbox-terminal" aria-label={t("Sandbox terminal")} style={{ flexBasis: `${terminalHeight}%` }}>
+          onKeyDown={e => { if (e.key === "ArrowUp" || e.key === "ArrowDown") { e.preventDefault(); e.stopPropagation(); saveTerminalHeight(terminalHeight + (e.key === "ArrowUp" ? 4 : -4)); } }} />}
+        <WorkspaceSection id="terminal" title={t("Terminal")} className="sandbox-terminal-section" style={{ flexBasis: previewInline ? `${terminalHeight}%` : "100%" }}>
+        <section className="sandbox-terminal nodrag nopan nowheel" aria-label={t("Sandbox terminal")}>
           <header className="sandbox-pane-heading">
             <nav className="sandbox-tabs" role="tablist" aria-label={t("Terminal views")} onKeyDown={tabKeys}>
               {(["terminal", "history"] as const).map(view => <button key={view} role="tab" id={`${card.id}-${view}-tab`}
@@ -390,6 +401,7 @@ export function SandboxWorkspace({ card }: { card: WorldCard }) {
               <code>{h.argv.join(" ")}</code><pre>{h.error || `${h.stdout ?? ""}${h.stderr ?? ""}`}</pre></article>)}
           </div>
         </section>
+        </WorkspaceSection>
       </main>
     </div>
     <div className="sandbox-settings-window" role="tabpanel" id={`${card.id}-settings-panel`} aria-labelledby={`${card.id}-settings-tab`} hidden={tab !== "settings"}>

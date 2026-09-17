@@ -29,6 +29,14 @@
 .legion-layout-palette p, .legion-layout-palette footer { font-size: 11px; line-height: 1.7; color: var(--ink-soft); padding: 0 16px; }
 .legion-layout-palette footer { border-top: 1px solid var(--line); margin-top: auto; padding: 14px 16px; }
 .legion-layout-card-list { overflow-y: auto; min-height: 0; padding: 4px 10px 14px; }
+.legion-hidden-sections { margin-bottom: 14px; padding: 10px; border: 1px solid var(--line-strong); border-radius: 7px; background: var(--surface-soft); }
+.legion-hidden-sections h3 { margin: 0; font-size: 12px; }
+.legion-hidden-sections > p { padding: 0; margin: 6px 0 10px; }
+.legion-hidden-section { display: flex; flex-direction: column; gap: 4px; padding: 9px 0; border-top: 1px solid var(--line); }
+.legion-hidden-section strong, .legion-hidden-section small { overflow-wrap: anywhere; }
+.legion-hidden-section strong { font-size: 11px; }
+.legion-hidden-section small { color: var(--ink-faint); font-size: 10px; }
+.legion-hidden-section button { align-self: flex-start; margin-top: 3px; font-size: 10px; }
 .legion-layout-card { display: flex; align-items: center; gap: 9px; width: 100%; padding: 12px 10px; margin-bottom: 6px; border: 1px solid var(--line); border-radius: 7px; background: var(--surface-raised); color: var(--ink-soft); text-align: left; cursor: grab; }
 .legion-layout-card span { display: grid; gap: 4px; flex: 1; min-width: 0; }
 .legion-layout-card strong { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 11px; }
@@ -86,19 +94,17 @@
 .legion-window-error { color: var(--danger); }.legion-window-close-prompt span { margin-right: auto; }
 /* Panes respond to their own size, independently of the desktop viewport. */
 .legion-pane-content .agent-workspace-grid { grid-template-columns: 160px minmax(0, 1fr) 180px; }
-.legion-pane-content .conversation-workspace-grid { grid-template-columns: 170px minmax(0, 1fr) 180px; }
 @container legion-pane (max-width: 850px) {
-  .legion-pane-content .agent-workspace-grid, .legion-pane-content .conversation-workspace-grid { grid-template-columns: 150px minmax(0, 1fr); }
-  .legion-pane-content .workspace-context-panel, .legion-pane-content .conversation-participant-panel { display: none; }
+  .legion-pane-content .agent-workspace-grid { grid-template-columns: 150px minmax(0, 1fr); }
+  .legion-pane-content .agent-workspace-grid .workspace-context-panel { display: none; }
 }
 @container legion-pane (max-width: 480px) {
-  .legion-pane-content .agent-workspace-grid, .legion-pane-content .conversation-workspace-grid { grid-template-columns: minmax(0, 1fr); }
-  .legion-pane-content .agent-workspace-grid, .legion-pane-content .conversation-workspace-grid { grid-template-rows: auto minmax(240px, 1fr); overflow-y: auto; }
-  .legion-pane-content .workspace-session-sidebar { display: flex; flex-direction: row; align-items: flex-start; flex-wrap: wrap; gap: 5px; max-height: 120px; overflow: auto; border-right: 0; border-bottom: 1px solid var(--line); padding: 7px; }
-  .legion-pane-content .workspace-session-sidebar .workspace-nav-label, .legion-pane-content .workspace-agent-state { display: none; }
-  .legion-pane-content .conversation-sidebar-scroll { display: flex; flex-wrap: wrap; gap: 4px; overflow: visible; }
-  .legion-pane-content .workspace-new-session { padding: 0 8px; flex-shrink: 0; }
-  .legion-pane-content .workspace-session { padding: 6px; }
+  .legion-pane-content .agent-workspace-grid { grid-template-columns: minmax(0, 1fr); }
+  .legion-pane-content .agent-workspace-grid { grid-template-rows: auto minmax(240px, 1fr); overflow-y: auto; }
+  .legion-pane-content .agent-workspace-grid .workspace-session-sidebar { display: flex; flex-direction: row; align-items: flex-start; flex-wrap: wrap; gap: 5px; max-height: 120px; overflow: auto; border-right: 0; border-bottom: 1px solid var(--line); padding: 7px; }
+  .legion-pane-content .agent-workspace-grid .workspace-session-sidebar .workspace-nav-label, .legion-pane-content .workspace-agent-state { display: none; }
+  .legion-pane-content .agent-workspace-grid .conversation-sidebar-scroll { display: flex; flex-wrap: wrap; gap: 4px; overflow: visible; }
+  .legion-pane-content .agent-workspace-grid .workspace-session { padding: 6px; }
   .legion-pane-content .sandbox-window-toolbar { flex-wrap: wrap; padding: 6px 10px; gap: 8px; }
   .legion-pane-content .sandbox-files { min-width: 100px; }
   .legion-pane-content .sandbox-tabs { gap: 8px; min-height: 32px; }
@@ -109,3 +115,25 @@
   .legion-layout-palette { flex-basis: 190px; }
   .legion-window-footer > span:last-child { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 }
+
+/* Editing keeps the real content visible, with breathing room around each region. */
+.legion-workspace-pane.is-editing { padding: 6px; background: var(--surface-soft); }
+.legion-workspace-pane.is-editing > .legion-pane-titlebar { border: 1px solid var(--line); border-radius: 5px 5px 0 0; }
+.legion-workspace-pane.is-editing > .legion-pane-mount { background: var(--surface-solid); border: 1px solid var(--line); border-top: 0; border-radius: 0 0 5px 5px; }
+.legion-workspace-pane.is-editing .legion-workspace-tab { cursor: grab; }
+.legion-workspace-pane.is-dragging { outline: 1px dashed var(--accent); outline-offset: -4px; }
+.legion-pane-mount { position: relative; z-index: 0; }
+.legion-pane-mount > .workspace-section-host { container: legion-pane / inline-size; }
+.legion-section-unavailable { align-self: center; padding: 24px; color: var(--ink-faint); font-size: 12px; }
+.legion-section-list { margin: -2px 0 12px 12px; font-size: 11px; color: var(--ink-soft); }
+.legion-section-list summary { cursor: pointer; padding: 5px 0; }
+.legion-section-row { display: flex; gap: 3px; margin: 4px 0; }
+.legion-section-row button { display: flex; align-items: center; gap: 4px; border: 1px solid var(--line); border-radius: 4px; background: var(--surface-raised); color: var(--ink-soft); padding: 5px; cursor: pointer; }
+.legion-section-row button:first-child { flex: 1; min-width: 0; text-align: left; cursor: grab; }
+.legion-section-row button span { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+.legion-section-row small { display: block; font-size: 9px; color: var(--ink-faint); margin-top: 2px; }
+.legion-section-row button[aria-pressed="true"] { background: var(--accent-soft); border-color: var(--accent); }
+
+.legion-workspace-preferences { display: flex; flex-shrink: 0; align-items: center; gap: 4px; }
+.legion-workspace-preferences .top-icon-button { width: 28px; height: 28px; border-radius: 6px; }
+.legion-workspace-preferences + .legion-unplaced-bar { margin-left: 5px; padding-left: 14px; }

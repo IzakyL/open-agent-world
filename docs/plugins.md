@@ -245,6 +245,62 @@ This version does not load remote JavaScript or independently versioned React.
 See [Codex](../plugins/codex/frontend/index.tsx) for a working SDK-based settings
 view and its package-owned icon.
 
+### Composable workspace sections
+
+Workspace views can expose semantic panes with `WorkspaceSection` from
+`@oaw/plugin-api`. A section should be a useful functional unit, such as a file
+browser, terminal, session list, or conversation. Keep individual buttons and
+fields inside their pane. Cards without sections continue to work as whole cards.
+
+```tsx
+import { useState } from "react";
+import { WorkspaceSection, useWorkspaceSections } from "@oaw/plugin-api";
+
+function Workspace() {
+  const [selectedFile, setSelectedFile] = useState<string | null>(null);
+  const { isInline } = useWorkspaceSections();
+  return <div className="project-workspace" style={{
+    display: "grid", minHeight: 0,
+    gridTemplateColumns: isInline("files") && isInline("preview")
+      ? "220px minmax(0, 1fr)" : "minmax(0, 1fr)",
+  }}>
+    <WorkspaceSection id="files" title="Files">
+      <FileBrowser selected={selectedFile} onSelect={setSelectedFile} />
+    </WorkspaceSection>
+    <WorkspaceSection id="preview" title="Preview">
+      <FilePreview file={selectedFile} />
+    </WorkspaceSection>
+  </div>;
+}
+```
+
+`FileBrowser` and `FilePreview` above are plugin-owned components. Section IDs
+must be stable and unique within their card; they are persisted layout references,
+so do not derive them from translated labels, list positions, or random values.
+`title` is the user-facing label and may be translated. `className` and `style`
+apply to the section's inline shell. Give the content its own sizing, scroll
+container, and CSS variables where needed: it can be displayed outside that shell.
+
+The host provides arrangement controls in Legion workspace edit mode. A section
+can appear inline, occupy its own workspace pane, or be hidden. These operations
+change presentation only: they do not delete data, create cards, grant capabilities,
+or transfer ownership. The original card remains responsible for state, effects,
+host calls, and cleanup. A hidden section remains mounted, so hiding a terminal,
+for example, does not stop its commands.
+
+The host moves one stable DOM container while React content keeps the original
+component tree and context. Keep shared selection and other coordinated state in
+the original card component, as above; do not create a second renderer for a
+detached pane. React events still propagate through that original component tree.
+Removing the owning card or unmounting its workspace view still unmounts its panes.
+
+`useWorkspaceSections()` is a read-only presentation hook. `isInline(id)` returns
+false for detached and hidden sections, and true in an ordinary card window.
+Use it to collapse unused grid tracks and omit adjacent resize dividers. Keep
+each `WorkspaceSection` mounted even when `isInline(id)` is false; conditional
+unmounting would lose the content and its state. Arrange controls and layout
+persistence belong to the host; plugins do not access Legion stores directly.
+
 ## Public Plugin API
 
 Plugin code imports host contracts only from `open_agent_world.plugin_api`:
