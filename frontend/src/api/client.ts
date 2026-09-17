@@ -310,6 +310,12 @@ export const worldApi = {
     return request(`/nodes/${encodeURIComponent(id)}/document`);
   },
 
+  async nodeResourceAction(id: string, action: string, args: Record<string, unknown>, confirm = false): Promise<Record<string, unknown>> {
+    return request(`/nodes/${encodeURIComponent(id)}/resource/${encodeURIComponent(action)}`, {
+      method: "POST", body: JSON.stringify({ arguments: args, confirm }),
+    });
+  },
+
   async nodeDocumentAction(id: string, action: string, args: Record<string, unknown>, expectedRevision?: number): Promise<{ value: Record<string, unknown>; revision: number; summary: Record<string, unknown> }> {
     return request(`/nodes/${encodeURIComponent(id)}/actions/${encodeURIComponent(action)}`, {
       method: "POST", body: JSON.stringify({ arguments: args, expected_revision: expectedRevision }),

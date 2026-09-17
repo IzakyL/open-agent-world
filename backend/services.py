@@ -415,6 +415,9 @@ class _PreparedResourceRemoval:
 class _LifecycleResources:
     resources: ManagedResourceStore
 
+    def node_storage_path(self, node_id: str) -> Path:
+        return self.resources.node_storage_path(node_id)
+
     def create_text(self, node_id: str, filename: str, content: str = "") -> None:
         self.resources.create_text(node_id, filename, content)
 
@@ -440,6 +443,9 @@ class _LifecycleResources:
 class _RecoveryLifecycleResources:
     resources: ManagedResourceStore
     record: ResourceRecord | None
+
+    def node_storage_path(self, node_id: str) -> Path:
+        return self.resources.node_storage_path(node_id)
 
     @staticmethod
     def _invalid() -> None:

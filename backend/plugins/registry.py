@@ -10,6 +10,7 @@ from pydantic import BaseModel, ConfigDict, Field, ValidationError, model_valida
 
 from backend.errors import GraphValidationError, PluginCompatibilityError, PluginUnavailableError
 from backend.plugins.lifecycle import NodeLifecycleHandler
+from backend.plugins.resources import NodeResourceAction
 from backend.plugins.template import NodeTemplateHandler
 
 if TYPE_CHECKING:
@@ -24,7 +25,7 @@ from backend.plugins.documents import NodeDocumentDefinition
 from backend.plugins.containers import NodeContainerDefinition
 from backend.plugins.execution import NodeExecutionDefinition
 
-PLUGIN_API_VERSION = "1.16"
+PLUGIN_API_VERSION = "1.17"
 _IDENTIFIER = re.compile(r"^[a-z][a-z0-9]*(?:[._:/-][a-z0-9]+)*$")
 _API_VERSION = re.compile(r"^(0|[1-9]\d*)\.(0|[1-9]\d*)$")
 
@@ -146,6 +147,7 @@ class NodeTypeCatalogItem(BaseModel):
     config_schema: dict[str, Any] = Field(default_factory=dict)
     user_creatable: bool
     templateable: bool
+    deletion_warning: str | None = None
 
 
 class RelationshipCatalogItem(BaseModel):
@@ -260,6 +262,9 @@ class NodeTypeDefinition:
     # Convert card references to portable keys at capture and new IDs at restore.
     template_remap_config: Callable[[dict[str, Any], Mapping[str, str]], dict[str, Any]] | None = None
     document: NodeDocumentDefinition | None = None
+    resource_actions: Mapping[str, NodeResourceAction] = field(default_factory=dict)
+    # Native state with no browser snapshot must never masquerade as undoable.
+    deletion_warning: str | None = None
     execution: NodeExecutionDefinition | None = None
     container: NodeContainerDefinition | None = None
     summoning: NodeSummoningDefinition | None = None
@@ -307,6 +312,7 @@ class NodeTypeDefinition:
             summoning={} if self.summoning else None,
             user_creatable=self.user_creatable,
             templateable=self.templateable,
+            deletion_warning=self.deletion_warning,
         )
 
 
@@ -611,6 +617,11 @@ class PluginRegistry:
                 raise ValueError(
                     f"node type {definition.id!r} template payload version must be positive"
                 )
+            for name, action in definition.resource_actions.items():
+                if not _IDENTIFIER.fullmatch(name) or not callable(action.handler):
+                    raise ValueError("resource actions require a valid name and handler")
+                if action.capability_kind and action.capability_kind not in staged.capability_handlers:
+                    raise ValueError("resource action capabilities must be owned by the same plugin")
             if definition.document is not None:
                 document = definition.document
                 document.model()

@@ -9,6 +9,7 @@ from backend.api.dependencies import get_services
 from backend.api.desktop import router as desktop_router
 from backend.api.legions import router as legions_router
 from backend.api.node_documents import router as node_documents_router
+from backend.api.node_resources import router as node_resources_router
 from backend.api.legion_groups import router as legion_groups_router
 from backend.api.resources import router as resources_router
 from backend.api.runtime import router as runtime_router
@@ -49,6 +50,7 @@ api_router.include_router(execution_credentials_router)
 api_router.include_router(plugin_assets_router)
 api_router.include_router(summoning_router)
 api_router.include_router(node_documents_router)
+api_router.include_router(node_resources_router)
 api_router.include_router(legions_router)
 api_router.include_router(legion_groups_router)
 api_router.include_router(resources_router)

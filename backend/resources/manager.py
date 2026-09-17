@@ -82,6 +82,11 @@ class ManagedResourceStore:
         from .artifacts import ArtifactStore
         self.artifacts = ArtifactStore(database, self.assets_root / 'artifacts')
 
+    def node_storage_path(self, node_id: str) -> Path:
+        # IDs are caller-supplied during restore. Never interpret them as paths.
+        import hashlib
+        return self.assets_root / "nodes" / hashlib.sha256(node_id.encode("utf-8")).hexdigest()
+
     def create_text(self, card_id: str, filename: str, content: str = "") -> ResourceRecord:
         filename = validate_filename(filename)
         data = content.encode("utf-8")

@@ -89,6 +89,31 @@ describe("authoritative world synchronization", () => {
     expect(useWorldStore.getState().cards).toHaveLength(1);
   });
 
+  it("confirms irreversible native deletion and never offers an empty undo restore", async () => {
+    const database = { ...card("database", "text"), type: "data.sqlite", name: "Results database" };
+    useWorldStore.setState({ cards: [database], selectedCardIds: [database.id], catalog: {
+      ...TEST_CATALOG, node_types: [...TEST_CATALOG.node_types, {
+        ...TEST_CATALOG.node_types.find(definition => definition.id === "text")!, id: database.type,
+        deletion_warning: "Deleting this database permanently removes its data.",
+      }],
+    } });
+    const confirm = vi.fn().mockReturnValue(false);
+    vi.stubGlobal("window", { confirm });
+    const remove = vi.spyOn(worldApi, "deleteNode").mockResolvedValue(undefined);
+    try {
+      expect(await useWorldStore.getState().copySelection()).toBe(false);
+      await useWorldStore.getState().deleteCards([database.id]);
+      expect(remove).not.toHaveBeenCalled();
+      expect(useWorldStore.getState().cards).toHaveLength(1);
+      confirm.mockReturnValue(true);
+      await useWorldStore.getState().deleteCards([database.id]);
+      expect(remove).toHaveBeenCalledWith(database.id);
+      expect(useWorldStore.getState().cards).toEqual([]);
+      expect(useWorldStore.getState().undoStack).toEqual([]);
+      expect(useWorldStore.getState().toasts.at(-1)?.detail).toContain("cannot be restored");
+    } finally { vi.unstubAllGlobals(); }
+  });
+
   it("initializes created and remotely ingested surfaces once and retains them across refresh", async () => {
     const room = card("room", "conversation");
     vi.spyOn(worldApi, "createNode").mockResolvedValue(room);

@@ -32,6 +32,11 @@ def _validate_tool_request(model: type[BaseModel], arguments):
 class _CapabilityContext:
     services: ApplicationServices
 
+    async def node_resource_action(self, capability, action, arguments):
+        from backend.node_resources import ResourceActionRequest, invoke_resource_action
+        return await invoke_resource_action(self.services, capability.target_id, action,
+            ResourceActionRequest(arguments=arguments), capability=capability)
+
     async def minister_action(self, capability, arguments):
         from backend.minister import invoke
         return await invoke(self.services, capability, arguments)

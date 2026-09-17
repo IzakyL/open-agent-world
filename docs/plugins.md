@@ -159,6 +159,26 @@ uv run --project backend --with-editable ./path/to/my-plugin `
 The repository's [Greeter plugin](../examples/plugins/greeter/README.md) is the
 canonical compact example.
 
+## Native file resources
+
+Plugin API 1.17 adds `NodeResourceAction` for native files that cannot be
+represented as JSON node documents. Register a `resource_actions` mapping on
+`NodeTypeDefinition`; each synchronous handler receives a `NodeResourceContext`
+with a host-selected storage directory, cancellation event, actor ID and
+desktop-only confirmation flag. Handlers run off the event loop while the host
+holds the normal node mutation lock, and must observe cancellation and impose
+finite execution limits. Agents invoke them through
+`CapabilityContext.node_resource_action`; their live capability kind must match
+the registered action. Frontend views call `host.resourceAction` through the
+authenticated control-plane API. Lifecycle handlers obtain the same directory
+from `context.resources.node_storage_path(node.id)` and own reversible creation
+and journaled post-delete cleanup. Do not create files during registration.
+
+For native resources without a canvas snapshot, set `deletion_warning` on the
+node definition. The UI confirms permanent deletion, clears undo history after
+success, and rejects copy or undo operations that would silently lose the native
+data. See [the SQLite plugin](../plugins/sqlite/README.md) for the complete example.
+
 ## Local frontend extensions and public assets
 
 Plugin API 1.9 adds explicit public image assets and frontend view references.

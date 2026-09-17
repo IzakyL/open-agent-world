@@ -153,6 +153,8 @@ async function restoreCard(card: RestorableCard): Promise<WorldCard> {
 }
 
 async function snapshotCardForHistory(card: WorldCard, strict = false): Promise<RestorableCard> {
+  const warning = useWorldStore.getState().catalog.node_types.find((definition) => definition.id === card.type)?.deletion_warning;
+  if (warning) throw new Error(`${card.name}: ${warning} Delete this card directly to review its removal.`);
   const snapshot = copyCard(card);
   if (useWorldStore.getState().catalog.node_types.find((definition) => definition.id === card.type)?.has_document) {
     snapshot.restoreDocument = (await worldApi.getNodeDocument(card.id)).value;
@@ -1115,9 +1117,13 @@ export const useWorldStore = create<WorldState>()(persist((set, get) => ({
     const cards = [...get().cards, ...get().stressCards].filter((card) => requested.has(card.id));
     if (cards.length === 0) return;
 
+    const irreversible = new Set(cards.filter(card => get().catalog.node_types.find(definition => definition.id === card.type)?.deletion_warning).map(card => card.id));
+    if (irreversible.size && !window.confirm(cards.filter(card => irreversible.has(card.id)).map(card =>
+      `${card.name}: ${get().catalog.node_types.find(definition => definition.id === card.type)?.deletion_warning}`).join("\n\n"))) return;
+
     const snapshots = new Map<string, RestorableCard>();
     try {
-      await Promise.all(cards.map(async (card) => snapshots.set(card.id, await snapshotCardForHistory(card))));
+      await Promise.all(cards.filter(card => !irreversible.has(card.id)).map(async (card) => snapshots.set(card.id, await snapshotCardForHistory(card))));
     } catch (error) {
       get().pushToast({ tone: "error", title: "Cards were not removed", detail: `Could not preserve document data for undo: ${apiErrorMessage(error)}` });
       return;
@@ -1149,6 +1155,7 @@ export const useWorldStore = create<WorldState>()(persist((set, get) => ({
     if (removed.length === 0) return;
 
     const removedIds = new Set(removed.map((card) => card.id));
+    const cannotUndo = removed.some(card => irreversible.has(card.id));
     const attachedEdges = attachedBefore.filter(
       (edge) => removedIds.has(edge.source) || removedIds.has(edge.target),
     );
@@ -1161,7 +1168,7 @@ export const useWorldStore = create<WorldState>()(persist((set, get) => ({
       selectedEdgeId: attachedEdges.some((edge) => edge.id === state.selectedEdgeId)
         ? undefined
         : state.selectedEdgeId,
-      undoStack: appendHistory(state.undoStack, {
+      undoStack: cannotUndo ? [] : appendHistory(state.undoStack, {
           id: ++historySequence,
           label: removed.length === 1 ? `Remove ${removed[0].name}` : `Remove ${removed.length} cards`,
           kind: "cards-deleted",
@@ -1173,7 +1180,7 @@ export const useWorldStore = create<WorldState>()(persist((set, get) => ({
     get().pushToast({
       tone: "neutral",
       title: removed.length === 1 ? `${removed[0].name} removed` : `${removed.length} cards removed`,
-      detail: "Press Ctrl+Z to restore.",
+      detail: cannotUndo ? "Persistent data removed. Canvas undo history was cleared because this deletion cannot be restored." : "Press Ctrl+Z to restore.",
     });
   }),
 

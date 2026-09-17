@@ -25,6 +25,7 @@ export function PluginSurface({ card, slot, level, children }: {
     updateConfig: async (config) => { await updateCard(card.id, { config }); },
     getAgentInfo: () => worldApi.getAgentInfo(card.id),
     documentAction: (action, arguments_, expectedRevision) => worldApi.nodeDocumentAction(card.id, action, arguments_, expectedRevision),
+    resourceAction: (action, arguments_, confirm) => worldApi.nodeResourceAction(card.id, action, arguments_, confirm),
     listCards: async (traits = []) => (await worldApi.getWorld()).nodes.filter(node => {
       const type = useWorldStore.getState().catalog.node_types.find(item => item.id === node.type);
       return traits.every(trait => type?.traits.includes(trait));

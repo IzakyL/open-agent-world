@@ -9,6 +9,7 @@ from backend.plugins.registry import PluginAsset, PackDefinition
 from backend.plugins.summoning import NodeSummoningDefinition, SummoningAction, SummoningPolicy
 from backend.plugins.documents import NodeDocumentAction, NodeDocumentDefinition, NodeDocumentDownload
 from backend.plugins.documents import NodeDocumentTransformation
+from backend.plugins.resources import NodeResourceAction, NodeResourceContext
 from backend.plugins.containers import NodeContainerDefinition
 from backend.plugins.execution import ExecutionPolicy, NodeExecutionDefinition, WorkItem, WorkOutcome
 
@@ -78,6 +79,7 @@ from backend.runs import InvocationContext, RuntimeInput
 from backend.world.models import Card, CardCreate, CardPatch, Edge
 
 __all__ = [
+    "NodeResourceAction", "NodeResourceContext",
     "ToolImage", "VisualToolResult", "codex_tool_content",
     "PackDefinition",
     "NodePresentation",
