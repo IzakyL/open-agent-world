@@ -173,12 +173,19 @@ function AgentWorkspace({ card }: { card: WorldCard }) {
 
 export function WorkspaceSurface({ card }: WorkspaceSurfaceProps) {
   useLocale();
+  return <section className="node-workspace-window" role="dialog" aria-modal="false" aria-label={t("{v0} workspace", { v0: String(card.name) })} data-workspace-node-id={card.id}>
+    <WorkspaceTitlebar card={card} />
+    <WorkspaceContent card={card} />
+  </section>;
+}
+
+/** Shared by a canvas window and a docked Legion pane. */
+export function WorkspaceContent({ card }: WorkspaceSurfaceProps) {
+  useLocale();
   const catalog = useWorldStore((state) => state.catalog);
   const [agentTab, setAgentTab] = useState("activity");
   const ministerTab = useMinisterRole(s => s.settingsCardId === card.id) && Boolean(card.minister);
   return (
-    <section className="node-workspace-window" role="dialog" aria-modal="false" aria-label={t("{v0} workspace", { v0: String(card.name) })} data-workspace-node-id={card.id}>
-      <WorkspaceTitlebar card={card} />
       <div className="workspace-content">
       <PluginSurface card={card} slot="workspace" level="workspace">
       {catalog.node_types.find((definition) => definition.id === card.type)?.traits.includes("core.agent") ? <>
@@ -206,6 +213,5 @@ export function WorkspaceSurface({ card }: WorkspaceSurfaceProps) {
         )}
       </PluginSurface>
       </div>
-    </section>
   );
 }

@@ -29,6 +29,72 @@ positions and their connections. The trash button **Delete Legion and members**
 deletes the container and all members as one batch. Both actions support undo/redo,
 including restoration of saved shared variables. Library presets are unaffected.
 
+## Workspace mode
+
+Unplaced member cards appear as compact icons in the bottom bar. Click an icon to
+open its workspace or inspector in a temporary panel for viewing and configuration;
+click again, use the close button, or press Escape to collapse it. Switching or
+collapsing the panel preserves page drafts while the workspace stays open. These
+actions do not change the saved layout. In edit mode, drag a bottom-bar icon onto a
+title strip or region edge to place it. Removing a card from the layout returns it
+to the bar; deleting or detaching the member removes its icon and closes its panel.
+Pages in the bar are loaded on first use.
+
+Choose **Workspace mode** in a Legion's header to open its members as one modular
+window. **Edit layout** lists direct member cards. Use only the cards you need:
+drag the first into the empty window, then drop cards on the left, right, top or
+bottom edge of a pane. The highlighted half shows the destination. You can also
+select a card and click a docking button. Each region's title bar is a tab strip.
+Drop a card or an existing tab on that strip to add it to the region; dropping
+on a tab inserts before it, while dropping on the trailing space appends. You
+can also select a card and choose **Add tab**. Drag a tab to a region edge to
+split it back into a separate pane, or remove it without deleting the card.
+
+Click tabs to switch pages in either mode. Left/Right and Home/End navigate a
+focused tab strip. In ordinary use the selected tab is saved automatically;
+reordering and moving tabs requires edit mode. Inactive pages stay mounted so
+unsaved text, terminals and plugin view state survive tab switches and moves.
+Tab strips scroll horizontally when their titles exceed the available width.
+
+Regions tile without gaps or overlapping windows. Drag a divider to change its
+ratio in both editing and ordinary use; focused dividers also accept arrow keys
+and Home/End. In ordinary use, releasing a divider or resize key automatically
+saves its ratio, while moving, adding and removing panes requires edit mode.
+**Done editing** or **Save layout** saves the arrangement and opens the real card
+interfaces using their existing workspace or inspector surfaces, including plugin
+surfaces. The Save button appears only in edit mode. Failed automatic saves retain
+the draft and offer a retry. **Cancel layout changes** restores the
+saved arrangement. Closing with an unsaved layout offers a discard action.
+Small windows scroll once the panes reach their minimum usable sizes.
+
+The window is a presentation of existing members: canvas positions, Glue, team
+settings, connections and runtime ownership stay independent. Cards omitted from
+the window continue working. Missing or detached members disappear from the
+window and adjacent regions expand. Nested containers are not dockable in this
+first version. The window supports splits and tab groups; floating subwindows
+are not implemented.
+
+Layouts live in `config.workspace_layout`, with `version: 1` and a nullable `root`.
+A single-card leaf is `{kind: "pane", card_id: "..."}`. A tab group is
+`{kind: "tabs", card_ids: ["editor", "notes"], active_card_id: "editor"}`.
+A branch is
+`{kind: "split", axis: "horizontal" | "vertical", ratio: 0.5, first: ..., second: ...}`.
+Horizontal splits place children side by side. Ratios are bounded to 0.15–0.85;
+layouts have at most 100 unique cards and 16 levels. **Save to library** includes
+the saved layout. Capture maps card IDs to template keys; deployment maps those
+keys to new member IDs. Older templates open with an empty workspace. The bundled
+Coding workspace preset supplies a Conversation/Sandbox split when deployed with
+a Legion wrapper; welcome-screen unwrapped deployment has no Legion window.
+
+Developers and presets use the same `workspace_layout` contract via
+`PATCH /api/nodes/{legion_id}`. `card_ids` defines tab order and `active_card_id`
+must reference one of those cards. Each card may occur only once across all
+regions, including hidden tabs. Existing version-1 `pane` layouts remain valid.
+Capture and deployment remap both the ordered IDs and the active ID. When a tab
+is removed or detached, the group keeps its active page if possible, otherwise
+selects its first remaining page. Empty groups disappear; single-tab groups can
+collapse to a `pane`. This works with plugin cards through their existing surfaces.
+
 ## Runtime settings and state
 
 These settings apply in team mode (`config.mode = "team"`). Switching back to

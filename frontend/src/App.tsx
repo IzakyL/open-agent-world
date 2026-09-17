@@ -5,6 +5,7 @@ import { VisualObserver } from "./canvas/VisualObserver";
 import { ConnectionDialog } from "./edges/ConnectionDialog";
 import { ComponentPalette } from "./palette/ComponentPalette";
 import { LegionSelection } from "./legions/LegionSelection";
+import { LegionWorkspace } from './legions/LegionWorkspace';
 import { ActivityPanel } from "./shell/ActivityPanel";
 import { BackendUnavailableNotice } from "./shell/BackendUnavailableNotice";
 import { Onboarding } from "./onboarding/Onboarding";
@@ -40,6 +41,7 @@ export function App() {
         <TopBar />
         <BackendUnavailableNotice />
         <LegionSelection />
+        <LegionWorkspace />
         <ComponentPalette />
         <Onboarding />
         <ActivityPanel />

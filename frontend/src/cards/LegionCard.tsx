@@ -1,7 +1,8 @@
 import { t, useLocale } from "../i18n";
 import { ModelSelect } from "./ModelSelect";
 import { NodeToolbar, Position, useReactFlow, type NodeProps } from "@xyflow/react";
-import { Layers3, Pause, Play, RefreshCw, Save, Settings2, X } from "lucide-react";
+import { Layers3, PanelsTopLeft, Pause, Play, RefreshCw, Save, Settings2, X } from "lucide-react";
+import { useLegionWorkspace } from '../state/legionWorkspace';
 import { useEffect, useRef, useState } from "react";
 import { apiErrorMessage, worldApi } from "../api/client";
 import { useWorldStore } from "../state/worldStore";
@@ -116,6 +117,7 @@ export function LegionCardNode({ data, selected }: NodeProps<CanvasNode>) {
         onBlur={(e) => { const name = e.target.value.trim(); if (name && name !== card.name) void updateCard(card.id, { name }); }} /></div>
       <span className="legion-count">{members.length} {t("members")}{team && card.config.paused ? ` · ${t("Paused")}` : ''}</span>
       <AddSelectedMembers card={card} />
+      <button className="secondary-button nodrag nopan" onClick={() => useLegionWorkspace.getState().open(card.id)}><PanelsTopLeft size={14} /> {t('Workspace mode')}</button>
       <button ref={settingsButtonRef} onFocus={event => event.stopPropagation()} className="secondary-button nodrag nopan" aria-expanded={settingsOpen} aria-controls={`legion-settings-${card.id}`} onClick={() => setSettingsOpen(open => !open)}><Settings2 size={14} /> {t("Legion settings")}</button>
       <button className="primary-button nodrag nopan" disabled={members.length === 0 || busy || positionBusy || dragging}
         onClick={() => void saveTemplate()} title={t("Save nodes, connections, positions and display states (1–4).") }><Save size={14} /> {t("Save to library")}</button>

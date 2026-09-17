@@ -1,9 +1,63 @@
 ﻿import asyncio
 import pytest
 from backend.tests.test_runs import RecordingProvider, _services, HangingStopProvider
-from backend.world.models import CardCreate
+from backend.world.models import CardCreate, EdgeCreate
+from backend.conversations import ConversationPost, ConversationSessionCreate
 from backend.runs import RunStatus
 from backend.errors import RuntimeUnavailableError
+from backend.agents import AgentEvent, AgentEventType
+import contextvars
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize('cancel', [False, True])
+async def test_provider_stream_keeps_one_context_through_stop_and_next_turn(tmp_path, cancel):
+    span = contextvars.ContextVar('provider_span', default=None)
+
+    class ContextProvider(RecordingProvider):
+        async def execute(self, config, context, runtime_input):
+            token = span.set(context.run_id)
+            owner = asyncio.current_task()
+            try:
+                yield AgentEvent(context.agent_id, context.run_id, AgentEventType.TOOL_STARTED, {'name': 'work'})
+                assert span.get() == context.run_id
+                assert asyncio.current_task() is owner
+                self.started.set()
+                if self.mode == 'block':
+                    await self.continue_tool.wait()
+                yield AgentEvent(context.agent_id, context.run_id, AgentEventType.COMPLETED, {}, run_status=RunStatus.SUCCEEDED)
+            finally:
+                span.reset(token)
+
+    provider = ContextProvider(mode='block' if cancel else 'success')
+    services = _services(tmp_path, provider)
+    try:
+        manager = services.run_manager
+        agent = await services.create_card(CardCreate(type='agent'))
+        conversation = await services.create_card(CardCreate(type='conversation'))
+        await services.create_edge(EdgeCreate(source=agent.id, target=conversation.id, relationship='participate'))
+        session = await services.create_conversation_session(conversation.id,
+            ConversationSessionCreate(title='Stop and resend', participant_ids=[agent.id]))
+        await services.post_conversation_message(conversation.id, session.id,
+            ConversationPost(content='first turn', mention_agent_ids=[agent.id]))
+        first = manager.list_runs(agent_id=agent.id)[0]
+        if cancel:
+            await asyncio.wait_for(provider.started.wait(), 1)
+            await services.stop_agent(agent.id)
+        await asyncio.wait_for(manager.wait_execution(first.run_id), 1)
+        record = manager.get_run(first.run_id)
+        assert record.status == (RunStatus.CANCELLED if cancel else RunStatus.SUCCEEDED)
+        assert record.lifecycle.get('cleanup') not in {'pending', 'failed'}
+        provider.mode = 'success'
+        sent = await services.post_conversation_message(conversation.id, session.id,
+            ConversationPost(content='next turn', mention_agent_ids=[agent.id]))
+        assert sent.accepted_agent_ids == [agent.id]
+        second = next(run for run in manager.list_runs(agent_id=agent.id) if run.run_id != first.run_id)
+        await asyncio.wait_for(manager.wait_execution(second.run_id), 1)
+        assert manager.get_run(second.run_id).status == RunStatus.SUCCEEDED
+    finally:
+        provider.continue_tool.set()
+        await services.shutdown()
 
 
 @pytest.mark.asyncio
@@ -42,6 +96,9 @@ async def test_cleanup_pending_is_durable_and_retry_joins_same_stop(tmp_path):
         assert record.status == RunStatus.CANCELLED
         assert record.lifecycle['cleanup'] == 'pending'
         provider.release_stop.set()
+        await manager._cleanup_tasks[run.run_id]
+        assert manager.get_run(run.run_id).lifecycle['cleanup_reason'] is None
+        manager.assert_can_start(agent.id)
         record = await manager.cancel_run(run.run_id)
         assert record.lifecycle['cleanup'] == 'complete'
         assert provider.stopped_run_ids == [run.run_id]

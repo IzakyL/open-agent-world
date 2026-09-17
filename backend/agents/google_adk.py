@@ -307,17 +307,17 @@ class GoogleAdkAgentRuntime(RuntimeProvider):
                 options["api_base"] = base_url
             if api_key:
                 options["api_key"] = api_key
-            return LiteLlm(model_id, **options)
+            from .resilient_litellm import ResilientLiteLlm
+            return ResilientLiteLlm(model_id, **options)
 
-        if not self._litellm_connection and self.model_connections is None:
-            return configured_model
         from google.adk.models import LLMRegistry
         from google.adk.models.lite_llm import LiteLlm
 
         resolved = LLMRegistry.new_llm(configured_model)
         if isinstance(resolved, LiteLlm):
             connection = self.model_connections.legacy_options() if self.model_connections else None
-            return LiteLlm(configured_model, **(connection if connection is not None else self._litellm_connection))
+            from .resilient_litellm import ResilientLiteLlm
+            return ResilientLiteLlm(configured_model, **(connection if connection is not None else self._litellm_connection))
         return configured_model
 
     @staticmethod

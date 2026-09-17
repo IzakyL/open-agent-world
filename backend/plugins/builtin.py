@@ -8,6 +8,7 @@ import logging
 from typing import Any, Mapping
 
 from backend.errors import PluginCompatibilityError, ResourceValidationError
+from backend.legion_workspace import remap_workspace_config
 from backend.sandbox.models import SandboxError
 from backend.plugins.registry import (
     PLUGIN_API_VERSION,
@@ -955,6 +956,7 @@ def _register_builtin(registry: PluginRegistration) -> None:
         deck_icon="workflow", default_name="New Legion", default_size=(1100, 700),
         default_status="available", statuses=frozenset({"available"}),
         config_model=LegionConfig, traits=frozenset({"core.legion", "ui.legion.v1"}),
+        template_remap_config=remap_workspace_config,
         container=LegionContainerDefinition(),
         user_creatable=False, templateable=True,
     ))

@@ -257,6 +257,8 @@ class NodeTypeDefinition:
     templateable: bool = False
     template_status: str | None = None
     template_handler: NodeTemplateHandler | None = None
+    # Convert card references to portable keys at capture and new IDs at restore.
+    template_remap_config: Callable[[dict[str, Any], Mapping[str, str]], dict[str, Any]] | None = None
     document: NodeDocumentDefinition | None = None
     execution: NodeExecutionDefinition | None = None
     container: NodeContainerDefinition | None = None

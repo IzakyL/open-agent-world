@@ -1710,6 +1710,8 @@ class ApplicationServices:
                 )
             if definition.template_status is not None:
                 config["status"] = definition.template_status
+            if definition.template_remap_config is not None:
+                config = definition.template_remap_config(config, node_keys)
             config = self.plugins.validate_config(card.type, config)
             dependencies: list[LegionTemplateDependency] = []
             if definition.template_handler is not None:
@@ -1920,6 +1922,9 @@ class ApplicationServices:
                 created_nodes.append(wrapper)
             from backend.node_containers import parent_first
             for node in parent_first(template_nodes, key=lambda n: n.key, parent=lambda n: n.owner_key or n.parent_key):
+                definition = self.plugins.node_type(node.type)
+                config = (definition.template_remap_config(dict(node.config), node_ids)
+                          if definition.template_remap_config else dict(node.config))
                 created_nodes.append(await self._create_card(
                     CardCreate(
                         id=node_ids[node.key],
@@ -1933,7 +1938,7 @@ class ApplicationServices:
                         },
                         size=node.size,
                         expanded=node.expanded,
-                        config=dict(node.config),
+                        config=config,
                     ),
                     template_payload_version=node.payload_version,
                     template_payload=node.payload,

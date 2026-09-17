@@ -5,6 +5,7 @@ from enum import StrEnum
 from typing import Any, Annotated, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
+from backend.legion_workspace import WorkspaceLayout
 
 
 class CardType(StrEnum):
@@ -82,6 +83,7 @@ class LegionConfig(BaseModel):
     model_override: str = Field(default="", max_length=200, json_schema_extra={"privileged": True})
     paused: bool = False
     shared_state_access: Literal["read_only", "read_write"] = "read_write"
+    workspace_layout: WorkspaceLayout | None = Field(default=None, json_schema_extra={"agentReadable": True, "agentWritable": True})
 
     @model_validator(mode="before")
     @classmethod

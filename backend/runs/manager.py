@@ -468,6 +468,7 @@ class RunManager:
             if task_to_wait is not None:
                 await asyncio.gather(task_to_wait, return_exceptions=True)
             self.store.update_lifecycle(run_id, cleanup='uncertain' if current.lifecycle.get('session_lost') or provider is None else 'complete',
+                cleanup_reason=None,
                 termination_scope='provider-owned execution; remote side effects are not inferred')
         pending = self._cleanup_tasks.get(run_id)
         if pending is not None and pending.done() and (pending.cancelled() or pending.exception() is not None):
@@ -624,10 +625,43 @@ class RunManager:
             deadline = asyncio.get_running_loop().time() + self.execution_deadline_seconds
             active_tools = 0
             pending_event = None
+            # The provider owns context variables (tracing, sessions and tool
+            # scopes) across yields. Advancing each event in a fresh Task, or
+            # closing in the caller, breaks those scopes during Stop. One
+            # demand-driven reader owns iteration AND closure for the full turn.
+            demands = asyncio.Queue()
+
+            async def read_stream():
+                try:
+                    while True:
+                        waiter = await demands.get()
+                        try:
+                            event = await anext(stream)
+                        except (Exception, asyncio.CancelledError) as error:
+                            if not waiter.done():
+                                if isinstance(error, asyncio.CancelledError):
+                                    waiter.cancel()
+                                else:
+                                    waiter.set_exception(error)
+                            return
+                        if not waiter.done():
+                            waiter.set_result(event)
+                finally:
+                    closer = getattr(stream, 'aclose', None)
+                    if closer is not None:
+                        try:
+                            await closer()
+                        except Exception as error:
+                            self.store.update_lifecycle(record.run_id, cleanup='failed',
+                                cleanup_reason=f'Provider stream cleanup failed: {error}')
+                            raise
+
+            reader = asyncio.create_task(read_stream(), name=f'provider-stream:{record.run_id}')
             try:
                 while True:
                     try:
-                        pending_event = asyncio.ensure_future(anext(stream))
+                        pending_event = asyncio.get_running_loop().create_future()
+                        demands.put_nowait(pending_event)
                         while True:
                             remaining = deadline - asyncio.get_running_loop().time()
                             if remaining <= 0:
@@ -679,17 +713,15 @@ class RunManager:
                         if self.get_run(record.run_id).status in TERMINAL_RUN_STATUSES:
                             break
             finally:
-                if pending_event is not None and not pending_event.done():
-                    pending_event.cancel()
+                if pending_event is not None:
+                    if not pending_event.done():
+                        pending_event.cancel()
                     await asyncio.gather(pending_event, return_exceptions=True)
-                closer = getattr(stream, "aclose", None)
-                if closer is not None:
-                    try:
-                        await closer()
-                    except Exception as error:
-                        self.store.update_lifecycle(record.run_id, cleanup='failed',
-                            cleanup_reason=f'Provider stream cleanup failed: {error}')
-                        raise
+                if not reader.done():
+                    reader.cancel()
+                result, = await asyncio.gather(reader, return_exceptions=True)
+                if isinstance(result, Exception):
+                    raise result
             current = self.get_run(record.run_id)
             if current.status is RunStatus.RUNNING:
                 # Provider protocol: a turn must end with an explicit terminal

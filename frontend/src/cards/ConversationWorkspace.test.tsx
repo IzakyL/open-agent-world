@@ -205,4 +205,26 @@ describe("ConversationWorkspace snapshots", () => {
     expect(screen.getByText("Keep my text")).toBeTruthy();
   });
 
+  it('shows the stop cleanup failure and lets the user send the retained text after recovery', async () => {
+    const send = vi.spyOn(worldApi, 'postConversationMessage').mockRejectedValueOnce(new Error('Agent admission is closed until its pending Run cleanup is resolved'));
+    send.mockImplementationOnce(async (_id, _session, request) => ({
+      message: { ...historicalMessage, id: request.message_id!, content: request.content }, accepted_agent_ids: [],
+    }));
+    render(<ConversationWorkspace card={card} />);
+    await screen.findByText(historicalMessage.content);
+    fireEvent.change(screen.getByLabelText('Conversation message'), { target: { value: 'Continue after Stop' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Send message' }));
+    expect(await screen.findByText('Agent admission is closed until its pending Run cleanup is resolved')).toBeTruthy();
+    fireEvent.change(screen.getByLabelText('Conversation message'), { target: { value: 'Keep the next draft' } });
+    expect((screen.getByRole('button', { name: 'Copy back to composer' }) as HTMLButtonElement).disabled).toBe(true);
+    fireEvent.change(screen.getByLabelText('Conversation message'), { target: { value: '' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Copy back to composer' }));
+    expect((screen.getByLabelText('Conversation message') as HTMLTextAreaElement).value).toBe('Continue after Stop');
+    fireEvent.click(screen.getByRole('button', { name: 'Send message' }));
+    await waitFor(() => expect(send).toHaveBeenCalledTimes(2));
+    await waitFor(() => expect(screen.queryByText('Sending...')).toBeNull());
+    expect(screen.queryByText('Send not confirmed. Your text is kept here.')).toBeNull();
+    expect(screen.getAllByText('Continue after Stop')).toHaveLength(1);
+  });
+
 });

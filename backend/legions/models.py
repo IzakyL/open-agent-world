@@ -108,6 +108,8 @@ class LegionTemplateNode(BaseModel):
 
     @model_validator(mode="after")
     def require_payload_version_pair(self) -> "LegionTemplateNode":
+        if self.type == "legion":
+            self.config = {"workspace_layout": None, **self.config}
         if self.type == "legion" and "mode" not in self.config:
             self.config = {**self.config, "mode": "team"}
         if self.initial_shared_state is not None:

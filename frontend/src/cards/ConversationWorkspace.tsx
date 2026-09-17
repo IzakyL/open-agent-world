@@ -16,7 +16,7 @@ import { useOpenFiles } from "../state/openFiles";
 import type { ConversationAgent, ConversationAttachment, ConversationMessage, ConversationSession, WorldCard } from "../types/world";
 import { reportInteraction } from '../state/interactions';
 
-type OutgoingMessage = { message: ConversationMessage; status: "sending" | "confirmed" | "unconfirmed" };
+type OutgoingMessage = { message: ConversationMessage; status: "sending" | "confirmed" | "unconfirmed"; error?: string };
 
 export function ConversationWorkspace({ card }: { card: WorldCard }) {
   useLocale();
@@ -283,7 +283,7 @@ export function ConversationWorkspace({ card }: { card: WorldCard }) {
       }
     } catch (reason) {
       setOutgoing((current) => current.map((item) => item.message.id === messageId
-        ? { ...item, status: "unconfirmed" } : item));
+        ? { ...item, status: "unconfirmed", error: apiErrorMessage(reason) } : item));
       if (selectedScope.current === `${card.id}/${message.session_id}`) void history.loadLatest();
       pushToast({ tone: "error", title: t("Send could not be confirmed"), detail: apiErrorMessage(reason) });
     } finally {
@@ -369,7 +369,15 @@ export function ConversationWorkspace({ card }: { card: WorldCard }) {
                 : message.content ? (message.sender_kind === "agent" ? <MarkdownMessage content={message.content} /> : <p>{message.content}</p>) : null}
                 {message.attachments?.length ? <ConversationAttachments conversationId={card.id} sessionId={message.session_id} files={message.attachments} /> : null}
                 {visibleOutgoing.find((item) => item.message.id === message.id)?.status === "sending" ? <small className="conversation-delivery-state" role="status">{t("Sending...")}</small> : null}
-                {visibleOutgoing.find((item) => item.message.id === message.id)?.status === "unconfirmed" ? <small className="conversation-delivery-state is-error" role="alert">{t("Send not confirmed. Your text is kept here.")}</small> : null}
+                {visibleOutgoing.find((item) => item.message.id === message.id)?.status === "unconfirmed" ? <div className="conversation-delivery-state is-error" role="alert">
+                  <span>{t("Send not confirmed. Your text is kept here.")}</span>
+                  <p>{visibleOutgoing.find((item) => item.message.id === message.id)?.error}</p>
+                  <button type="button" className="secondary-button" disabled={busy || uploading || Boolean(draft.trim()) || attachments.length > 0} onClick={() => {
+                    setDraft(message.content); setAttachments(message.attachments ?? []);
+                    setOutgoing(current => current.filter(item => item.message.id !== message.id));
+                    messageInput.current?.focus();
+                  }}>{t('Copy back to composer')}</button>
+                </div> : null}
               </div>
             </article>
           ))}

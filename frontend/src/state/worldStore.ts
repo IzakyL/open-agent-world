@@ -336,6 +336,7 @@ interface WorldState {
   updateCard: (
     id: string,
     patch: Partial<Omit<WorldCard, "id" | "type">>,
+    options?: { expectedRevision: number },
   ) => Promise<void>;
   updateCardPositions: (updates: Array<{ id: string; position: WorldPosition; parent_id?: string | null }>) => Promise<void>;
   resizeContainer: (id: string, size: WorldCard['size']) => Promise<void>;
@@ -716,7 +717,7 @@ export const useWorldStore = create<WorldState>()(persist((set, get) => ({
     }
   }),
 
-  updateCard: (id, patch) => withHistoryTransaction(async () => {
+  updateCard: (id, patch, options) => withHistoryTransaction(async () => {
     const current = get().cards.find((card) => card.id === id) ?? get().stressCards.find((card) => card.id === id);
     if (!current) return;
     if (current.ephemeral) {
@@ -745,7 +746,7 @@ export const useWorldStore = create<WorldState>()(persist((set, get) => ({
       syncState: "syncing",
     }));
     try {
-      const authoritative = await worldApi.updateNode(id, patch);
+      const authoritative = await worldApi.updateNode(id, options ? { ...patch, expected_revision: options.expectedRevision } : patch);
       markWorldMutation();
       set((state) => ({
         cards: state.cards.map((card) => (card.id === id && !isOlder(authoritative, card) ? authoritative : card)),

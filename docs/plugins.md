@@ -574,6 +574,13 @@ or the application service container.
 
 ## Legion portability
 
+Node types whose portable configuration contains card references can provide
+`NodeTypeDefinition.template_remap_config(config, node_ids)`. The host calls this
+pure function during capture (live IDs to template keys) and deployment (keys to
+new IDs), before config validation. Return a new config object and omit or collapse
+references absent from the mapping. Legion workspace layouts use this hook; it
+does not require a resource payload or change the node's lifecycle contract.
+
 The Legion and template contracts require Plugin API `"1.1"`.
 
 A Legion is a backend-owned, versioned snapshot of two or more nodes and the
