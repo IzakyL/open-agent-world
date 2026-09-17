@@ -56,6 +56,28 @@ def test_group_membership_move_external_edges_and_reload(client):
     assert client.delete(f"/api/nodes/{group['id']}").status_code == 200
 
 
+def test_formation_encloses_existing_surfaces_without_compressing_positions(client):
+    from backend.world.layout import card_footprints
+
+    first = create_node(client, "text", position={"x": 400, "y": 200})
+    second = create_node(client, "text", position={"x": 500, "y": 250})
+    services = client.app.state.services
+    before = [services.world.get_card(node["id"]) for node in (first, second)]
+    preview = services.preview_legion_group("Layout", [node.id for node in before])
+    response = client.post("/api/legion-groups", json={"name": "Layout", "node_ids": [node.id for node in before]})
+    assert response.status_code == 200, response.text
+    group, *members = response.json()
+    assert group["position"] == preview.position.model_dump()
+    assert group["size"] == preview.size.model_dump()
+    assert {node["id"]: node["position"] for node in members} == {node.id: node.position.model_dump() for node in before}
+    left, top, right, bottom = services.plugins.node_type("legion").container.content_inset
+    for rect in card_footprints(before, services.plugins).values():
+        assert rect.x >= group["position"]["x"] + left
+        assert rect.y >= group["position"]["y"] + top
+        assert rect.x + rect.width <= group["position"]["x"] + group["size"]["width"] - right
+        assert rect.y + rect.height <= group["position"]["y"] + group["size"]["height"] - bottom
+
+
 def test_templates_remap_membership_and_copy_independent_shared_variables(client):
     member = create_node(client, "agent")
     group = client.post("/api/legion-groups", json={"name": "Reusable", "node_ids": [member["id"]]}).json()[0]
@@ -176,3 +198,17 @@ async def test_failed_formation_rolls_back_container_and_membership(tmp_path: Pa
         assert services.world.get_card(member.id).parent_id is None
     finally:
         await services.shutdown()
+
+
+def test_group_header_is_outside_expanded_content_bounds(client):
+    member = create_node(client, "text", position={"x": 600, "y": 400})
+    # Inspector surface centered around the 96px compact node anchor.
+    bounds = {"position": {"x": 429, "y": 163}, "size": {"width": 438, "height": 570}}
+    response = client.post("/api/legion-groups", json={"node_ids": [member["id"]], "content_bounds": bounds})
+    assert response.status_code == 200, response.text
+    group, saved = response.json()
+    assert saved["position"] == member["position"]
+    spec = client.app.state.services.plugins.node_type("legion").container
+    assert group["position"]["y"] + spec.content_inset[1] <= bounds["position"]["y"]
+    assert group["position"]["x"] + spec.content_inset[0] <= bounds["position"]["x"]
+    assert group["position"]["y"] + group["size"]["height"] >= 163 + 570 + spec.content_inset[3]

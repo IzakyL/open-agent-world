@@ -4,6 +4,7 @@ import type { LegionSummary, WorldCard, WorldEdge, WorldSnapshot } from "../type
 import { buildCardDraft } from "./helpers";
 import { TEST_CATALOG } from "./catalog.fixture";
 import { mergeEdges, useWorldStore } from "./worldStore";
+import { useNodeSurfaceStore } from "./nodeSurfaces";
 
 function card(id: string, type: WorldCard["type"]): WorldCard {
   return { id, ...buildCardDraft(type, { x: 0, y: 0 }) };
@@ -38,6 +39,7 @@ function deferred<T>() {
 describe("authoritative world synchronization", () => {
   beforeEach(() => {
     vi.restoreAllMocks();
+    useNodeSurfaceStore.setState({ surfaceLevels: {}, baseLevels: {}, presentations: {}, dragging: false, connectingNodeId: undefined });
     vi.spyOn(worldApi, "getModelConnections").mockResolvedValue({ revision: 0, connections: [], default_model: null });
     vi.spyOn(worldApi, "getCatalog").mockResolvedValue(TEST_CATALOG);
     vi.spyOn(worldApi, "getLegions").mockResolvedValue([]);
@@ -85,6 +87,21 @@ describe("authoritative world synchronization", () => {
     useWorldStore.getState().ingestEvent({ id: "restored", type: "card_created", timestamp: node.created_at,
       payload: { node: { ...node, created_at: "2026-09-11T00:01:00Z" } } });
     expect(useWorldStore.getState().cards).toHaveLength(1);
+  });
+
+  it("initializes created and remotely ingested surfaces once and retains them across refresh", async () => {
+    const room = card("room", "conversation");
+    vi.spyOn(worldApi, "createNode").mockResolvedValue(room);
+    await useWorldStore.getState().createCard("conversation");
+    expect(useNodeSurfaceStore.getState().surfaceLevels.room).toBe("workspace");
+    useNodeSurfaceStore.getState().closeWorkspace("room");
+    const sandbox = card("lab", "sandbox");
+    useWorldStore.getState().ingestEvent({ id: "remote", type: "card_created", timestamp: "2026-09-16T00:00:00Z", payload: { node: sandbox } });
+    expect(useNodeSurfaceStore.getState().surfaceLevels).toMatchObject({ room: "preview", lab: "workspace" });
+    // Snapshot replacement and temporary chunk unloading do not reapply initial.
+    useWorldStore.setState({ cards: [sandbox] });
+    useWorldStore.setState({ cards: [{ ...room }, { ...sandbox }], catalog: { ...TEST_CATALOG } });
+    expect(useNodeSurfaceStore.getState().surfaceLevels).toMatchObject({ room: "preview", lab: "workspace" });
   });
 
   it("reconciles initialization when a background mutation arrives during loading", async () => {
@@ -245,7 +262,7 @@ describe("authoritative world synchronization", () => {
     expect(useWorldStore.getState().cards).toEqual([]);
   });
 
-  it('saves a container resize with members as one batch and restores sizes and positions on undo', async () => {
+  it('saves only the resized frame, preserving member positions through undo and redo', async () => {
     const group = { ...card('group', 'legion'), size: { width: 1400, height: 700 } };
     const members = Array.from({ length: 4 }, (_, i) => ({ ...card(`member-${i}`, 'text'), parent_id: group.id, position: { x: 440 + i * 310, y: 160 } }));
     useWorldStore.setState({ cards: [group, ...members] });
@@ -254,7 +271,9 @@ describe("authoritative world synchronization", () => {
     const resized = useWorldStore.getState().cards.map(c => ({ ...c }));
     expect(update).toHaveBeenCalledTimes(1);
     expect(useWorldStore.getState().undoStack).toHaveLength(1);
-    expect(resized.find(c => c.id === group.id)!.size.height).toBeGreaterThan(550);
+    expect(resized.find(c => c.id === group.id)!.size.height).toBe(550);
+    expect(resized.filter(c => c.parent_id === group.id)).toEqual(members);
+    expect(update.mock.calls[0][0].map(p => p.node_id)).toEqual([group.id]);
     await useWorldStore.getState().undo();
     expect(useWorldStore.getState().cards).toEqual([group, ...members]);
     await useWorldStore.getState().redo();
@@ -749,7 +768,7 @@ describe("authoritative world synchronization", () => {
 
     await useWorldStore.getState().instantiateLegion("legion-1", { x: 160, y: 120 });
 
-    expect(instantiateLegion).toHaveBeenCalledWith("legion-1", { x: 40, y: 72 });
+    expect(instantiateLegion).toHaveBeenCalledWith("legion-1", { x: 40, y: 72 }, { preset: undefined, unwrap: undefined });
     expect(useWorldStore.getState().cards.map((item) => item.id)).toEqual([existing.id, first.id, second.id]);
     expect(useWorldStore.getState().edges).toEqual([relationship]);
     expect(useWorldStore.getState().selectedCardIds).toEqual([first.id, second.id]);
@@ -1000,6 +1019,10 @@ describe("authoritative world synchronization", () => {
     expect(createLegion).toHaveBeenCalledWith({
       name: "Research Cell",
       node_ids: [first.id, second.id],
+      presentation: {
+        [first.id]: { level: 'preview', base_level: 'preview' },
+        [second.id]: { level: 'preview', base_level: 'preview' },
+      },
     });
     expect(useWorldStore.getState().cards.map((item) => item.position)).toEqual([
       { x: 80, y: 40 },

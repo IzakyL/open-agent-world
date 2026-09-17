@@ -1,4 +1,10 @@
 import { expect, test, type APIRequestContext, type Locator } from "@playwright/test";
+import { resetTutorialProfile } from './tutorial-profile';
+
+test.beforeEach(async ({ request, page }) => {
+  await resetTutorialProfile(request);
+  await page.emulateMedia({ reducedMotion: 'reduce' });
+});
 
 interface CreatedCard {
   id: string;
@@ -65,17 +71,21 @@ test("a Legion contains live members, shares state, moves as a team and preserve
     await expect(group).toHaveCount(1);
     groupId = (await group.getAttribute("data-card-id"))!;
     await expect.poll(async () => (await (await request.get(`/api/nodes/${first.id}`)).json()).parent_id).toBe(groupId);
-    await group.getByLabel("Team instruction", { exact: true }).fill("Plan, execute, then review the result.");
-    await group.getByLabel("Team model override").click();
+    await group.getByRole("button", { name: "Legion settings", exact: true }).click();
+    const controls = page.getByRole("complementary", { name: "Legion settings", exact: true });
+    await controls.getByLabel("Enable shared team settings").check();
+    await controls.getByLabel("Team instruction", { exact: true }).fill("Plan, execute, then review the result.");
+    await controls.getByRole("combobox", { name: "Team model override", exact: true }).click();
     await expect.poll(async () => (await (await request.get(`/api/nodes/${groupId}`)).json()).config.instruction).toContain("Plan, execute");
-    await group.getByRole("button", { name: "Add variable", exact: true }).click();
-    await group.getByLabel("Variable 1 name").fill("goal");
-    await group.getByLabel("Variable 1 value").fill("Prepare a report");
-    await group.getByRole("button", { name: "Save variables", exact: true }).click();
-    await expect(group.getByRole("button", { name: "Saved", exact: true })).toBeVisible();
-    await group.getByRole("button", { name: "Pause team", exact: true }).click();
-    await expect(group.getByRole("button", { name: "Resume team", exact: true })).toBeVisible();
-    await group.getByRole("button", { name: "Resume team", exact: true }).click();
+    await controls.getByRole("button", { name: "Add variable", exact: true }).click();
+    await controls.getByLabel("Variable 1 name").fill("goal");
+    await controls.getByLabel("Variable 1 value").fill("Prepare a report");
+    await controls.getByRole("button", { name: "Save variables", exact: true }).click();
+    await expect(controls.getByRole("button", { name: "Saved", exact: true })).toBeVisible();
+    await controls.getByRole("button", { name: "Pause team", exact: true }).click();
+    await expect(controls.getByRole("button", { name: "Resume team", exact: true })).toBeVisible();
+    await controls.getByRole("button", { name: "Resume team", exact: true }).click();
+    await controls.getByRole("button", { name: "Close Legion settings" }).click();
     const before = await positionOf(request, first.id);
     const bounds = await group.boundingBox();
     if (!bounds) throw new Error("Group not rendered");
@@ -91,7 +101,9 @@ test("a Legion contains live members, shares state, moves as a team and preserve
     await page.screenshot({ path: "../.open-agent-world/legion-team-dark.png" });
     await page.getByRole("button", { name: "Use light theme" }).click();
     await page.reload();
-    await expect(group.getByLabel("Variable 1 value")).toHaveValue("Prepare a report");
+    await group.getByRole("button", { name: "Legion settings", exact: true }).click();
+    await expect(page.getByRole("complementary", { name: "Legion settings" }).getByLabel("Variable 1 value")).toHaveValue("Prepare a report");
+    await page.getByRole("button", { name: "Close Legion settings" }).click();
     await expect(page.locator(`path[data-edge-id="${edgeId}"]`)).toHaveCount(1);
     const memberPosition = await positionOf(request, first.id);
     await group.getByRole("button", { name: "Dissolve", exact: true }).click();
@@ -101,8 +113,10 @@ test("a Legion contains live members, shares state, moves as a team and preserve
     await expect(page.locator(`path[data-edge-id="${edgeId}"]`)).toHaveCount(1);
     await page.keyboard.press("Control+z");
     await expect(group).toHaveCount(1);
-    await expect(group.getByLabel("Variable 1 value")).toHaveValue("Prepare a report");
-    await page.getByRole("button", { name: "Redo last canvas action", exact: true }).click();
+    await group.getByRole("button", { name: "Legion settings", exact: true }).click();
+    await expect(page.getByRole("complementary", { name: "Legion settings" }).getByLabel("Variable 1 value")).toHaveValue("Prepare a report");
+    await page.getByRole("button", { name: "Close Legion settings" }).click();
+    await page.keyboard.press("Control+Shift+z");
     await expect(group).toHaveCount(0);
     await page.keyboard.press("Control+z");
     await expect(group).toHaveCount(1);
@@ -112,13 +126,16 @@ test("a Legion contains live members, shares state, moves as a team and preserve
     await expect(page.locator(`[data-card-id="${second.id}"]`)).toHaveCount(0);
     await expect(page.locator(`[data-card-id="${outside.id}"]`)).toHaveCount(1);
     await page.keyboard.press("Control+z");
-    await expect(group.getByLabel("Variable 1 value")).toHaveValue("Prepare a report");
+    await group.getByRole("button", { name: "Legion settings", exact: true }).click();
+    await expect(page.getByRole("complementary", { name: "Legion settings" }).getByLabel("Variable 1 value")).toHaveValue("Prepare a report");
+    await page.getByRole("button", { name: "Close Legion settings" }).click();
     await expect(page.locator(`path[data-edge-id="${edgeId}"]`)).toHaveCount(1);
-    await page.getByRole("button", { name: "Redo last canvas action", exact: true }).click();
+    await page.keyboard.press("Control+Shift+z");
     await expect(group).toHaveCount(0);
     await page.keyboard.press("Control+z");
     await expect(group).toHaveCount(1);
-    await group.getByRole("button", { name: "Detach Worker", exact: true }).click();
+    await group.getByRole("button", { name: "Legion settings", exact: true }).click();
+    await page.getByRole("button", { name: "Detach Worker", exact: true }).click();
     await expect.poll(async () => (await (await request.get(`/api/nodes/${second.id}`)).json()).parent_id).toBeNull();
   } finally {
     await request.post("/api/nodes/batch-delete", { data: { node_ids: [first.id, second.id, outside.id, ...(groupId ? [groupId] : [])] } });
@@ -175,9 +192,13 @@ test("form a Legion, configure variables, then save and deploy an independent pr
     await expect(group).toHaveCount(1);
     const groupId = await group.getAttribute("data-card-id");
     await group.getByLabel("Legion name", { exact: true }).fill(legionName);
-    await group.getByRole("button", { name: "Add variable", exact: true }).click();
-    await group.getByLabel("Variable 1 name").fill("goal");
-    await group.getByLabel("Variable 1 value").fill("Reusable team goal");
+    await group.getByRole("button", { name: "Legion settings", exact: true }).click();
+    const controls = page.getByRole("complementary", { name: "Legion settings", exact: true });
+    await controls.getByLabel("Enable shared team settings").check();
+    await controls.getByRole("button", { name: "Add variable", exact: true }).click();
+    await controls.getByLabel("Variable 1 name").fill("goal");
+    await controls.getByLabel("Variable 1 value").fill("Reusable team goal");
+    await controls.getByRole("button", { name: "Close Legion settings" }).click();
     // Saving a preset must also persist the variable draft without a separate save.
     await group.getByRole("button", { name: "Save to library", exact: true }).click();
 
@@ -190,8 +211,8 @@ test("form a Legion, configure variables, then save and deploy an independent pr
     }).toEqual({ nodes: 3, edges: 1 });
     expect((await (await request.get(`/api/legion-groups/${groupId}/state`)).json()).value).toEqual({ goal: "Reusable team goal" });
 
-    await page.getByRole("tab", { name: /^Legions/ }).click();
-    const deployButton = page.getByRole("button", { name: `Deploy Legion ${legionName}` });
+    await page.getByRole("tab", { name: /Legions/ }).click();
+    const deployButton = page.getByRole("button", { name: `Place ${legionName}` });
     await expect(deployButton).toBeEnabled();
     const cards = page.locator(".react-flow__node-worldCard");
     const edges = page.locator("path.semantic-edge-path");
@@ -227,5 +248,37 @@ test("form a Legion, configure variables, then save and deploy an independent pr
       await request.post("/api/nodes/batch-delete", { data: { node_ids: nodes.filter((node) =>
         node.name === firstName || node.name === secondName || node.name === legionName).map((node) => node.id) } });
     }
+  }
+});
+
+
+test("formation reserves its header above the existing member surfaces", async ({ page, request }) => {
+  await page.setViewportSize({ width: 1800, height: 1100 });
+  const suffix = `header-${Date.now()}`;
+  const first = await createAgent(request, `${suffix}-first`, "Header first", { x: 600, y: 400 });
+  const second = await createAgent(request, `${suffix}-second`, "Header second", { x: 1000, y: 460 });
+  try {
+    await page.goto('/');
+    const firstCard = page.locator(`[data-card-id="${first.id}"]`);
+    const secondCard = page.locator(`[data-card-id="${second.id}"]`);
+    await expect(firstCard).toBeVisible();
+    await expect(secondCard).toBeVisible();
+    const before = [await firstCard.boundingBox(), await secondCard.boundingBox()];
+    await selectRectangle(firstCard, secondCard);
+    await page.getByRole('button', { name: 'Form Legion', exact: true }).click();
+    const group = page.locator('[data-card-type="legion"]');
+    await expect(group).toHaveCount(1);
+    await expect.poll(async () => {
+      const after = [await firstCard.boundingBox(), await secondCard.boundingBox()];
+      return Math.max(...after.flatMap((box, i) => [Math.abs(box!.x - before[i]!.x), Math.abs(box!.y - before[i]!.y)]));
+    }).toBeLessThan(1);
+    const header = await group.locator(':scope > .container-header').boundingBox();
+    expect(header!.y + header!.height).toBeLessThan(before[0]!.y);
+    expect(await positionOf(request, first.id)).toEqual({ x: 600, y: 400 });
+    await page.screenshot({ path: 'test-results/legion-header-preserves-layout.png' });
+  } finally {
+    const nodes = await (await request.get('/api/nodes')).json();
+    const ids = nodes.filter((node: { id: string; type: string }) => node.id.startsWith(suffix) || node.type === 'legion').map((node: { id: string }) => node.id);
+    if (ids.length) await request.post('/api/nodes/batch-delete', { data: { node_ids: ids } });
   }
 });

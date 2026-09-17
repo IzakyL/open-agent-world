@@ -17,7 +17,7 @@ describe("card state helpers", () => {
       expect(card.position).toEqual({ x: 12, y: -8 });
       expect(card.expanded).toBe(false);
     }
-    expect(buildCardDraft("agent", { x: 0, y: 0 }).config.model).toBe("gemini-3.7-flash");
+    expect(buildCardDraft("agent", { x: 0, y: 0 }).config.model).toBe("oaw:default");
   });
 
   it("generates a deterministic virtualized stress world", () => {

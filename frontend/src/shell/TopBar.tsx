@@ -1,20 +1,18 @@
-import { Activity, Compass, Languages, LibraryBig, Moon, RefreshCw, Settings2, Sun, Wifi, WifiOff } from "lucide-react";
+import { AppearanceButtons, SettingsButton } from './PreferenceButtons';
+import { Activity, Compass, LibraryBig, RefreshCw, Wifi, WifiOff } from "lucide-react";
 import { useLocale, t } from "../i18n";
 import { tutorial, useTutorialStore } from '../onboarding/controller';
 import { useCardLibrary } from "../state/cardLibrary";
 import { useWorldStore } from "../state/worldStore";
 
 export function TopBar() {
-  const { locale, setLocale } = useLocale();
+  useLocale();
   const tutorialBusy = useTutorialStore(state => state.busy);
   const cards = useWorldStore((state) => state.cards);
   const edges = useWorldStore((state) => state.edges);
   const syncState = useWorldStore((state) => state.syncState);
   const socketState = useWorldStore((state) => state.socketState);
-  const theme = useWorldStore((state) => state.theme);
-  const toggleTheme = useWorldStore((state) => state.toggleTheme);
   const toggleActivity = useWorldStore((state) => state.toggleActivity);
-  const toggleSettings = useWorldStore((state) => state.toggleSettings);
   const refreshWorld = useWorldStore((state) => state.refreshWorld);
   const live = socketState === "live";
   const syncLabel = syncState === "online"
@@ -46,9 +44,7 @@ export function TopBar() {
 
       <div className="top-actions">
         <button type="button" className="top-icon-button" data-tutorial="library" onClick={useCardLibrary.getState().show} aria-label={t("Open Pack and Card Library")} title={t("Packs, Cards and Decks")}><LibraryBig size={16} /></button>
-        <button type="button" className="top-icon-button" onClick={toggleSettings} data-tutorial="settings" aria-label={t("Open settings")} title={t("Settings")}>
-          <Settings2 size={16} />
-        </button>
+        <SettingsButton />
         <button
           type="button"
           className={`top-icon-button ${live ? "has-live-dot" : ""}`}
@@ -58,16 +54,7 @@ export function TopBar() {
         >
           <Activity size={16} />
         </button>
-        <button
-          type="button"
-          className="top-icon-button"
-          onClick={toggleTheme}
-          aria-label={t(theme === "light" ? "Use dark theme" : "Use light theme")}
-          title={t(theme === "light" ? "Use dark theme" : "Use light theme")}
-        >
-          {theme === "light" ? <Moon size={16} /> : <Sun size={16} />}
-        </button>
-        <button type="button" className="top-icon-button" onClick={() => setLocale(locale === 'en' ? 'zh-CN' : 'en')} aria-label={locale === 'en' ? '切换到中文' : 'Switch to English'} title={locale === 'en' ? '切换到中文' : 'Switch to English'}><Languages size={16} /></button>
+        <AppearanceButtons />
         <button type="button" className="top-icon-button" disabled={tutorialBusy} onClick={() => void tutorial.replay()} aria-label={t("Replay Tutorial")} title={t("Replay Tutorial")}><Compass size={16} /></button>
       </div>
     </aside>

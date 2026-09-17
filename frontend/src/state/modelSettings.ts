@@ -11,12 +11,7 @@ export const DEFAULT_MODEL_SETTINGS: ModelSettings = {
   baseUrl: "",
   apiKey: "",
   apiKeyConfigured: false,
-  models: [
-    "openai/gpt-4o-mini",
-    "openai/gpt-4.1-mini",
-    "anthropic/claude-3-5-sonnet",
-    "gemini-3.7-flash",
-  ],
+  models: [],
 };
 
 const MODEL_SETTINGS_KEY = "oaw-model-settings";

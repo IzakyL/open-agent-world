@@ -1,4 +1,4 @@
-import { useEffect, useRef } from "react";
+import { memo, useEffect, useRef } from "react";
 import { useReactFlow } from "@xyflow/react";
 import { ViewportPortal } from "../canvas/FlowPortal";
 import { flightPosition, useGenerationStore, type NodeGeneration } from "./generation";
@@ -83,7 +83,7 @@ function GenerationFlight({ generation }: { generation: NodeGeneration }) {
   return <div ref={ref} className="generation-flight" data-generation-id={generation.id} aria-hidden="true" />;
 }
 
-export function GenerationLayer() {
+export const GenerationLayer = memo(function GenerationLayer() {
   const items = useGenerationStore((state) => state.items);
   return <ViewportPortal>{items.map((item) => <GenerationFlight key={item.id} generation={item} />)}</ViewportPortal>;
-}
+});

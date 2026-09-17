@@ -49,11 +49,19 @@ def write_shared_state(
     return read_shared_state(world, state, legion_id)
 
 
-def group_context(world: WorldStore, state: StateStore, card: Card) -> dict[str, Any] | None:
+def member_team(world: WorldStore, card: Card) -> Card | None:
+    """Pure groups provide spatial membership without runtime inheritance."""
     if not card.parent_id:
         return None
     group = world.get_card(card.parent_id)
-    if group.type != "legion":
+    if group.type != "legion" or group.config.get("mode", "team") != "team":
+        return None
+    return group
+
+
+def group_context(world: WorldStore, state: StateStore, card: Card) -> dict[str, Any] | None:
+    group = member_team(world, card)
+    if group is None:
         return None
     return {
         "legion_id": group.id, "name": group.name,

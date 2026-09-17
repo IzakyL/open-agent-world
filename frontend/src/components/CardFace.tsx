@@ -1,5 +1,10 @@
-import type { ReactNode } from "react";
+import type { HTMLAttributes, ReactNode } from "react";
 import "./cardFace.css";
+
+/** One compact card surface shared by the Library and the active hand. */
+export function CardStock({ className = "", ...props }: HTMLAttributes<HTMLSpanElement>) {
+  return <span {...props} className={`card-stock card-stock--compact ${className}`} />;
+}
 
 /** Shared printed face for collected cards and the active hand. */
 export function CardFace({ icon, label, description }: { icon: ReactNode; label: string; description: string }) {

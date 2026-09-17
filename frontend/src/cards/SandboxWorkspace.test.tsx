@@ -12,6 +12,7 @@ import { SandboxWorkspace } from "./SandboxWorkspace";
 import { ReactFlowProvider } from "@xyflow/react";
 import type { ComponentProps } from "react";
 import { WorldCardNode } from "./CardFrame";
+import { WorkspaceSectionProvider, type WorkspaceSectionRegistration } from "../workspace/WorkspaceSection";
 
 const card: WorldCard = { id: "sandbox-window", ...buildCardDraft("sandbox", { x: 0, y: 0 }), status: "ready" };
 const info: SandboxInfo = {
@@ -59,6 +60,43 @@ describe("Sandbox workspace interaction", () => {
     });
   });
   afterEach(() => { cleanup(); vi.unstubAllGlobals(); });
+
+  it("keeps command drafts and file selection connected when their sections move out and back", async () => {
+    const hosts = new Map<string, HTMLDivElement>();
+    const register = ({ id, host }: WorkspaceSectionRegistration) => {
+      hosts.set(id, host);
+      return () => { hosts.delete(id); };
+    };
+    const noop = () => {};
+    const workspace = (detachedSectionIds: Set<string>) => <WorkspaceSectionProvider cardId={card.id}
+      editing={false} detachedSectionIds={detachedSectionIds} hiddenSectionIds={new Set()}
+      register={register} onSelect={noop} onDragStart={noop} onHide={noop}>
+      <SandboxWorkspace card={card} />
+    </WorkspaceSectionProvider>;
+    const view = render(workspace(new Set()));
+    fireEvent.click(await screen.findByRole("button", { name: "first.txt" }));
+    await screen.findByText("Contents of first.txt");
+    const command = screen.getByRole("textbox", { name: "Command" }) as HTMLTextAreaElement;
+    fireEvent.change(command, { target: { value: "echo draft" } });
+    const detached = document.createElement("div");
+    view.container.append(detached);
+
+    view.rerender(workspace(new Set(["files", "terminal"])));
+    detached.append(hosts.get("files")!, hosts.get("terminal")!);
+    expect(screen.getByRole("textbox", { name: "Command" })).toBe(command);
+    expect(command.value).toBe("echo draft");
+    expect(screen.queryByRole("separator", { name: "Resize file sidebar" })).toBeNull();
+    expect(screen.queryByRole("separator", { name: "Resize terminal" })).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "second.txt" }));
+    expect(await screen.findByText("Contents of second.txt")).toBeTruthy();
+    fireEvent.change(command, { target: { value: "echo moved" } });
+
+    view.rerender(workspace(new Set()));
+    expect(screen.getByRole("textbox", { name: "Command" })).toBe(command);
+    expect(command.value).toBe("echo moved");
+    expect(detached.childElementCount).toBe(0);
+    expect(screen.getByRole("separator", { name: "Resize terminal" })).toBeTruthy();
+  });
 
   it("delivers resize gestures through the card frame and saves both pane sizes", async () => {
     vi.stubGlobal("IntersectionObserver", class { observe() {} disconnect() {} });

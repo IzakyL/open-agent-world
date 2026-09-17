@@ -2,7 +2,9 @@
 
 **English** | [简体中文](tutorial.zh-CN.md)
 
-An empty world opens with the OAW logo and three choices: **Start Tutorial**, **Place Minister Card**, and **Start Directly**. The tutorial takes place on the real canvas. It covers navigation, cards, an Agent–Conversation–Sandbox workflow, sticking cards together, and the Minister. The compass button in the world controls replays it.
+An empty world opens with the OAW logo and a choice of starting blueprints: **General assistant**, **Coding workspace**, and **Multi-Agent collaboration**. Each places its connected cards directly on the canvas without a Legion wrapper, using the [Legion template system](legions.md). Saved Legions are also available as starting blueprints. **Start Tutorial** begins the guided walkthrough, while **Start Empty** adds nothing. Missing model setup opens the existing Settings flow with a small resumable guide; no Minister is appointed automatically. The tutorial takes place on the real canvas. It covers navigation, cards, an Agent–Conversation–Sandbox workflow, sticking cards together, and finally promotion of the tutorial's existing Agent into a Minister. The compass button in the world controls replays it.
+
+The Minister chapter displays `Agent + Minister role = Minister Agent`. It adds the real Minister role card to the active deck, then guides the user to place it beside their Agent and drag it onto that Agent. The role card is absorbed as the Agent is promoted and contracts to a circular node with a small crown. The user then explores canvas chat and the Minister tab inside the Agent card, where permissions and confirmations live. History remains in the existing Agent workspace. Progress observes the persisted role and actual interactions. Users who skip the tutorial can find the same role card in the Core essentials pack and add it to any deck.
 
 The guide waits for your actions. Its small compass button finds the current subject or recovers a missing card. Minimize the bubble to clear some space; × skips the tutorial. After a reload, choose Resume or restart. Model setup uses the ordinary Agent settings and **Manage models**. Sending to a model is optional; a real provider must be configured to receive a useful reply. The guide does not generate a simulated response or start a Sandbox for you.
 
@@ -32,3 +34,13 @@ node scripts/run-e2e.mjs e2e/onboarding.spec.ts e2e/guide-rig.spec.ts
 ```
 
 The browser suite checks welcome choices, a smaller viewport, reload/resume, and the full tutorial with normal and reduced motion. It runs against the existing isolated backend, performs actual gestures, grants real relationships, and checks that the workflow survives prop cleanup. The isolated backend uses its test runtime; these tests do not establish live model quality or native Sandbox execution.
+
+### Guided interaction scope
+
+While a step is active, `interactionGuard.ts` accepts input only for that step's subjects and required controls. This is separate from spotlight shading: card placement leaves the canvas visible, but only the requested deck card can begin a placement and the canvas accepts its drop. Connections allow both endpoints and their capability chooser. Model steps allow their current form section, with the settings close/reopen path retained.
+
+Global shortcuts are blocked except the step's focus/delete action on its own selected card; editing shortcuts still work inside allowed fields. Tab stays within allowed controls. Accepted gestures can finish across step transitions. Pause (or Escape) releases the scope without discarding progress; Resume rebases the current step, and Skip retains the existing cleanup/recovery flow. Add or change an interaction scope alongside any new tutorial step, and verify its complete source-to-destination gesture.
+
+### Guide travel
+
+`guideTravel.ts` keeps near movement on the existing walking path and uses a 720 ms entry/exit portal for trips beyond 480 screen pixels. Destination changes during transit do not restart its clock. The bubble keeps its layout measurements but becomes hidden, inert, and hidden from accessibility APIs while the guide moves; it reappears on arrival. Pause and reduced-motion preferences finish travel immediately. Portal styling uses the active theme, and the character still uses the shared rig.

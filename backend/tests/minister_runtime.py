@@ -27,6 +27,22 @@ class MinisterTestRuntime(MockAgentRuntime):
         definitions = await self._provider.list_tools(context.agent_id)
         tools = {tool.__name__: tool for tool in build_scoped_tool_callables(self._provider, context.agent_id, definitions)}
         prompt = runtime_input.prompt.rsplit("to the latest message: ", 1)[-1]
+        if prompt == 'stream':
+            for text in ['Inspecting local', 'Inspecting local resources', 'Inspecting local resources.', 'Inspecting local resources.']:
+                yield AgentEvent(context.agent_id, context.run_id, AgentEventType.MESSAGE,
+                                 {'text': text, 'provider_message_id': 'stream-1'})
+                await asyncio.sleep(.5)
+            yield AgentEvent(context.agent_id, context.run_id, AgentEventType.COMPLETED,
+                             {'text': text}, run_status=RunStatus.SUCCEEDED)
+            return
+        if prompt == 'observe':
+            result = await self._provider.invoke_tool(context.agent_id, 'operation:canvas_observe', {'minister': context.agent_id})
+            yield AgentEvent(context.agent_id, context.run_id, AgentEventType.TOOL_COMPLETED,
+                             {'name': 'canvas_observe', 'response': result.summary()})
+            text = 'Observed canvas image: ' + str(len(result.metadata['captured_ids'])) + ' cards.'
+            yield AgentEvent(context.agent_id, context.run_id, AgentEventType.MESSAGE, {'text': text})
+            yield AgentEvent(context.agent_id, context.run_id, AgentEventType.COMPLETED, {'text': text}, run_status=RunStatus.SUCCEEDED)
+            return
         if prompt in {"帮我配置个聊天环境？", "现在试试", "我需要你去配置一个我跟agent聊天的地盘", "你好"}:
             # Scripted planning fixture: exercises real control/routing, not a
             # claim that a deterministic provider proves language-model planning.

@@ -28,3 +28,24 @@ $script:elapsed.Restart()
 $result = Wait-BackendListener -Backend $exited -Port 1
 if ($null -ne $result -or $script:elapsed.Elapsed.TotalSeconds -gt 3) { throw 'Exited backend was not detected promptly.' }
 Write-Host 'PASS: slow startup, explicit timeout, and process exit.'
+
+foreach ($name in @('Read-BackendState', 'Remove-OwnedBackendState')) {
+    $definition = $ast.Find({ param($node) $node -is [Management.Automation.Language.FunctionDefinitionAst] -and $node.Name -eq $name }, $true)
+    Invoke-Expression $definition.Extent.Text
+}
+$backendStatePath = Join-Path ([IO.Path]::GetTempPath()) ('oaw-process-state-' + [guid]::NewGuid().ToString('N') + '.json')
+try {
+    $old = [pscustomobject]@{ root = @{ pid = 100; startTimeTicks = [int64]639250591184266567 } }
+    $replacement = [pscustomobject]@{ root = @{ pid = 200; startTimeTicks = [int64]639250591184266568 } }
+    $replacement | ConvertTo-Json | Set-Content -LiteralPath $backendStatePath -Encoding utf8
+    Remove-OwnedBackendState $old
+    if (-not (Test-Path -LiteralPath $backendStatePath)) { throw 'Old session erased replacement process ownership.' }
+    $recycled = [pscustomobject]@{ root = @{ pid = 200; startTimeTicks = [int64]639250591184266567 } }
+    Remove-OwnedBackendState $recycled
+    if (-not (Test-Path -LiteralPath $backendStatePath)) { throw 'Recycled PID erased another process ownership.' }
+    Remove-OwnedBackendState $replacement
+    if (Test-Path -LiteralPath $backendStatePath) { throw 'Owner did not clean up its process record.' }
+    Write-Host 'PASS: old sessions and recycled PIDs preserve replacement process ownership.'
+} finally {
+    Remove-Item -LiteralPath $backendStatePath -Force -ErrorAction SilentlyContinue
+}

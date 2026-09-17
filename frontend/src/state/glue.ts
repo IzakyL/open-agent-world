@@ -153,7 +153,7 @@ export async function refreshGlue(migrate = false) {
   let shared = await worldApi.getGlue();
   if (migrate && shared.revision === 0 && useGlueStore.getState().bonds.length) {
     const world = await worldApi.getWorld();
-    const roots = new Set(world.nodes.filter(card => !card.parent_id && !card.equipment && card.type !== 'core.minister').map(card => card.id));
+    const roots = new Set(world.nodes.filter(card => !card.parent_id && !card.equipment).map(card => card.id));
     const local = useGlueStore.getState();
     const bonds = local.bonds.filter(bond => roots.has(bond.a) && roots.has(bond.b));
     const ids = new Set(bonds.flatMap(bond => [bond.a, bond.b]));

@@ -61,7 +61,7 @@ def _read_document(value, arguments):
 
 
 def register_execution_configuration(registry):
-    registry.register_relationship(RelationshipDefinition(id="environment.default", label="Default environment",
+    registry.register_relationship(RelationshipDefinition(canvas_requires_confirmation=True, id="environment.default", label="Default environment",
         short_label="defaults", description="Live base profile shared with all executions authorized for this Sandbox; local values override it.",
         source_traits=frozenset({"core.environment"}), target_traits=frozenset({"core.sandbox"}), templateable=True))
     for node_id, label, trait, model, kind, tool in (
@@ -78,7 +78,7 @@ def register_execution_configuration(registry):
             traits=frozenset({trait, "ui.execution-config.v1"}), templateable=True,
             document=NodeDocumentDefinition(model=model,
                 actions={"read": NodeDocumentAction(_read_document, capability_kind=kind, read_only=True)})))
-        registry.register_relationship(RelationshipDefinition(id=kind, label="Use" if node_id == "environment" else "Read target",
+        registry.register_relationship(RelationshipDefinition(canvas_requires_confirmation=True, id=kind, label="Use" if node_id == "environment" else "Read target",
             short_label="use", description="Allow explicit selection for a command; never inject automatically.",
             source_traits=frozenset({"core.agent"}), target_traits=frozenset({trait}), templateable=True,
             capabilities=(CapabilityGrantDefinition(kind),)))

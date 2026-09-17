@@ -265,6 +265,8 @@ class Database:
             }
             if "equipment_json" not in card_columns:
                 self._connection.execute("ALTER TABLE cards ADD COLUMN equipment_json TEXT")
+            if "minister_json" not in card_columns:
+                self._connection.execute("ALTER TABLE cards ADD COLUMN minister_json TEXT")
             self._connection.execute("CREATE INDEX IF NOT EXISTS cards_equipment_owner_idx ON cards(json_extract(equipment_json, '$.owner_id'))")
             if "parent_id" not in card_columns:
                 self._connection.execute(

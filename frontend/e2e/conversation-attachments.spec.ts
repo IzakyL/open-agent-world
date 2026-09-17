@@ -10,8 +10,7 @@ test('General auto joins agents and uploaded images open a preview after reload'
     expect(summary.sessions[0].participant_ids).toEqual([agent.id]);
     await page.goto('/');
     const card = page.locator(`[data-card-id="${room.id}"]`);
-    await card.click();
-    await card.getByRole('button', { name: 'Open workspace' }).click();
+    await expect(card).toHaveAttribute('data-surface-level', 'workspace');
     const workspace = page.locator(`[data-workspace-node-id="${room.id}"]`);
     await expect(workspace.getByText('1 active participants')).toBeVisible();
     await workspace.locator('input[type=file]').setInputFiles([

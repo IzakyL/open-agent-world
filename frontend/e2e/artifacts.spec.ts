@@ -14,8 +14,7 @@ test("publish files, reclaim producer, and recover retained versions and lifecyc
   await request.post(`/api/agents/${agent.id}/run`, { data: { prompt: 'One durable attempt' } });
   await page.goto('/');
   const card = page.locator(`[data-card-id="${sandbox.id}"]`);
-  await card.locator('.card-kind-icon').click();
-  await card.getByRole('button', { name: 'Open workspace', exact: true }).click();
+  await expect(card).toHaveAttribute('data-surface-level', 'workspace');
   let workspace = page.getByRole('dialog', { name: 'Producer workspace workspace', exact: true });
   await workspace.getByLabel('Select bundle for publication').check();
   await workspace.getByText('Publish selected files (1)', { exact: true }).click();

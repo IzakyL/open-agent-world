@@ -124,10 +124,12 @@ plugins remain trusted code and must correctly declare their field policies.
 Minister opts into `CanvasScope.review_config` with a trusted pre-commit reviewer.
 This permits proposing declared sensitive fields for human confirmation. It does
 not change the default policy for other automated actors. Extra, secret, immutable,
-internal and explicitly read-only fields are still denied. Unreviewed creation
-and relationships default to confirmation via `canvas_create_requires_confirmation`
-and `canvas_requires_confirmation` on the existing plugin definitions. Ordinary
-builtin card creation and local relationships opt out of confirmation.
+internal and explicitly read-only fields are still denied. Ordinary creation,
+declared configuration and connections are autonomous by default. Plugins must mark
+sensitive initialization and grants using `canvas_create_requires_confirmation=True`
+and `canvas_requires_confirmation=True`, and sensitive fields using `privileged: true`
+in their schema metadata. Sandbox execution and environment/credential grants remain
+confirmable; removing access does not itself require confirmation.
 
 The optional `review` callback receives validated changed/affected cards and
 connections before lifecycle work. It may stop a mutation for review but cannot

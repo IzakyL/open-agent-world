@@ -28,6 +28,7 @@ from backend.world.models import (
     EdgeCreate,
     EdgeDirection,
     EdgePatch,
+    MinisterRole,
     Size,
 )
 
@@ -68,6 +69,23 @@ class WorldStore:
         self.registry = registry
         self.chunk_size = chunk_size
         self.terrain_seed = ensure_terrain_seed(database, new_world=new_world)
+        from backend.minister import migrate_legacy_ministers
+        migrate_legacy_ministers(database, registry)
+
+    def validate_minister(self, card_type, minister) -> None:
+        if minister is not None and not self.registry.has_trait(card_type, "core.agent"):
+            raise GraphValidationError("Only an Agent can receive the Minister role")
+
+    @staticmethod
+    def _patched_minister(current, request):
+        if 'minister' not in request.model_fields_set:
+            return current.minister
+        if request.minister is None:
+            return None
+        return MinisterRole.model_validate({
+            **(current.minister.model_dump() if current.minister else {}),
+            **request.minister.model_dump(exclude_unset=True),
+        })
 
     def assert_plugin_availability(self) -> None:
         """Fail startup with ownership-aware diagnostics for persisted objects."""
@@ -242,6 +260,7 @@ class WorldStore:
         self.validate_equipment(resolved_id, request.type, request.parent_id, request.equipment)
         now = utc_now()
         definition = self.registry.node_type(request.type)
+        self.validate_minister(request.type, request.minister)
         self.registry.validate_creation_fields(
             request.type, content=request.content, data_base64=request.data_base64
         )
@@ -259,6 +278,7 @@ class WorldStore:
             id=resolved_id,
             parent_id=request.parent_id,
             equipment=request.equipment,
+            minister=request.minister,
             type=request.type,
             name=request.name or definition.default_name,
             position=request.position,
@@ -291,6 +311,7 @@ class WorldStore:
             card.updated_at.isoformat(),
             card.parent_id,
             card.equipment.model_dump_json() if card.equipment else None,
+            card.minister.model_dump_json() if card.minister else None,
         )
         try:
             with (nullcontext(_connection) if _connection is not None else self.database.transaction(immediate=True)) as connection:
@@ -298,8 +319,8 @@ class WorldStore:
                     """
                     INSERT INTO cards (
                         id, type, plugin_id, name, x, y, width, height, expanded,
-                        config_json, chunk_x, chunk_y, created_at, updated_at, parent_id, equipment_json
-                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                        config_json, chunk_x, chunk_y, created_at, updated_at, parent_id, equipment_json, minister_json
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                     """,
                     values,
                 )
@@ -348,6 +369,8 @@ class WorldStore:
         parent_id = changes.get("parent_id", current.parent_id)
         self.validate_parent(card_id, current.type, parent_id)
         equipment = request.equipment if "equipment" in request.model_fields_set else current.equipment
+        minister = self._patched_minister(current, request)
+        self.validate_minister(current.type, minister)
         self.validate_equipment(card_id, current.type, parent_id, equipment)
         name = changes.get("name") or current.name
         position = request.position or current.position
@@ -369,7 +392,7 @@ class WorldStore:
                 UPDATE cards
                 SET name = ?, x = ?, y = ?, width = ?, height = ?, expanded = ?,
                     config_json = ?, chunk_x = ?, chunk_y = ?, updated_at = ?,
-                    revision = revision + 1, parent_id = ?, equipment_json = ?
+                    revision = revision + 1, parent_id = ?, equipment_json = ?, minister_json = ?
                 WHERE id = ? AND revision = ?
                 """,
                 (
@@ -385,6 +408,7 @@ class WorldStore:
                     now,
                     parent_id,
                     equipment.model_dump_json() if equipment else None,
+                    minister.model_dump_json() if minister else None,
                     card_id,
                     current.revision,
                 ),
@@ -416,7 +440,7 @@ class WorldStore:
                         UPDATE cards
                         SET name = ?, x = ?, y = ?, width = ?, height = ?, expanded = ?,
                             config_json = ?, chunk_x = ?, chunk_y = ?, updated_at = ?,
-                            revision = revision + 1, parent_id = ?, equipment_json = ?
+                            revision = revision + 1, parent_id = ?, equipment_json = ?, minister_json = ?
                         WHERE id = ? AND revision = ?
                         """,
                         (
@@ -432,6 +456,7 @@ class WorldStore:
                             preview.updated_at.isoformat(),
                             preview.parent_id,
                             preview.equipment.model_dump_json() if preview.equipment else None,
+                            preview.minister.model_dump_json() if preview.minister else None,
                             item.node_id,
                             preview.revision - 1,
                         ),
@@ -456,6 +481,8 @@ class WorldStore:
         parent_id = changes.get("parent_id", current.parent_id)
         self.validate_parent(card_id, current.type, parent_id)
         equipment = request.equipment if "equipment" in request.model_fields_set else current.equipment
+        minister = self._patched_minister(current, request)
+        self.validate_minister(current.type, minister)
         self.validate_equipment(card_id, current.type, parent_id, equipment)
         name = changes.get("name") or current.name
         position = request.position or current.position
@@ -472,6 +499,7 @@ class WorldStore:
         return current.model_copy(update={
             "parent_id": parent_id,
             "equipment": equipment,
+            "minister": minister,
             "name": name,
             "position": position,
             "size": size,
@@ -762,6 +790,7 @@ class WorldStore:
             id=row["id"],
             parent_id=row["parent_id"],
             equipment=json.loads(row["equipment_json"]) if row["equipment_json"] else None,
+            minister=json.loads(row["minister_json"]) if row["minister_json"] else None,
             type=card_type,
             name=row["name"],
             position={"x": row["x"], "y": row["y"]},

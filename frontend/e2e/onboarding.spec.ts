@@ -26,13 +26,13 @@ test.describe('canvas onboarding', () => {
     await page.mouse.up();
   };
 
-  test('welcome choices persist and use the real Minister', async ({ page, request }) => {
+  test('welcome choices persist and a blueprint guides missing model setup', async ({ page, request }) => {
     await page.goto('/');
     await expect(page.getByRole('heading', { name: 'Open Agent World' })).toBeVisible();
     await page.screenshot({ path: 'test-results/onboarding-welcome-light.png' });
     await page.getByRole('button', { name: 'Use dark theme' }).click();
     await page.screenshot({ path: 'test-results/onboarding-welcome-dark.png' });
-    await page.getByRole('button', { name: 'Start Directly', exact: true }).click();
+    await page.getByRole('button', { name: 'Start Empty', exact: true }).click();
     await expect(page.locator('.onboarding-layer')).toHaveCount(0);
     await page.reload();
     await expect(page.getByRole('heading', { name: 'Open Agent World' })).toHaveCount(0);
@@ -42,9 +42,9 @@ test.describe('canvas onboarding', () => {
     await page.goto('about:blank');
     await resetTutorialProfile(request);
     await page.goto('/');
-    await page.getByRole('button', { name: 'Place Minister Card', exact: true }).click();
-    await expect(page.getByRole('button', { name: 'Close Minister', exact: true })).toBeVisible();
-    await expect(page.locator('.minister-node')).toHaveCount(1);
+    await page.getByRole('button', { name: /^General assistant/ }).click();
+    await expect(page.getByRole('dialog', { name: 'Settings', exact: true })).toBeVisible();
+    expect((await (await request.get('/api/nodes')).json()).every((card: { minister?: unknown }) => !card.minister)).toBe(true);
     await expect(page.locator('.onboarding-layer')).toHaveCount(0);
   });
 
@@ -111,19 +111,23 @@ test.describe('canvas onboarding', () => {
       await expect.poll(async () => deck.locator('.deck-stage').evaluate(element => element.getAnimations().some(animation => animation.playState === 'running'))).toBe(false);
       // Like a user, choose a clear patch in the current viewport. The tutorial
       // focuses different subjects, so fixed screen coordinates can stack cards.
-      const point = await page.evaluate(({ x, y }) => {
+      let point: { x: number; y: number } | undefined;
+      await expect.poll(async () => {
+        point = await page.evaluate(({ x, y }) => {
         const viewport = document.querySelector('.world-canvas .react-flow__viewport')!;
         const zoom = new DOMMatrix(getComputedStyle(viewport).transform).a;
         const occupied = [...document.querySelectorAll('.world-canvas .react-flow__node, .tutorial-bubble, .component-palette, .top-bar, .map-tools, .world-controls')]
           .map(element => element.getBoundingClientRect()).filter(rect => rect.width && rect.height);
-        const candidates = [{ x, y }, ...[200, 350, 480].flatMap(y => [260, 450, 680, 950, 1100].map(x => ({ x, y })))];
+        const candidates = [{ x, y }, ...Array.from({ length: 11 }, (_, i) => 120 + i * 45)
+          .flatMap(y => Array.from({ length: 23 }, (_, i) => 90 + i * 50).map(x => ({ x, y })))];
         return candidates.find(point => {
           const left = point.x - 64 * zoom, top = point.y - 102 * zoom, right = left + 224 * zoom, bottom = top + 300 * zoom;
           return left > 20 && top > 20 && right < innerWidth - 20 && bottom < innerHeight - 120
             && !occupied.some(rect => left < rect.right + 25 && right > rect.left - 25 && top < rect.bottom + 25 && bottom > rect.top - 25);
         });
-      }, { x, y });
-      expect(point, 'There is a clear patch to place the next card').toBeTruthy();
+        }, { x, y });
+        return Boolean(point);
+      }, { message: 'There is a clear patch to place the next card after the camera settles' }).toBe(true);
       const source = deck.getByRole('button', { name: `Place ${label}`, exact: true });
       await source.hover();
       const from = (await source.boundingBox())!;
@@ -177,8 +181,8 @@ test.describe('canvas onboarding', () => {
     await page.getByRole('button', { name: 'Show the connection', exact: true }).click();
     await page.locator('.tutorial-next').filter({ hasText: 'Continue' }).click();
     await at(page, 'conversation-open');
-    await conversation.locator('.card-kind-icon').click();
-    await conversation.getByRole('button', { name: 'Open workspace', exact: true }).click();
+    await expect(conversation.locator('.world-card')).toHaveAttribute('data-surface-level', 'workspace');
+    await page.locator('.tutorial-next').filter({ hasText: 'Continue' }).click();
     await at(page, 'message');
     await conversation.locator('.workspace-composer textarea').fill('Help me plan a small garden.');
     await conversation.getByRole('button', { name: 'Send message', exact: true }).click();
@@ -204,7 +208,8 @@ test.describe('canvas onboarding', () => {
     await page.locator('input[name="relationship"][value="execute"]').check();
     await page.getByRole('button', { name: 'Grant capability', exact: true }).click();
     await at(page, 'sandbox-open');
-    await sandbox.locator('.card-kind-icon').click();
+    await expect(sandbox.locator('.world-card')).toHaveAttribute('data-surface-level', 'workspace');
+    await page.locator('.tutorial-next').filter({ hasText: 'Continue' }).click();
     await at(page, 'sandbox-ready');
     await page.getByRole('button', { name: 'Try sticking cards', exact: true }).click();
     await at(page, 'glue-demo');
@@ -245,17 +250,36 @@ test.describe('canvas onboarding', () => {
     await move(page, second, a.x + a.width - b.x, a.y - b.y);
     await at(page, 'glue-move');
     await move(page, first, 50, 35);
+    await at(page, 'minister-card');
+    await expect(page.locator('.tutorial-guide')).toHaveAttribute('data-moving', 'false');
+    await page.screenshot({ path: `test-results/tutorial-minister-role-deck-${motion}.png` });
+    await place('Minister role', 800, 330);
+    const roleId = await idOf('core.minister-role'), role = node(roleId);
     await at(page, 'minister');
     await page.keyboard.press('Escape');
-    await page.getByRole('button', { name: 'Place Minister Card', exact: true }).click();
+    await page.getByRole('button', { name: 'Resume', exact: true }).click();
+    await expect(page.locator('.tutorial-guide')).toHaveAttribute('data-moving', 'false');
+    const roleIcon = (await role.locator('.card-kind-icon').boundingBox())!, agentBox = (await agent.boundingBox())!;
+    await move(page, role, agentBox.x + agentBox.width / 2 - roleIcon.x - roleIcon.width / 2,
+      agentBox.y + agentBox.height / 2 - roleIcon.y - roleIcon.height / 2);
+    await expect(agent.locator(`[data-card-id="${agentId}"]`)).toHaveAttribute('data-minister', 'true');
+    await expect(role).toHaveCount(0);
     await page.locator('.tutorial-next').filter({ hasText: 'Continue' }).click();
     await at(page, 'minister-presence');
-    await page.getByRole('button', { name: 'Open Minister Minister', exact: true }).hover();
+    await page.getByRole('button', { name: /^Open Minister /  }).hover();
     await at(page, 'minister-message');
     await page.getByRole('button', { name: 'Try the model later', exact: true }).click();
     await at(page, 'minister-history');
-    await page.getByRole('button', { name: 'Settings and history for Minister', exact: true }).click();
+    await agent.locator('.card-kind-icon').click();
+    await agent.getByRole('tab', { name: 'Minister', exact: true }).click();
     await at(page, 'minister-safety');
+    await expect.poll(async () => {
+      const panel = await page.getByRole('region', { name: 'Minister permissions', exact: true }).boundingBox();
+      const spotlight = await page.locator('.tutorial-spotlight').all();
+      const boxes = await Promise.all(spotlight.map(item => item.boundingBox()));
+      return !!panel && boxes.some(box => box && box.x <= panel.x && box.y <= panel.y && box.x + box.width >= panel.x + panel.width);
+    }).toBe(true);
+    await expect(page.locator('.tutorial-guide')).toHaveAttribute('data-moving', 'false');
     await page.screenshot({ path: 'test-results/onboarding-minister.png' });
     await page.getByRole('button', { name: 'Got it', exact: true }).click();
     await page.getByRole('button', { name: 'Finish & keep my world', exact: true }).click();

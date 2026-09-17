@@ -32,7 +32,7 @@ class AgentConfig:
     agent_id: str
     name: str
     system_instruction: str = "You are a helpful agent in Open Agent World."
-    model: str = "gemini-3.7-flash"
+    model: str = "oaw:default"
     runtime_provider_id: str | None = None
     max_concurrent_runs: int = 1
     provider_config: Mapping[str, Any] = field(
@@ -58,6 +58,9 @@ class AgentInfo:
 
 @dataclass(frozen=True, slots=True)
 class AgentEvent:
+    """MESSAGE may carry provider_message_id for successive full-text snapshots
+    of one message within a Run. Without it, each event is a distinct message.
+    """
     agent_id: str
     run_id: str
     type: AgentEventType

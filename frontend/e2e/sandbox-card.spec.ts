@@ -12,10 +12,12 @@ test("saved networking retries stale broker discovery without reloading (mock AP
   await page.routeWebSocket("**/ws/events", () => {});
   await page.route(/^https?:\/\/[^/]+\/api\//, async route => {
     const path = new URL(route.request().url()).pathname;
+    if (path.startsWith("/api/application") || ["/api/card-library", "/api/settings/models", "/api/canvas/glue"].includes(path)) return route.continue();
     const reply = (json: unknown, status = 200) => route.fulfill({ json, status });
     if (path === "/api/catalog") return reply(TEST_CATALOG);
     if (path === "/api/world") return reply({ nodes: [card], edges: [], chunks: ["0:0"] });
     if (path === "/api/legions") return reply([]);
+    if (path.endsWith("/history") || path.endsWith("/files")) return reply([]);
     if (path === "/api/sandbox/runtimes") return reply({ default_runtime: "windows", runtimes: [{
       ...network(), id: "windows", label: "Windows", available: true, platform: "windows", shell: ["cmd.exe"], supports_workspace: true,
       // Simulate an older discovery snapshot even after successful Start.
@@ -36,14 +38,14 @@ test("saved networking retries stale broker discovery without reloading (mock AP
   });
   await page.goto("/");
   const panel = page.locator(`[data-card-id="${card.id}"]`);
-  await panel.locator(".card-kind-icon").click();
-  await expect(panel.locator(".sandbox-summary-list")).toContainText("Requested · prerequisites unavailable");
+  await expect(panel).toHaveAttribute("data-surface-level", "workspace");
+  await panel.getByRole("tab", { name: "Settings", exact: true }).click();
+  await expect(panel).toContainText("Broker unavailable");
   await panel.getByRole("button", { name: "Retry / Recheck" }).click();
-  await expect(panel.locator(".sandbox-summary-list")).toContainText("Requested · prerequisites unavailable");
-  await expect(panel.getByRole("alert")).toHaveText("Broker authorization check failed");
+  await expect(panel).toContainText("Broker authorization check failed");
   await panel.getByRole("button", { name: "Retry / Recheck" }).click();
   await expect(panel.getByRole("status")).toHaveText("Ready");
-  await expect(panel.locator(".sandbox-summary-list")).toContainText("Enabled · runtime ready");
+  await expect(panel.getByLabel("Networking", { exact: true })).toHaveValue("enabled");
   await expect(panel.getByRole("alert")).toHaveCount(0);
   expect(card.config.network_enabled).toBe(true);
   expect(starts).toBe(2);
@@ -74,6 +76,7 @@ test("sandbox window keeps files, preview and terminal together with separate se
   await page.route(/^https?:\/\/[^/]+\/api\//, async (route) => {
     const url = new URL(route.request().url());
     const path = url.pathname;
+    if (path.startsWith("/api/application") || ["/api/card-library", "/api/settings/models", "/api/canvas/glue"].includes(path)) return route.continue();
     const reply = (json: unknown, status = 200) => route.fulfill({ status, json });
     if (path === "/api/catalog") return reply(TEST_CATALOG);
     if (path === "/api/world") return reply({ nodes: [{ ...card, status: state }], edges: [], chunks: ["0:0"] });
@@ -117,12 +120,9 @@ test("sandbox window keeps files, preview and terminal together with separate se
 
   await page.goto("/");
   const panel = page.locator(`[data-card-id="${card.id}"]`);
-  await panel.locator(".card-kind-icon").click();
-  await expect(panel).toHaveAttribute("data-surface-level", "inspector");
+  await expect(panel).toHaveAttribute("data-surface-level", "workspace");
   await expect(panel.getByRole("status")).toHaveText("Stopped");
   await expect(panel.getByLabel("Working folder", { exact: true })).toBeHidden();
-  await expect(panel.getByLabel("Command", { exact: true })).toHaveCount(0);
-  await panel.getByRole("button", { name: "Open Window", exact: true }).click();
 
   const window = page.getByRole("dialog", { name: "Project workspace workspace" });
   const sidebar = window.getByLabel("Sandbox files");
@@ -145,7 +145,7 @@ test("sandbox window keeps files, preview and terminal together with separate se
   })).toBe(true);
   await sidebar.getByRole("button", { name: "result.txt", exact: true }).click();
   await expect(preview.locator("pre")).toHaveText("hello");
-  await window.getByLabel("Command", { exact: true }).fill("printf 'hello'");
+  await expect(window.getByLabel("Command", { exact: true })).not.toBeEditable();
   expect(executions).toBe(0);
 
   await window.getByRole("tab", { name: /^Settings/ }).click();
@@ -164,7 +164,7 @@ test("sandbox window keeps files, preview and terminal together with separate se
   await window.getByRole("tab", { name: "Workspace", exact: true }).click();
   await expect(preview.locator("pre")).toHaveText("hello");
   await expect(terminal).toBeVisible();
-  await expect(window.getByLabel("Command", { exact: true })).toHaveValue("printf 'hello'");
+  await expect(window.getByLabel("Command", { exact: true })).toHaveValue("");
   await expect(window.getByRole("button", { name: "Start", exact: true })).toBeDisabled();
   await window.getByRole("tab", { name: /^Settings/ }).click();
   await expect(window.getByLabel("Working folder", { exact: true })).toHaveValue("D:\\projects\\demo");
@@ -190,8 +190,11 @@ test("sandbox window keeps files, preview and terminal together with separate se
   await sidebar.getByRole("button", { name: "result.txt", exact: true }).click();
   await expect(preview.locator("pre")).toHaveText("hello");
 
-  await window.getByLabel("Command", { exact: true }).press("Control+Enter");
+  await window.getByLabel("Command", { exact: true }).fill("printf 'hello'");
+  await window.getByLabel("Command", { exact: true }).press("Enter");
   await expect(window.getByRole("log")).toContainText("hello");
+  await expect(window.getByLabel("Command", { exact: true })).toHaveValue("");
+  await window.getByLabel("Command", { exact: true }).fill("printf 'next'");
   await expect(preview.locator("pre")).toHaveText("hello");
   const downloadEvent = page.waitForEvent("download");
   await preview.getByRole("button", { name: "Download file", exact: true }).click();
@@ -244,10 +247,21 @@ test("sandbox window keeps files, preview and terminal together with separate se
   await window.screenshot({ path: testInfo.outputPath("sandbox-window-dark.png") });
 
   await window.getByRole("button", { name: "Close workspace" }).click();
-  await panel.getByRole("button", { name: "Settings", exact: true }).click();
+  await expect(panel).toHaveAttribute("data-surface-level", "preview");
+  await panel.locator(".card-kind-icon").click();
+  await expect(panel).toHaveAttribute("data-surface-level", "workspace");
+  // Let this card finish expanding before Playwright scrolls a toolbar control
+  // into view; scrolling during the size transition can shift its click point.
+  await panel.evaluate(async element => {
+    const node = element.closest(".react-flow__node")!;
+    await Promise.all(node.getAnimations({ subtree: true })
+      .filter(animation => animation.effect?.getTiming().iterations !== Infinity)
+      .map(animation => animation.finished.catch(() => {})));
+  });
+  await window.getByRole("tab", { name: "Settings", exact: true }).click();
   await expect(window.getByRole("tab", { name: "Settings", exact: true })).toHaveAttribute("aria-selected", "true");
   await window.getByRole("tab", { name: "Workspace", exact: true }).click();
-  await expect(window.getByLabel("Command", { exact: true })).toHaveValue("printf 'hello'");
+  await expect(window.getByLabel("Command", { exact: true })).toHaveValue("printf 'next'");
   await window.getByRole("tab", { name: "History", exact: true }).click();
   await expect(window.locator(".sandbox-history")).toContainText("user · finished");
   await expect(sidebar).toBeVisible();

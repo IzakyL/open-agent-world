@@ -169,6 +169,20 @@ function Read-BackendState {
     }
 }
 
+function Remove-OwnedBackendState {
+    param([object]$ExpectedState)
+
+    if ($null -eq $ExpectedState) { return }
+    $current = Read-BackendState
+    if ($null -eq $current) { return }
+    # A previous terminal may reach finally after a replacement has already
+    # written its process record. It must not erase the replacement's identity.
+    if ([string]$current.root.pid -eq [string]$ExpectedState.root.pid -and
+        [string]$current.root.startTimeTicks -eq [string]$ExpectedState.root.startTimeTicks) {
+        Remove-Item -LiteralPath $backendStatePath -Force -ErrorAction SilentlyContinue
+    }
+}
+
 $env:OPEN_AGENT_WORLD_AGENT_RUNTIME = $AgentRuntime
 $env:OPEN_AGENT_WORLD_MODE = "development"
 $backendOut = Join-Path $runtimeDirectory "backend.out.log"
@@ -189,7 +203,7 @@ try {
              [int]$previousState.listener.pid -ne [int]$previousState.root.pid)) {
             Stop-RecordedProcessTree $previousState.listener
         }
-        Remove-Item -LiteralPath $backendStatePath -Force -ErrorAction SilentlyContinue
+        Remove-OwnedBackendState $previousState
     }
 
     $backendPort = Get-AvailableLocalPort -PreferredPort 8000
@@ -234,6 +248,14 @@ try {
         -WindowStyle Hidden `
         -PassThru
 
+    # Record ownership before waiting, so an interrupted startup can also be
+    # recovered by the next invocation.
+    $backendState = [pscustomobject]@{
+        root = Get-ProcessRecord $backend.Id
+        listener = $null
+    }
+    $backendState | ConvertTo-Json | Set-Content -LiteralPath $backendStatePath -Encoding utf8
+
     $listener = Wait-BackendListener -Backend $backend -Port $backendPort -TimeoutMilliseconds ($StartupTimeoutSeconds * 1000) -LogPath $backendError
     if ($null -eq $listener) {
         $detail = Get-Content -Raw $backendError -ErrorAction SilentlyContinue
@@ -277,6 +299,6 @@ finally {
     elseif ($null -ne $backend -and -not $backend.HasExited) {
         Stop-RecordedProcessTree (Get-ProcessRecord $backend.Id)
     }
-    Remove-Item -LiteralPath $backendStatePath -Force -ErrorAction SilentlyContinue
+    Remove-OwnedBackendState $backendState
     Pop-Location
 }

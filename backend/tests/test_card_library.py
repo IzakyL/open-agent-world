@@ -67,6 +67,45 @@ def test_retired_pack_metadata_migrates_without_losing_user_state(tmp_path, comp
     db.close()
 
 
+def test_legacy_surface_snapshots_migrate_on_application_startup(tmp_path):
+    settings = Settings.for_data_root(tmp_path)
+    registry = create_builtin_registry()
+    install(registry)
+    services = create_services(settings, plugins=registry)
+    store = services.card_library
+    edit(store, "open_pack", id="example.default")
+    expected = edit(store, "update_deck", id="starter", entries=[{"id": "example.card"}])
+    payload = expected.model_dump(mode="json")
+    for definition in payload["card_definitions"].values():
+        definition.pop("presentation")
+    with services.database.transaction(immediate=True) as connection:
+        connection.execute("UPDATE application_settings SET value_json=? WHERE key=?", (json.dumps(payload), KEY))
+    services.close()
+    # Restart with the extra plugin absent, as can happen after an upgrade.
+    with TestClient(create_app(settings, services=None), base_url="http://127.0.0.1") as client:
+        assert client.get("/api/application").status_code == 200
+        assert client.get("/api/world").status_code == 200
+        restored = client.get("/api/card-library").json()
+        assert restored["decks"] == payload["decks"]
+        assert restored["collection"] == payload["collection"]
+        assert restored["active_deck_id"] == payload["active_deck_id"]
+        assert restored["packs"]["example.default"] == payload["packs"]["example.default"]
+    db = Database(settings.database_path)
+    store = CardLibraryStore(db, create_builtin_registry())
+    state = store.read()
+    assert state.card_definitions["conversation"].presentation.initial == "workspace"
+    assert state.card_definitions["example.card"].presentation == expected.card_definitions["example.card"].presentation
+    assert store.read().revision == state.revision
+    # Explicit invalid policies must still fail instead of being silently replaced.
+    saved = state.model_dump(mode="json")
+    saved["card_definitions"]["example.card"]["presentation"] = None
+    with db.transaction(immediate=True) as connection:
+        connection.execute("UPDATE application_settings SET value_json=? WHERE key=?", (json.dumps(saved), KEY))
+    with pytest.raises(ValidationError):
+        store.read()
+    db.close()
+
+
 def test_new_install_open_deck_remove_restart(tmp_path):
     registry = create_builtin_registry()
     db = Database(tmp_path / "world.db")
@@ -102,6 +141,26 @@ def test_new_install_open_deck_remove_restart(tmp_path):
     assert "example.card" in store.read().collection
     assert not store.read().decks[-1].entries
     assert not store.read().migration_pending
+    db.close()
+
+
+def test_legacy_minister_inventory_becomes_role_card_in_same_deck(tmp_path):
+    db = Database(tmp_path / 'world.db')
+    store = CardLibraryStore(db, create_builtin_registry())
+    pack = next(pack for pack in store.read().packs.values() if 'core.minister-role' in pack.definition.cards)
+    edit(store, 'open_pack', id=pack.definition.id)
+    state = edit(store, 'update_deck', id='starter', entries=[{'id': 'text'}, {'id': 'core.minister-role'}, {'id': 'agent'}])
+    payload = state.model_dump(mode='json')
+    collected = payload['collection'].pop('core.minister-role')
+    payload['collection']['core.minister'] = {**collected, 'card_id': 'core.minister'}
+    payload['decks'][0]['entries'][1]['id'] = 'core.minister'
+    with db.transaction(immediate=True) as connection:
+        connection.execute('UPDATE application_settings SET value_json=? WHERE key=?', (json.dumps(payload), KEY))
+    restored = CardLibraryStore(db, create_builtin_registry()).read()
+    assert restored.decks == state.decks
+    assert restored.active_deck_id == state.active_deck_id
+    assert restored.collection == state.collection
+    assert store.read().revision == restored.revision  # idempotent
     db.close()
 
 

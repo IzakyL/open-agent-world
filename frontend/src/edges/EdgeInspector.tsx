@@ -1,10 +1,11 @@
+import { memo } from "react";
 import { t, useLocale } from "../i18n";
 import { ArrowLeftRight, ArrowRight, ShieldOff, X } from "lucide-react";
 import { getRelationshipOptions, getRelationshipOption } from "../state/relationships";
 import { useWorldStore } from "../state/worldStore";
 import type { EdgeDirection, Relationship } from "../types/world";
 
-export function EdgeInspector() {
+export const EdgeInspector = memo(function EdgeInspector() {
   useLocale();
   const selectedId = useWorldStore((state) => state.selectedEdgeId);
   const catalog = useWorldStore((state) => state.catalog);
@@ -73,4 +74,4 @@ export function EdgeInspector() {
       </button>
     </aside>
   );
-}
+});

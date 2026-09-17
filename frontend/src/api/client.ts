@@ -8,6 +8,8 @@ import type {
   ConversationSummary,
   EdgeDirection,
   LegionInstantiation,
+  LegionNodePresentation,
+  LegionDeployOptions,
   LegionSummary,
   PluginCatalog,
   Relationship,
@@ -128,6 +130,7 @@ export function normalizeCard(input: unknown): WorldCard {
     id: String(source.id),
     revision: typeof source.revision === "number" ? source.revision : undefined,
     equipment: source.equipment as WorldCard["equipment"] ?? null,
+    minister: source.minister as WorldCard["minister"] ?? null,
     parent_id: typeof source.parent_id === "string" ? source.parent_id : null,
     type,
     name: String(source.name ?? config.filename ?? type),
@@ -194,6 +197,7 @@ export function normalizeLegionInstantiation(input: unknown): LegionInstantiatio
     legion_id: String(source.legion_id),
     nodes: nodes.map(normalizeCard),
     edges: edges.map(normalizeEdge),
+    presentation: asRecord(source.presentation) as Record<string, LegionNodePresentation>,
   };
 }
 
@@ -324,8 +328,8 @@ export const worldApi = {
     return normalizeWorldSnapshot(body);
   },
 
-  async formLegionGroup(name: string, nodeIds: string[]): Promise<WorldCard[]> {
-    const body = await request<unknown[]>("/legion-groups", { method: "POST", body: JSON.stringify({ name, node_ids: nodeIds }) });
+  async formLegionGroup(name: string, nodeIds: string[], contentBounds?: { position: { x: number; y: number }; size: { width: number; height: number } }): Promise<WorldCard[]> {
+    const body = await request<unknown[]>("/legion-groups", { method: "POST", body: JSON.stringify({ name, node_ids: nodeIds, content_bounds: contentBounds }) });
     return body.map(normalizeCard);
   },
 
@@ -348,6 +352,7 @@ export const worldApi = {
     name: string;
     description?: string;
     node_ids: string[];
+    presentation?: Record<string, LegionNodePresentation>;
   }): Promise<LegionSummary> {
     const body = await request<unknown>("/legions", {
       method: "POST",
@@ -361,10 +366,14 @@ export const worldApi = {
     return normalizeLegionSummary(unwrap(body, "legion"));
   },
 
-  async instantiateLegion(id: string, position: { x: number; y: number }): Promise<LegionInstantiation> {
-    const body = await request<unknown>(`/legions/${encodeURIComponent(id)}/instances`, {
+  async getBlueprintPresets(): Promise<LegionSummary[]> {
+    return (await request<unknown[]>("/legions/presets")).map(normalizeLegionSummary);
+  },
+
+  async instantiateLegion(id: string, position: { x: number; y: number }, options: LegionDeployOptions = {}): Promise<LegionInstantiation> {
+    const body = await request<unknown>(`/legions/${options.preset ? "presets/" : ""}${encodeURIComponent(id)}/instances`, {
       method: "POST",
-      body: JSON.stringify({ position, as_group: true }),
+      body: JSON.stringify({ position, as_group: !options.unwrap, unwrap: !!options.unwrap }),
     });
     return normalizeLegionInstantiation(body);
   },
@@ -397,6 +406,7 @@ export const worldApi = {
       type: node.type,
       parent_id: node.parent_id,
       equipment: node.equipment,
+      minister: node.minister,
       name: node.name,
       position: node.position,
       size: node.size,
@@ -601,6 +611,10 @@ export const worldApi = {
 
   async transformDocument(id: string, operation: string, body: Record<string, unknown>): Promise<Record<string, unknown>> {
     return request(`/nodes/${encodeURIComponent(id)}/transformations/${encodeURIComponent(operation)}`, { method: "POST", body: JSON.stringify(body) });
+  },
+  async appointMinister(id: string, expected_revision: number, source?: WorldCard): Promise<WorldCard> {
+    return normalizeCard(await request(`/ministers/${encodeURIComponent(id)}/appoint`, { method: 'POST',
+      body: JSON.stringify({ expected_revision, ...(source ? { source_id: source.id, source_revision: source.revision } : {}) }) }));
   },
 
   artifacts<T>(collectionId: string, action = "versions", body?: unknown, method?: string): Promise<T> {

@@ -4,9 +4,9 @@ import type { GlueBond } from '../state/glue';
 import type { LibrarySnapshot } from '../state/cardLibrary';
 import type { WorldInteraction } from '../state/interactions';
 
-export type Role = 'demo' | 'practice' | 'agent' | 'conversation' | 'sandbox' | 'glueA' | 'glueB' | 'minister';
+export type Role = 'demo' | 'practice' | 'agent' | 'conversation' | 'sandbox' | 'glueA' | 'glueB' | 'ministerRole' | 'minister';
 export type Target = Role | 'center' | 'terrain' | 'deck' | 'tools' | 'zoom-controls' | 'library' | 'library-pack' | 'library-decks' | 'settings' | 'model-connection' | 'model-credentials' | 'model-list' | 'model-save';
-export type Demonstration = 'library' | 'deck' | 'place' | 'connect' | 'glue' | 'unglue' | 'minister';
+export type Demonstration = 'library' | 'deck' | 'place' | 'connect' | 'glue' | 'unglue';
 export interface TutorialStep {
   id: string;
   chapter: number;
@@ -17,7 +17,7 @@ export interface TutorialStep {
   participants?: [Role, Role];
   result?: { dialogue: string; target: Target };
   button?: string;
-  expects?: 'library-open' | 'pack-open' | 'library-cards' | 'deck-ready' | 'settings-open' | 'model-connection' | 'models-saved' | 'pan' | 'zoom' | 'place' | 'move' | 'select' | 'open' | 'close' | 'focus' | 'delete' | 'configure' | 'workspace' | 'message' | 'connect' | 'glue' | 'presence';
+  expects?: 'library-open' | 'pack-open' | 'library-cards' | 'deck-ready' | 'settings-open' | 'model-connection' | 'models-saved' | 'pan' | 'zoom' | 'place' | 'move' | 'select' | 'open' | 'close' | 'focus' | 'delete' | 'configure' | 'workspace' | 'message' | 'connect' | 'glue' | 'presence' | 'promotion' | 'minister-panel';
   role?: Role;
   optional?: string;
   review?: boolean;
@@ -31,7 +31,7 @@ export const STEPS: readonly TutorialStep[] = [
   { id: 'deck', chapter: 1, dialogue: 'Let’s prepare your hand together. Open the Library here to find your first pack.', target: 'library', expects: 'library-open', action: 'library', button: 'Open Library' },
   { id: 'starter-pack', chapter: 1, dialogue: 'This pack contains the essentials. Click it to tear it open and collect its cards.', target: 'library-pack', expects: 'pack-open' },
   { id: 'starter-cards', chapter: 1, dialogue: 'Your cards are collected! Click the opened wrapper to browse them.', target: 'library-pack', expects: 'library-cards' },
-  { id: 'deck-build', chapter: 1, dialogue: 'Drag Text, Agent, Conversation and Sandbox into a deck on the right. You can create a new deck there, too.', hint: 'You can also click Add to… and choose a destination.', target: 'library-decks', expects: 'deck-ready', review: true, button: 'Use this deck' },
+  { id: 'deck-build', chapter: 1, dialogue: 'Drag Text, Agent, Conversation and Sandbox into your deck below. You can create a new deck there, too.', hint: 'You can also click Add to current deck. Switch decks using the tabs below.', target: 'library-decks', expects: 'deck-ready', review: true, button: 'Use this deck' },
   { id: 'place-demo', result: { target: 'demo', dialogue: 'The Text card is here. Take a moment to look; when you are ready, we will place yours.' }, chapter: 1, dialogue: 'Watch this Text card travel from the deck into the world. This one is my temporary prop.', target: 'deck', action: 'place', button: 'Show me' },
   { id: 'place', chapter: 1, dialogue: 'Your turn! Drag a Text card from the deck onto a clear patch. Clicking the deck card also places it.', target: 'deck', expects: 'place', role: 'practice' },
   { id: 'move', chapter: 1, dialogue: 'Give your card a new home. Drag its title or an empty part of its frame.', target: 'practice', expects: 'move', role: 'practice' },
@@ -50,21 +50,22 @@ export const STEPS: readonly TutorialStep[] = [
   { id: 'configure', chapter: 2, dialogue: 'Back to your Agent: choose the model you saved and write a short system instruction.', target: 'agent', expects: 'configure', role: 'agent', optional: 'Keep these settings', review: true },
   { id: 'conversation', chapter: 2, dialogue: 'Place a Conversation beside your Agent. It holds durable messages and sessions.', target: 'deck', expects: 'place', role: 'conversation' },
   { id: 'connect-demo', result: { target: 'conversation', dialogue: 'Both cards are now connected with Participate. Follow the line from the Agent to the Conversation, then continue when you are ready.' }, participants: ['agent', 'conversation'], chapter: 2, dialogue: 'I’ll connect these with Participate. A connection grants a real capability: this Agent can now join the Conversation.', target: 'agent', action: 'connect', button: 'Show the connection' },
-  { id: 'conversation-open', chapter: 2, dialogue: 'Click the Conversation, then its Open workspace button. That’s where your sessions and messages live.', target: 'conversation', expects: 'workspace', role: 'conversation' },
+  { id: 'conversation-open', chapter: 2, dialogue: 'Conversation opens as a window for your sessions and messages. If you fold it into a card, click the card to reopen the window.', target: 'conversation', expects: 'workspace', role: 'conversation', review: true, button: 'Continue' },
   { id: 'message', chapter: 2, dialogue: 'Try “Help me plan a small garden.” Choose the Agent in the session or @mention it, then send. A configured model is needed for its reply.', hint: 'If the reply fails, check the API key, Base URL and model ID in Settings > Models. You can set them up later; your message stays here.', target: 'conversation', expects: 'message', role: 'conversation', optional: 'Try the model later' },
   { id: 'reply', chapter: 2, dialogue: 'The Agent’s replies and tool activity appear in this session. Take a look around; your conversation stays here when you close the card.', target: 'conversation', button: 'On to Sandbox' },
   { id: 'sandbox', chapter: 2, dialogue: 'Now place a Sandbox. It gives an Agent a workspace and the ability to execute commands.', target: 'deck', expects: 'place', role: 'sandbox' },
   { id: 'sandbox-connect', participants: ['agent', 'sandbox'], chapter: 2, dialogue: 'Your turn to connect! Drag from an edge port of the Agent to the Sandbox. Choose Execute, or Execute + Start/Stop, then grant it.', hint: 'If a port is covered, move a card aside. Execute needs a running Sandbox; Start/Stop also lets the Agent manage it.', target: 'sandbox', expects: 'connect', role: 'sandbox' },
-  { id: 'sandbox-open', chapter: 2, dialogue: 'Open the Sandbox to see its runtime and workspace settings. Start it here when you’re ready to execute. Connections compose what an Agent can do.', target: 'sandbox', expects: 'open', role: 'sandbox' },
+  { id: 'sandbox-open', chapter: 2, dialogue: 'Sandbox opens as a window. Use the Settings tab to choose its runtime and working folder. Start it when you are ready to execute.', target: 'sandbox', expects: 'workspace', role: 'sandbox', review: true, button: 'Continue' },
   { id: 'sandbox-ready', chapter: 2, dialogue: 'This is where you choose the runtime and workspace, then start your Sandbox. We can leave it stopped for now. Your three cards already describe a working system.', target: 'sandbox', button: 'Try sticking cards' },
   { id: 'glue-demo', result: { target: 'glueA', dialogue: 'The two cards now share a seam and move together. Take a look before we separate them for your turn.' }, participants: ['glueA', 'glueB'], chapter: 3, dialogue: 'Cards can stick together physically, too. Watch these two temporary Text cards meet at their edges and move as one.', target: 'center', action: 'glue', button: 'Show me sticking' },
   { id: 'glue-reset', result: { target: 'glueA', dialogue: 'The cards are separate again. When you are ready, we will switch on Glue and bring their edges together.' }, participants: ['glueA', 'glueB'], chapter: 3, dialogue: 'See the seam? Sticking arranges cards; it doesn’t grant a capability. I’ll separate my props so you can try.', target: 'glueA', action: 'unglue', button: 'My turn' },
   { id: 'glue', participants: ['glueA', 'glueB'], chapter: 3, dialogue: 'Switch on the droplet tool (Glue). Drag one of my two Text cards close to the other’s edge; release when the seam appears.', target: 'tools', expects: 'glue', role: 'glueA' },
   { id: 'glue-move', participants: ['glueA', 'glueB'], chapter: 3, dialogue: 'Now drag either card. Its neighbour comes along! Select the pair to find Detach glue when you want to separate them.', target: 'glueA', expects: 'move', role: 'glueA' },
-  { id: 'minister', result: { target: 'minister', dialogue: 'The Minister is here. Notice its circle; continue when you are ready to explore it.' }, chapter: 4, dialogue: 'One last neighbour: the Minister. It can help operate and configure the world inside its circle.', target: 'center', action: 'minister', button: 'Place Minister Card' },
-  { id: 'minister-presence', chapter: 4, dialogue: 'Move onto the Minister’s circle or click it. You can speak right here on the canvas.', target: 'minister', expects: 'presence', role: 'minister' },
+  { id: 'minister-card', chapter: 4, dialogue: 'Here is a new card in your deck: Minister role. Place it beside your Agent.', target: 'deck', expects: 'place', role: 'ministerRole' },
+  { id: 'minister', chapter: 4, dialogue: 'Drag the Minister role card onto your Agent. The card is absorbed, and your Agent is promoted with its original model and tools.', participants: ['ministerRole', 'agent'], target: 'agent', expects: 'promotion', role: 'agent', review: true, button: 'Continue' },
+  { id: 'minister-presence', chapter: 4, dialogue: 'Your Agent is now a Minister and still uses its original model and tools. Click its new Minister badge to talk right here on the canvas.', target: 'minister', expects: 'presence', role: 'minister' },
   { id: 'minister-message', chapter: 4, dialogue: 'Try asking “What cards are inside your circle?” Later, ask it to find a card, arrange your world, or help configure an Agent.', target: 'minister', expects: 'message', role: 'minister', optional: 'Try the model later' },
-  { id: 'minister-history', chapter: 4, dialogue: 'The little settings button beside its circle opens history, settings, nearby cards, and confirmations. Open it now.', target: 'minister', expects: 'open', role: 'minister' },
+  { id: 'minister-history', chapter: 4, dialogue: 'Open your Agent card and choose the Minister tab. Its permissions and confirmations live there; history stays in the Agent workspace.', target: 'minister', expects: 'minister-panel', role: 'minister' },
   { id: 'minister-safety', chapter: 4, dialogue: 'You stay in charge. Review sensitive or destructive proposals in the Minister’s confirmations. Its control radius and canvas-edit setting define where it can help.', target: 'minister', button: 'Got it' },
   { id: 'finish', chapter: 4, dialogue: 'You’ve made a world! Your workflow stays. I’ll tidy my temporary props. Find Replay Tutorial at the compass in the world controls whenever you want another walk.', target: 'center', button: 'Finish & keep my world' },
 ];
@@ -78,7 +79,7 @@ export interface Observation {
   viewport: FlowViewportState;
   settled: boolean;
   settingsOpen?: boolean;
-  library?: { open: boolean; tab: string; snapshot: LibrarySnapshot | null; selectedDeckId: string };
+  library?: { open: boolean; tab: string; snapshot: LibrarySnapshot | null };
   deleted: string[];
 }
 export interface Baseline { position?: { x: number; y: number }; viewport: FlowViewportState; config?: string }
@@ -93,7 +94,7 @@ export function stepComplete(step: TutorialStep, refs: Partial<Record<Role, stri
     case 'library-cards': return Boolean(state.library?.open && state.library.tab === 'cards');
     case 'deck-ready': {
       const library = state.library, snapshot = library?.snapshot;
-      const deck = snapshot?.decks.find(item => item.id === (library?.selectedDeckId || snapshot.active_deck_id));
+      const deck = snapshot?.decks.find(item => item.id === snapshot.active_deck_id);
       return Boolean(library?.open && library.tab === 'cards' && deck && STARTER_CARDS.every(id => snapshot?.available_card_ids.includes(id) && deck.entries.some(entry => entry.kind === 'node' && entry.id === id)));
     }
     case 'settings-open': return Boolean(state.settingsOpen);
@@ -111,6 +112,8 @@ export function stepComplete(step: TutorialStep, refs: Partial<Record<Role, stri
     case 'configure': return Boolean(card && state.settled && (level === 'inspector' || level === 'workspace') && JSON.stringify(card.config) !== baseline.config);
     case 'workspace': return Boolean(card && level === 'workspace');
     case 'message': return Boolean(id && event?.type === 'message-sent' && event.cardId === id);
+    case 'promotion': return Boolean(card?.minister && refs.minister === card.id && state.settled);
+    case 'minister-panel': return Boolean(id && event?.type === 'minister-settings-opened' && event.cardId === id);
     case 'presence': return Boolean(id && event?.type === 'minister-opened' && event.cardId === id);
     case 'connect': return state.settled && state.edges.some(edge => edge.source === refs.agent && edge.target === refs.sandbox && ['execute', 'execute_manage'].includes(edge.relationship));
     case 'glue': return event?.type === 'glue-saved' && event.bonds.some(bond => [bond.a, bond.b].includes(refs.glueA ?? '') && [bond.a, bond.b].includes(refs.glueB ?? ''));

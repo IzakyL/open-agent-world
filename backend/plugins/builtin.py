@@ -8,12 +8,14 @@ import logging
 from typing import Any, Mapping
 
 from backend.errors import PluginCompatibilityError, ResourceValidationError
+from backend.legion_workspace import remap_workspace_config
 from backend.sandbox.models import SandboxError
 from backend.plugins.registry import (
     PLUGIN_API_VERSION,
     CapabilityGrantDefinition,
     CapabilityDefinition,
     NodeTypeDefinition,
+    NodePresentation,
     PackDefinition, PluginDescriptor,
     PluginRegistration,
     PluginRegistry,
@@ -89,7 +91,7 @@ class LegionContainerDefinition(NodeContainerDefinition):
     parentable: bool = False
     connectable: bool = False
     min_size: tuple[int, int] = (800, 550)
-    content_inset: tuple[int, int, int, int] = (320, 100, 24, 24)
+    content_inset: tuple[int, int, int, int] = (24, 100, 24, 24)
 
 
 class AgentNodeBehavior(NodeLifecycleHandler):
@@ -492,6 +494,8 @@ class AgentNodeTemplateHandler(_CoreConfigProjection, NodeTemplateHandler):
         "status",
         "runtime_provider_id",
         "max_concurrent_runs",
+        "inherit_legion_model",
+        "legion_role",
     })
 
     def dependencies(
@@ -952,6 +956,7 @@ def _register_builtin(registry: PluginRegistration) -> None:
         deck_icon="workflow", default_name="New Legion", default_size=(1100, 700),
         default_status="available", statuses=frozenset({"available"}),
         config_model=LegionConfig, traits=frozenset({"core.legion", "ui.legion.v1"}),
+        template_remap_config=remap_workspace_config,
         container=LegionContainerDefinition(),
         user_creatable=False, templateable=True,
     ))
@@ -962,7 +967,7 @@ def _register_builtin(registry: PluginRegistration) -> None:
         default_size=(320, 210), default_status="available",
         statuses=frozenset({"available"}), config_model=ConversationConfig,
         traits=frozenset({"core.field", "core.conversation", "core.file-source"}),
-        surfaces={"preview": True, "inspector": True, "workspace": True},
+        presentation=NodePresentation(states=("node", "preview", "workspace"), initial="workspace", open="workspace"),
         lifecycle=ConversationNodeBehavior(),
         templateable=True,
     ))
@@ -993,7 +998,7 @@ def _register_builtin(registry: PluginRegistration) -> None:
         statuses=frozenset({"stopped", "ready", "running", "error"}),
         config_model=SandboxConfig, traits=frozenset({"core.sandbox", "core.file-source"}),
         document=NodeDocumentDefinition(model=EnvironmentProfile),
-        surfaces={"preview": True, "inspector": True, "workspace": True},
+        presentation=NodePresentation(states=("node", "preview", "workspace"), initial="workspace", open="workspace"),
         lifecycle=SandboxNodeBehavior(),
         templateable=True, template_status="stopped",
         template_handler=SandboxNodeTemplateHandler(),
@@ -1052,14 +1057,14 @@ def _register_builtin(registry: PluginRegistration) -> None:
         target_parameter="sandbox", selectors=(SKILL_SELECTOR,), target_capabilities=frozenset({"sandbox.execute"}),
         input_schema={"type": "object", "properties": {"source": {"type": "string"}, "destination": {"type": "string"}, "overwrite": {"type": "boolean", "default": False}}, "required": ["source", "destination"], "additionalProperties": False}), _copy_skill_resource)
     registry.register_relationship(RelationshipDefinition(
-        id="execute", label="Execute", short_label="execute",
+        canvas_requires_confirmation=True, id="execute", label="Execute", short_label="execute",
         description="The agent can run commands in this isolated workplace. Starting and stopping require manual control.",
         source_traits=frozenset({"core.agent"}), target_traits=frozenset({"core.sandbox"}),
         templateable=True,
         capabilities=(CapabilityGrantDefinition(kind='sandbox.execute'), CapabilityGrantDefinition(kind='sandbox.cancel_command'), CapabilityGrantDefinition(kind='sandbox.install_python_packages'), CapabilityGrantDefinition(kind='sandbox.run_skill_script'), CapabilityGrantDefinition(kind='sandbox.inspect'), CapabilityGrantDefinition(kind='sandbox.copy_skill_resource')),
     ))
     registry.register_relationship(RelationshipDefinition(
-        id="execute_manage", label="Execute + Start/Stop", short_label="execute + manage",
+        canvas_requires_confirmation=True, id="execute_manage", label="Execute + Start/Stop", short_label="execute + manage",
         description="The agent can run commands, start this Sandbox and stop it, including active commands.",
         source_traits=frozenset({"core.agent"}), target_traits=frozenset({"core.sandbox"}),
         templateable=True,

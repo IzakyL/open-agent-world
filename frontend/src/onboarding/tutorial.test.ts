@@ -22,9 +22,10 @@ let detach: (() => void) | undefined;
 
 beforeEach(() => {
   vi.restoreAllMocks();
-  useCardLibrary.setState({ snapshot: null, open: false, busy: false, tab: "packs", selectedDeckId: "" });
+  useCardLibrary.setState({ snapshot: null, open: false, busy: false, tab: "packs" });
   useTutorialStore.setState({ status: 'new', view: 'hidden', session: undefined, error: undefined, busy: false, ready: false });
   useWorldStore.setState({ cards: [], edges: [], catalog: TEST_CATALOG, syncState: 'online', stressCards: [], viewport,
+    modelCatalog: { revision: 0, connections: [], default_model: null }, settingsOpen: false,
     historyBusy: false, positionCommitBusy: false, undoStack: [], redoStack: [], cardTombstones: {}, toasts: [], selectedCardIds: [] });
   useNodeSurfaceStore.setState({ surfaceLevels: {}, dragging: false });
   useGlueStore.setState({ boxes: {}, bonds: [], activeEdits: 0 });
@@ -34,22 +35,39 @@ beforeEach(() => {
 afterEach(() => { detach?.(); detach = undefined; });
 
 describe('tutorial progression', () => {
+  it('requires a visible workspace and explicit Continue for window introductions', async () => {
+    useWorldStore.setState({ cards: [card('room', 'conversation')] });
+    useTutorialStore.setState({ status: 'started', view: 'active', session: {
+      id: 'window-intro', step: 'conversation-open', initialIds: [], demos: [], refs: { conversation: 'room' },
+    } });
+    tutorial.resume(); detach = tutorial.attach(bridge);
+    expect(useTutorialStore.getState().ready).toBe(true);
+    expect(useTutorialStore.getState().session?.step).toBe('conversation-open');
+    useNodeSurfaceStore.getState().closeWorkspace('room');
+    expect(useTutorialStore.getState().ready).toBe(false);
+    await tutorial.continue();
+    expect(useTutorialStore.getState().session?.step).toBe('conversation-open');
+    useNodeSurfaceStore.getState().openPrimary('room');
+    await tutorial.continue();
+    expect(useTutorialStore.getState().session?.step).toBe('message');
+  });
+
   it('waits for all four cards in the chosen deck and activates only that deck', async () => {
     const entries = ['text', 'agent', 'conversation', 'sandbox'].map(id => ({ kind: 'node' as const, id }));
     const library: LibrarySnapshot = { schema_version: 1, revision: 1, migration_pending: false, plugins: {}, packs: {}, card_definitions: {}, collection: {},
       decks: [{ id: 'starter', name: 'My deck', icon: 'folder', entries: [] }, { id: 'chosen', name: 'Research', icon: 'layers', entries: entries.slice(0, 3) }],
-      active_deck_id: 'starter', available_card_ids: entries.map(entry => entry.id), available_pack_ids: [] };
+      active_deck_id: 'chosen', available_card_ids: entries.map(entry => entry.id), available_pack_ids: [] };
     useTutorialStore.setState({ status: 'started', view: 'active', session: { id: 'deck', step: 'deck-build', initialIds: [], refs: {}, demos: [] } });
-    useCardLibrary.setState({ snapshot: library, open: true, tab: 'cards', selectedDeckId: 'chosen' });
+    useCardLibrary.setState({ snapshot: library, open: true, tab: 'cards' });
     tutorial.resume(); detach = tutorial.attach(bridge);
     await tutorial.continue();
     expect(useTutorialStore.getState().session?.step).toBe('deck-build');
     const complete = { ...library, decks: library.decks.map(deck => deck.id === 'chosen' ? { ...deck, entries } : deck) };
     useCardLibrary.setState({ snapshot: complete });
     expect(useTutorialStore.getState().ready).toBe(true);
-    useCardLibrary.setState({ selectedDeckId: 'starter' });
+    useCardLibrary.setState({ snapshot: { ...complete, active_deck_id: 'starter' } });
     expect(useTutorialStore.getState().ready).toBe(false);
-    useCardLibrary.setState({ selectedDeckId: 'chosen' });
+    useCardLibrary.setState({ snapshot: complete });
     const edit = vi.spyOn(worldApi, 'editCardLibrary').mockResolvedValue({ ...complete, revision: 2, active_deck_id: 'chosen' });
     await tutorial.continue();
     expect(edit).toHaveBeenCalledWith(expect.objectContaining({ action: 'activate_deck', id: 'chosen' }));
@@ -106,7 +124,7 @@ describe('tutorial progression', () => {
     expect(useTutorialStore.getState().ready).toBe(true);
     await tutorial.continue();
     expect(useTutorialStore.getState().session?.step).toBe('conversation');
-    expect(useNodeSurfaceStore.getState().surfaceLevels.agent).toBeUndefined();
+    expect(useNodeSurfaceStore.getState().surfaceLevels.agent).toBe('preview');
   });
   it('requires a user viewport gesture, a successful send, and the right card identities', () => {
     const pan = STEPS.find(step => step.id === 'pan')!;
@@ -248,4 +266,22 @@ describe('first-run persistence and ownership', () => {
     expect(useTutorialStore.getState().session?.demos).toHaveLength(1);
     expect(useTutorialStore.getState().status).toBe('started');
   });
+});
+
+it('opens settings after finishing without a configured default model', async () => {
+  vi.spyOn(worldApi, 'getWorld').mockResolvedValue(snapshot());
+  await tutorial.exit('completed');
+  expect(useTutorialStore.getState().status).toBe('completed');
+  expect(useWorldStore.getState().settingsOpen).toBe(true);
+  expect(useWorldStore.getState().toasts.at(-1)?.title).toBe('Set up your default model');
+});
+
+it('keeps settings closed after finishing with a configured default model', async () => {
+  vi.spyOn(worldApi, 'getWorld').mockResolvedValue(snapshot());
+  useWorldStore.setState({ modelCatalog: { revision: 1, default_model: 'oaw:model:user', connections: [{
+    id: 'user', name: 'User', adapter: 'openai', enabled: true, base_url: 'https://example.test/v1',
+    auth_mode: 'api_key', api_key_configured: true, models: [{ id: 'user', name: 'User', model_id: 'custom', enabled: true }],
+  }] } });
+  await tutorial.exit('completed');
+  expect(useWorldStore.getState().settingsOpen).toBe(false);
 });

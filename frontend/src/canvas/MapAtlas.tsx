@@ -12,7 +12,8 @@ export function MapAtlas({ active, onActiveChange, glueActive, onGlueChange }: {
   useLocale();
   const pins = useWorldStore(state => state.mapPins);
   const { setCenter } = useReactFlow();
-  const transform = useStore(state => state.transform, shallow);
+  // Closed tools have no screen-space markers to reposition during a pan.
+  const transform = useStore(state => active && pins.length ? state.transform : null, shallow);
   const jump = useCallback((pin: MapPinLocation) => {
     void setCenter(pin.x, pin.y, { zoom: pin.zoom,
       duration: window.matchMedia('(prefers-reduced-motion: reduce)').matches ? 0 : 300 });
@@ -20,7 +21,7 @@ export function MapAtlas({ active, onActiveChange, glueActive, onGlueChange }: {
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
       const target = event.target instanceof HTMLElement ? event.target : null;
-      if (event.defaultPrevented || event.isComposing || event.repeat || event.ctrlKey || event.metaKey || event.altKey || event.shiftKey
+      if (event.defaultPrevented || document.querySelector('.card-library-modal[open]') || event.isComposing || event.repeat || event.ctrlKey || event.metaKey || event.altKey || event.shiftKey
         || target?.isContentEditable || target?.closest('input, textarea, select, [role="textbox"], .xterm, [role="dialog"]')
         || useNodeSurfaceStore.getState().dragging) return;
       if (event.key === 'Escape' && (active || glueActive)) {
@@ -38,7 +39,7 @@ export function MapAtlas({ active, onActiveChange, glueActive, onGlueChange }: {
   }, [active, glueActive, jump, onActiveChange, onGlueChange, pins]);
 
   return <>
-    {active && <div className="map-pin-layer" aria-hidden="true">
+    {active && transform && <div className="map-pin-layer" aria-hidden="true">
       {pins.map((pin, index) => <div key={pin.id} className="map-pin-marker" data-testid="map-pin-marker"
         style={{ left: pin.x * transform[2] + transform[0], top: pin.y * transform[2] + transform[1] }}>
         <MapPin size={25} /><span>{index + 1} · {pin.name}</span>
@@ -61,7 +62,7 @@ export function MapAtlas({ active, onActiveChange, glueActive, onGlueChange }: {
       {glueActive && <div className="glue-tool-hint">{t("万能胶已开启 · 拖动卡片靠近另一张卡片的边缘，出现胶水时松手粘合。选中后可从自由角缩放，或解除粘连。")}</div>}
       <div className="map-toolbar" role="toolbar" aria-label={t("画布工具")}>
         <button className="icon-button" aria-label={t("图钉")} aria-pressed={active} aria-expanded={active} title={t("图钉 / 地图册")} onClick={() => onActiveChange(!active)}><MapPin size={18} /></button>
-        <button className="icon-button" aria-label={t("万能胶")} aria-pressed={glueActive} title={t("万能胶 · 靠近边缘并松手粘合")} onClick={() => onGlueChange(!glueActive)}><Droplets size={18} /></button>
+        <button className="icon-button" aria-label={t("万能胶")} data-tutorial="tools" aria-pressed={glueActive} title={t("万能胶 · 靠近边缘并松手粘合")} onClick={() => onGlueChange(!glueActive)}><Droplets size={18} /></button>
       </div>
     </Panel>
   </>;

@@ -4,6 +4,8 @@ import sys
 from pathlib import Path
 
 log = Path(sys.argv[1])
+sys.stdin.reconfigure(encoding='utf-8')
+sys.stdout.reconfigure(encoding='utf-8')
 
 
 def send(message):
@@ -50,6 +52,17 @@ while True:
                 assert reply['result']['success'] is True
             else:
                 assert reply['result']['success'] is False
+        if prompt == 'minister':
+            send({'id': 'minister-list', 'method': 'item/tool/call', 'params': {**scope, 'callId': 'minister-list', 'tool': 'oaw_list_tools', 'arguments': {}}})
+            listed = receive()
+            assert 'canvas_inspect' in json.dumps(listed)
+            tools = json.loads(listed['result']['contentItems'][0]['text'])
+            # Exercise the regular Codex bridge with the host's real role tools.
+            inspect_tool = next(item for item in tools if item['name'] == 'canvas_inspect')
+            minister = inspect_tool['input_schema']['properties']['minister']['enum'][0]
+            send({'id': 'minister-inspect', 'method': 'item/tool/call', 'params': {**scope, 'callId': 'minister-inspect', 'tool': 'oaw_invoke_tool',
+                'arguments': {'capability_id': inspect_tool['capability_id'], 'arguments': {'minister': minister}}}})
+            assert receive()['result']['success'] is True
         send({'method': 'item/agentMessage/delta', 'params': {**scope, 'itemId': 'msg1', 'delta': 'Hello '}})
         send({'method': 'item/agentMessage/delta', 'params': {**scope, 'itemId': 'msg1', 'delta': 'OAW'}})
         send({'method': 'item/completed', 'params': {**scope, 'item': {'type': 'agentMessage', 'id': 'msg1', 'text': 'Hello OAW'}}})

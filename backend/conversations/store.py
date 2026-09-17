@@ -277,6 +277,28 @@ class ConversationStore:
                     WHERE id = ? AND auto_title = 1""", (" ".join(value.split())[:60] or attachments[0].name[:60], session_id))
         return self.get_message(message_id)
 
+    def update_provider_message(self, conversation_id: str, session_id: str, *,
+                                message_id: str, run_id: str, sender_id: str,
+                                sender_name: str, content: str) -> ConversationMessage:
+        """Replace one stream snapshot while preserving identity and ordering."""
+        value = content.strip()
+        if not value:
+            raise ConversationValidationError("conversation message must not be empty")
+        with self.database.transaction(immediate=True) as connection:
+            row = connection.execute('SELECT * FROM conversation_messages WHERE id = ?', (message_id,)).fetchone()
+            if row is None:
+                return self.add_message(conversation_id, session_id, message_id=message_id,
+                    run_id=run_id, sender_kind='agent', sender_id=sender_id,
+                    sender_name=sender_name, content=value, is_final=False)
+            if (row['conversation_id'], row['session_id'], row['run_id'], row['sender_id'], row['sender_kind'], row['kind']) != (
+                    conversation_id, session_id, run_id, sender_id, 'agent', 'text'):
+                raise ConflictError('Provider message identity belongs to another message')
+            if not row['is_final'] and row['content'] != value:
+                connection.execute('UPDATE conversation_messages SET content = ? WHERE id = ?', (value, message_id))
+                connection.execute('UPDATE conversation_sessions SET updated_at = ?, revision = revision + 1 WHERE id = ?',
+                                   (_now(), session_id))
+        return self.get_message(message_id)
+
     def get_message(self, message_id: str) -> ConversationMessage:
         with self.database.locked() as connection:
             row = connection.execute(

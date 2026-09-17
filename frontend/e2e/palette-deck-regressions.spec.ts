@@ -16,7 +16,6 @@ test('collect, move between decks, place and restore a strict plugin card throug
   await library.getByRole('button', { name: 'Browse cards', exact: true }).click();
   await library.getByLabel('Search cards', { exact: true }).fill('Structure viewer');
   await library.getByRole('button', { name: 'Add Structure viewer to deck', exact: true }).click();
-  await library.locator(".library-deck-destination.is-selected > button").click();
   await library.getByRole('button', { name: 'Close Library' }).click();
   const before = await snapshot();
   const source = before.decks.find((deck: { id: string }) => deck.id === before.active_deck_id);

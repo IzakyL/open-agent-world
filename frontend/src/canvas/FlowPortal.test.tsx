@@ -11,4 +11,8 @@ it.each(['react-flow__viewport-portal', 'react-flow__edgelabel-renderer'])('keep
   expect(ownedFlowPortal(root.firstElementChild as HTMLElement, className)?.getAttribute('data-owner')).toBe('inner');
   root.lastElementChild!.remove();
   expect(ownedFlowPortal(root, className)).toBeNull();
+  const replacement = document.createElement('div');
+  replacement.className = className;
+  root.append(replacement);
+  expect(ownedFlowPortal(root, className)).toBe(replacement);
 });

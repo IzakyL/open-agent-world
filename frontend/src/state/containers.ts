@@ -1,6 +1,7 @@
 import type { PluginCatalog, WorldCard, WorldPosition, WorldSize } from "../types/world";
+import { cardIndex } from './cardIndex';
 import { NODE_SURFACE_SIZE, type NodeSurfaceLevel, type SurfaceSize } from "./nodeSurfaces";
-import { nodePositionFromSurfacePosition, positionSurfaceAtNodeCenter } from "../canvas/nodeDisplacement";
+import { positionSurfaceAtNodeCenter } from "../canvas/nodeDisplacement";
 import { isShadow, shadowLayout, insideShadow } from "./shadowCollection";
 
 export const containerDefinition = (card: WorldCard, catalog: PluginCatalog) => catalog.node_types.find((type) => type.id === card.type)?.container;
@@ -26,6 +27,24 @@ export function containerDisplayOwners(cards: WorldCard[], catalog: PluginCatalo
   return new Map([...resolved].filter((entry): entry is [string, string] => entry[1] !== undefined));
 }
 
+/** Content bounds exclude the header; formation adds container insets outside them. */
+export function containerContentBounds(cards: WorldCard[], catalog: PluginCatalog, levels: Map<string, NodeSurfaceLevel>, workspaceSizes: Record<string, SurfaceSize> = {}) {
+  const sizes = containerSizes(cards, catalog, levels, workspaceSizes);
+  const surfaces = cards.filter(card => !card.equipment).map(card => {
+    const level = levels.get(card.id) ?? 'preview';
+    const size = sizes.get(card.id) ?? (level === 'workspace' ? workspaceSizes[card.id] : undefined) ?? NODE_SURFACE_SIZE[level];
+    const position = isContainer(card, catalog) ? card.position : positionSurfaceAtNodeCenter(card.position, level);
+    return { ...position, ...size };
+  });
+  if (!surfaces.length) return undefined;
+  const x = Math.min(...surfaces.map(surface => surface.x));
+  const y = Math.min(...surfaces.map(surface => surface.y));
+  return { position: { x, y }, size: {
+    width: Math.max(...surfaces.map(surface => surface.x + surface.width)) - x,
+    height: Math.max(...surfaces.map(surface => surface.y + surface.height)) - y,
+  } };
+}
+
 /** Expanded member surfaces stay below the header and inside the left border. */
 export function memberSurfacePosition(card: WorldCard, parent: WorldCard, level: NodeSurfaceLevel, catalog: PluginCatalog) {
   const position = positionSurfaceAtNodeCenter(card.position, level);
@@ -40,7 +59,8 @@ export function ownedDescendants(cards: WorldCard[], id: string): WorldCard[] {
   return cards.filter((c) => c.parent_id === id || c.equipment?.owner_id === id).flatMap((c) => [c, ...ownedDescendants(cards, c.id)]);
 }
 export function ancestors(cards: WorldCard[], card: WorldCard): WorldCard[] {
-  const parent = cards.find((candidate) => candidate.id === (card.equipment?.owner_id ?? card.parent_id));
+  const parentId = card.equipment?.owner_id ?? card.parent_id;
+  const parent = parentId ? cardIndex(cards).get(parentId) : undefined;
   return parent ? [parent, ...ancestors(cards, parent)] : [];
 }
 export function parentFirst<T extends WorldCard>(cards: T[]): T[] {
@@ -75,35 +95,13 @@ export function containerSizes(cards: WorldCard[], catalog: PluginCatalog, level
   return sizes;
 }
 
-/** Reflow visible member surfaces on resize, keeping nested frames and their contents intact. */
+/** Resize the frame around the current layout without rearranging its members. */
 export function resizeContainerLayout(cards: WorldCard[], catalog: PluginCatalog, levels: Map<string, NodeSurfaceLevel>, id: string, requested: WorldSize, workspaceSizes: Record<string, SurfaceSize> = {}) {
-  const parent = cards.find(card => card.id === id)!;
-  const spec = containerDefinition(parent, catalog)!;
-  const [left, top, right, bottom] = spec.content_inset;
-  if (containerShowsWorkspace(parent, catalog, levels.get(id))) return {
-    size: { width: Math.max(requested.width, spec.min_size[0]), height: Math.max(requested.height, spec.min_size[1]) },
+  const resized = cards.map(card => card.id === id ? { ...card, size: requested } : card);
+  return {
+    size: containerSizes(resized, catalog, levels, workspaceSizes).get(id)!,
     positions: new Map<string, WorldPosition>(),
   };
-  const sizes = containerSizes(cards, catalog, levels, workspaceSizes);
-  const members = cards.filter(card => card.parent_id === id).sort((a, b) => a.position.y - b.position.y || a.position.x - b.position.x || a.id.localeCompare(b.id));
-  const memberSize = (card: WorldCard) => sizes.get(card.id) ?? (levels.get(card.id) === 'workspace' ? workspaceSizes[card.id] : undefined) ?? NODE_SURFACE_SIZE[levels.get(card.id) ?? 'preview'];
-  const width = Math.max(requested.width, spec.min_size[0], ...members.map(card => left + memberSize(card).width + right));
-  const positions = new Map<string, WorldPosition>();
-  let x = left, y = top, rowHeight = 0;
-  for (const member of members) {
-    const size = memberSize(member);
-    if (x > left && x + size.width + right > width) { x = left; y += rowHeight + 24; rowHeight = 0; }
-    const surface = { x: parent.position.x + x, y: parent.position.y + y };
-    const position = isContainer(member, catalog) ? surface : nodePositionFromSurfacePosition(surface, levels.get(member.id) ?? 'preview');
-    positions.set(member.id, position);
-    for (const child of ownedDescendants(cards, member.id)) positions.set(child.id, {
-      x: child.position.x + position.x - member.position.x,
-      y: child.position.y + position.y - member.position.y,
-    });
-    x += size.width + 24;
-    rowHeight = Math.max(rowHeight, size.height);
-  }
-  return { size: { width, height: Math.max(requested.height, spec.min_size[1], y + rowHeight + bottom) }, positions };
 }
 
 /** Deepest eligible space wins; smaller spaces win when unrelated frames overlap. */

@@ -1,13 +1,18 @@
 import { t, useLocale } from "../i18n";
+import { MinisterRoleSettings } from './MinisterRoleCard';
+import { MinisterAgent } from './Minister';
+import { canAppointMinister, MINISTER_ROLE_CARD, useMinisterRole, openMinisterSettings } from '../state/ministerRole';
+import { useEquipmentDrag } from '../state/equipment';
 import { EquipmentToggle } from "./Equipment";
 import { ExecutionConfigurationBody } from "./ExecutionConfiguration";
 import { BarracksBody } from "./Barracks";
 import { Handle, NodeResizeControl, Position, type NodeProps } from "@xyflow/react";
 import { BookOpen, Maximize2, Minus, ExternalLink, Trash2, X } from "lucide-react";
-import { memo, type ComponentType, type CSSProperties, type PointerEvent as ReactPointerEvent, useEffect, useRef } from "react";
+import { memo, type ComponentType, type CSSProperties, type PointerEvent as ReactPointerEvent, useEffect, useRef, useState } from "react";
 import { ConnectionHoverHint, clearConnectionHoverHint, updateConnectionHoverHint } from "./ConnectionHoverHint";
+import { CardName } from "./CardName";
 import { IconButton } from "../components/IconButton";
-import { NODE_SURFACE_RADIUS, WORKSPACE_MIN_SIZE, nodeSurfaceSupport, surfaceLevelForNode, useNodeSurfaceStore, type NodeSurfaceLevel } from "../state/nodeSurfaces";
+import { NODE_SURFACE_RADIUS, WORKSPACE_MIN_SIZE, collapsedSurface, nodePresentation, nodeSurfaceSupport, surfaceLevelForNode, useNodeSurfaceStore, type NodeSurfaceLevel } from "../state/nodeSurfaces";
 import { useWorldStore } from "../state/worldStore";
 import { type CardType, type WorldCard } from "../types/world";
 import { TaskBoardBody } from "./TaskBoard";
@@ -80,16 +85,22 @@ export function CardContent({ card, level }: BodyProps) {
   useLocale();
   const catalog = useWorldStore((s) => s.catalog);
   const definition = catalog.node_types.find((t) => t.id === card.type);
+  const ministerTab = useMinisterRole(s => s.settingsCardId === card.id);
   const Body = definition?.traits.includes("ui.agent-barracks.v1") ? BarracksBody : definition?.traits.includes("ui.skill.v1") ? SkillNodeBody : definition?.traits.includes("ui.skill-package.v1") ? SkillToolboxBody : definition?.traits.includes("ui.task-board.v1") ? TaskBoardBody : definition?.traits.includes("core.agent") ? AgentCardBody : BODIES[card.type] ?? GenericCardBody;
-  return <PluginSurface card={card} slot="body" level={level}>{definition?.traits.includes("ui.execution-config.v1")
-    ? <ExecutionConfigurationBody key={card.id} card={card} /> : <Body card={card} level={level} />}</PluginSurface>;
+  return <>{card.minister && <nav className="agent-window-tabs nodrag nopan" role="tablist" aria-label={t('Agent card')}>
+    <button type="button" role="tab" aria-selected={!ministerTab} onClick={() => useMinisterRole.setState({ settingsCardId: undefined })}>{t('Settings')}</button>
+    <button type="button" role="tab" aria-selected={ministerTab} onClick={() => openMinisterSettings(card.id)}>{t('Minister')}</button>
+  </nav>}
+    {card.minister && ministerTab ? level === 'inspector' && <MinisterRoleSettings card={card} />
+      : <PluginSurface card={card} slot="body" level={level}>{definition?.traits.includes("ui.execution-config.v1")
+        ? <ExecutionConfigurationBody key={card.id} card={card} /> : <Body card={card} level={level} />}</PluginSurface>}</>;
 }
 
 function statusLabel(status: WorldCard["status"]): string {
   return status.replaceAll("_", " ");
 }
 
-function WorldCardNodeComponent({ data, selected, dragging }: NodeProps<CanvasNode>) {
+const WorldCardNodeComponent = memo(function WorldCardNodeComponent({ data, selected, dragging }: Pick<NodeProps<CanvasNode>, 'data' | 'selected' | 'dragging'>) {
   useLocale();
   const card = data.card;
   const activity = useNodeActivity(card);
@@ -97,25 +108,34 @@ function WorldCardNodeComponent({ data, selected, dragging }: NodeProps<CanvasNo
   const generationPhase = generation?.targetId === card.id ? generation.phase : undefined;
   const displayStatus = activity.phase === "idle" ? card.status : activity.phase;
   const catalog = useWorldStore((state) => state.catalog);
-  const surfaceLevels = useNodeSurfaceStore((state) => state.surfaceLevels);
+  const level = useNodeSurfaceStore((state) => surfaceLevelForNode(card.id, state.surfaceLevels));
   const showPreview = useNodeSurfaceStore((state) => state.showPreview);
   const hidePreview = useNodeSurfaceStore((state) => state.hidePreview);
-  const openInspector = useNodeSurfaceStore((state) => state.openInspector);
+  const openPrimary = useNodeSurfaceStore((state) => state.openPrimary);
   const closeInspector = useNodeSurfaceStore((state) => state.closeInspector);
   const dismissSurface = useNodeSurfaceStore((state) => state.dismiss);
   const openWorkspace = useNodeSurfaceStore((state) => state.openWorkspace);
   const resizeWorkspace = useNodeSurfaceStore((state) => state.resizeWorkspace);
-  const updateCard = useWorldStore((state) => state.updateCard);
   const deleteCard = useWorldStore((state) => state.deleteCard);
   const connectingNodeId = useNodeSurfaceStore((state) => state.connectingNodeId);
   const cardRef = useRef<HTMLElement>(null);
+  const [ministerNodeHovered, setMinisterNodeHovered] = useState(false);
   const pointerStart = useRef<{ x: number; y: number; moved: boolean }>();
-  const level = surfaceLevelForNode(card.id, surfaceLevels);
   const visualLevel = level;
+  // Preview cards do not need editors, plugin bodies or their subscriptions.
+  // Once visited, retain the body on collapse so local unsaved drafts survive.
+  const [inspectorVisited, setInspectorVisited] = useState(level === 'inspector');
+  useEffect(() => { if (level === 'inspector') setInspectorVisited(true); }, [level]);
   const definition = catalog.node_types.find((item) => item.id === card.type);
   const label = t(definition?.label ?? card.type);
+  const eligible = canAppointMinister(card, catalog);
+  const roleDrag = useEquipmentDrag(s => s.resource?.type === MINISTER_ROLE_CARD);
+  const promotion = useMinisterRole(s => s.promotions[card.id]);
 
   const support = nodeSurfaceSupport(card.type, catalog);
+  const presentation = nodePresentation(card.type, catalog);
+  const base = useNodeSurfaceStore(state => state.baseLevels[card.id]);
+  const canCollapseInspector = collapsedSurface(presentation, "inspector", base) !== "inspector";
 
   useEffect(() => {
     if (dragging && pointerStart.current) pointerStart.current.moved = true;
@@ -134,13 +154,14 @@ function WorldCardNodeComponent({ data, selected, dragging }: NodeProps<CanvasNo
     pointerStart.current = { x: event.clientX, y: event.clientY, moved: false };
   };
 
-  return (
+  return (<>
     <article
       ref={cardRef}
       className={`world-card node-surface world-card--${card.type} is-${visualLevel} ${selected ? "is-selected" : ""} ${card.status === "running" ? "is-running" : ""} ${card.status === "error" ? "is-error" : ""} ${card.ephemeral ? "is-ephemeral" : ""}`}
       style={{ "--card-kind": definition?.color, borderRadius: NODE_SURFACE_RADIUS[visualLevel] } as CSSProperties}
       aria-label={`${label} ${card.name}`}
       data-card-id={card.id}
+      data-card-revision={card.revision}
       data-card-type={card.type}
       data-card-expanded={visualLevel === "inspector" || visualLevel === "workspace" ? "true" : "false"}
       data-surface-level={level}
@@ -148,7 +169,11 @@ function WorldCardNodeComponent({ data, selected, dragging }: NodeProps<CanvasNo
       data-equipment-detail={data.equipmentDetail || undefined}
       data-generation={generationPhase}
       data-generation-source={generation?.sourceId === card.id && generation.phase === "flying" || undefined}
-      onPointerLeave={() => clearConnectionHoverHint(cardRef.current)}
+      data-minister={Boolean(card.minister) || undefined}
+      data-minister-eligible={eligible && roleDrag || undefined}
+      data-promotion={promotion ? 'appointing' : undefined}
+      onPointerEnter={() => { if (card.minister && level === 'node') setMinisterNodeHovered(true); }}
+      onPointerLeave={() => { setMinisterNodeHovered(false); clearConnectionHoverHint(cardRef.current); }}
       onPointerMoveCapture={(event) => {
         const start = pointerStart.current;
         if (start && event.buttons && Math.hypot(event.clientX - start.x, event.clientY - start.y) >= DRAG_THRESHOLD_PX) start.moved = true;
@@ -182,7 +207,7 @@ function WorldCardNodeComponent({ data, selected, dragging }: NodeProps<CanvasNo
         if (event.shiftKey || event.ctrlKey || event.metaKey || event.altKey || connectingNodeId || dragging) return;
         if (event.detail !== 0 && start && (start.moved || Math.hypot(event.clientX - start.x, event.clientY - start.y) >= DRAG_THRESHOLD_PX)) return;
         if ((event.target as HTMLElement).closest("button, input, textarea, select, label, a, [contenteditable='true'], .react-flow__handle")) return;
-        if (support.inspector && (visualLevel === "node" || visualLevel === "preview")) openInspector(card.id);
+        if (visualLevel === "node" || visualLevel === "preview") openPrimary(card.id);
       }}
     >
       {visualLevel === "workspace" && selected && <NodeResizeControl
@@ -191,6 +216,7 @@ function WorldCardNodeComponent({ data, selected, dragging }: NodeProps<CanvasNo
         maxWidth={4096} maxHeight={4096}
         onResizeEnd={(_event, size) => resizeWorkspace(card.id, size)} />}
       <ActivityGlow phase={activity.phase} />
+      {promotion && <div className="minister-promotion-sweep" aria-hidden="true" />}
       {!card.ephemeral ? (
         <ConnectionHoverHint />
       ) : null}
@@ -208,19 +234,12 @@ function WorldCardNodeComponent({ data, selected, dragging }: NodeProps<CanvasNo
           <div className="card-kind-icon" aria-hidden="true"><CatalogIcon definition={definition} size={18} /></div>
           <div className="card-title-group">
             <span className="card-eyebrow">{label}</span>
-            <h2 title={card.name}>{card.name}</h2>
-            <input className="card-name-input nodrag nopan" defaultValue={card.name}
-              aria-label={t("{v0} name", { v0: String(label) })}
-              onBlur={(event) => {
-                const name = event.currentTarget.value.trim();
-                if (name && name !== card.name) void updateCard(card.id, { name });
-              }}
-              onKeyDown={(event) => { if (event.key === "Enter") event.currentTarget.blur(); }} />
+            <CardName key={`${card.id}:${visualLevel}`} card={card} label={label} editable={visualLevel !== "node"} />
           </div>
           <div className="card-status" data-status={displayStatus} title={`${t('Status')}: ${t(statusLabel(displayStatus))}`}>
             <span aria-hidden="true" /><span>{t(statusLabel(displayStatus))}</span>
           </div>
-          {(visualLevel === "node" || visualLevel === "preview") && support.preview ? (
+          {(visualLevel === "node" || visualLevel === "preview") && support.node && support.preview ? (
             <IconButton
               icon={visualLevel === "node" ? Maximize2 : Minus}
               size={visualLevel === "node" ? "xs" : "sm"}
@@ -233,17 +252,17 @@ function WorldCardNodeComponent({ data, selected, dragging }: NodeProps<CanvasNo
                 else hidePreview(card.id);
               }} />
           ) : null}
-          <IconButton icon={X} size="sm" quiet className="node-surface-close"
-            onClick={() => closeInspector(card.id)} label={t("Close {v0} inspector", { v0: String(card.name) })} />
+          {canCollapseInspector && <IconButton icon={X} size="sm" quiet className="node-surface-close"
+            onClick={() => closeInspector(card.id)} label={t("Close {v0} inspector", { v0: String(card.name) })} />}
         </header>
 
         <div className="node-preview-content" aria-hidden={visualLevel !== "preview"}>
           <NodePreview card={card} />
-          <span className="node-preview-hint">{t("Click for details")}</span>
+          {presentation.open !== "preview" && <span className="node-preview-hint">{t(presentation.open === "workspace" ? "Open workspace" : "Click for details")}</span>}
         </div>
 
         <div className="card-body node-inspector-content" aria-hidden={visualLevel !== "inspector"}>
-          <CardContent card={card} level={level} />
+          {(visualLevel === 'inspector' || inspectorVisited) && <CardContent card={card} level={level} />}
         </div>
 
         <footer className="card-footer node-inspector-footer">
@@ -265,21 +284,25 @@ function WorldCardNodeComponent({ data, selected, dragging }: NodeProps<CanvasNo
         </footer>
       </>}
     </article>
-  );
-}
+    {card.minister && <MinisterAgent card={card} nodeHovered={ministerNodeHovered && level === 'node'} />}
+  </>);
+});
 
-function CollectionAwareCard(props:NodeProps<CanvasNode>) {
+function StackedCard(props:NodeProps<CanvasNode>) {
   useLocale();
-  const owner=props.data.collectionOwner as string|undefined;
+  const owner=props.data.collectionOwner as string;
   const hovered=useCollectionHover(s=>owner?s.members[owner]:undefined);
   const setHover=useCollectionHover(s=>s.set);
   const cards=useWorldStore(s=>s.cards);
-  if(!owner)return <WorldCardNodeComponent {...props}/>;
   const collection=cards.find(c=>c.id===owner);
   const neighbor=hovered&&Math.abs(cards.filter(c=>c.parent_id===owner).findIndex(c=>c.id===hovered)-Number(props.data.stackIndex))===1;
   return <div className={`shadow-stack-member ${hovered===props.id?"is-hovered":neighbor?"is-neighbor":""}`} onPointerEnter={()=>setHover(owner,props.id)} onPointerLeave={()=>setHover(owner)}>
-    <div className="shadow-stack-face" {...{inert:""}} aria-hidden="true"><WorldCardNodeComponent {...props}/></div>
+    <div className="shadow-stack-face" {...{inert:""}} aria-hidden="true"><WorldCardNodeComponent data={props.data} selected={props.selected} dragging={props.dragging}/></div>
     <button className="nodrag nopan" disabled={Boolean(props.data.collectionFading)} aria-label={t("展开集合 · {v0}", { v0: String(props.data.card.name) })} onClick={e=>{e.stopPropagation();if(collection)void useWorldStore.getState().updateCard(owner,{config:{...collection.config,display_state:"expanded"}});}}/>
   </div>;
+}
+function CollectionAwareCard(props: NodeProps<CanvasNode>) {
+  return props.data.collectionOwner ? <StackedCard {...props} />
+    : <WorldCardNodeComponent data={props.data} selected={props.selected} dragging={props.dragging} />;
 }
 export const WorldCardNode = memo(CollectionAwareCard);

@@ -1,9 +1,11 @@
 import { ReactFlowProvider } from "@xyflow/react";
 import { lazy, Suspense, useEffect } from "react";
 import { WorldCanvas } from "./canvas/WorldCanvas";
+import { VisualObserver } from "./canvas/VisualObserver";
 import { ConnectionDialog } from "./edges/ConnectionDialog";
 import { ComponentPalette } from "./palette/ComponentPalette";
 import { LegionSelection } from "./legions/LegionSelection";
+import { LegionWorkspace } from './legions/LegionWorkspace';
 import { ActivityPanel } from "./shell/ActivityPanel";
 import { BackendUnavailableNotice } from "./shell/BackendUnavailableNotice";
 import { Onboarding } from "./onboarding/Onboarding";
@@ -35,9 +37,11 @@ export function App() {
     <ReactFlowProvider>
       <main className="world-shell">
         <WorldCanvas />
+        <VisualObserver />
         <TopBar />
         <BackendUnavailableNotice />
         <LegionSelection />
+        <LegionWorkspace />
         <ComponentPalette />
         <Onboarding />
         <ActivityPanel />

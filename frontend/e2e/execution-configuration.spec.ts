@@ -64,8 +64,8 @@ test("Sandbox local settings reuse the environment editor and a live default pro
     await profileValue({ REGION: "base", SHARED: "one" });
     await page.goto("/");
     const card = page.locator(`[data-card-id="${sandbox.id}"]`);
-    await card.locator(".card-kind-icon").click();
-    await card.getByText("Configuration", { exact: true }).click();
+    await expect(card).toHaveAttribute("data-surface-level", "workspace");
+    await card.getByRole("tab", { name: "Settings", exact: true }).click();
     await card.getByText("Resource limits", { exact: true }).click();
     await card.getByLabel("Command timeout (seconds)").fill("90");
     await card.getByRole("button", { name: "Save", exact: true }).click();
@@ -77,8 +77,9 @@ test("Sandbox local settings reuse the environment editor and a live default pro
     await card.getByLabel("Environment variable 1 value").fill("local");
     await card.getByRole("button", { name: "Save environment", exact: true }).click();
     await expect(card.getByText("Applies to the next command.")).toBeVisible();
-    await expect(card.getByLabel("Command", { exact: true })).toHaveCount(0);
-    await card.getByRole("button", { name: "Settings", exact: true }).click();
+    await expect(card.getByLabel("Command", { exact: true })).not.toBeVisible();
+    await card.getByRole("button", { name: "Close workspace", exact: true }).click();
+    await card.locator(".card-kind-icon").click();
     const workspace = page.locator(`[data-workspace-node-id="${sandbox.id}"]`);
     await expect(workspace.getByRole("tab", { name: "Settings", exact: true })).toHaveAttribute("aria-selected", "true");
     await expect(workspace.getByRole("combobox", { name: "Default profile", exact: true })).not.toBeVisible();
@@ -99,7 +100,7 @@ test("Sandbox local settings reuse the environment editor and a live default pro
     await expect(workspace.getByLabel("Command", { exact: true })).not.toBeVisible();
     await workspace.getByRole("tab", { name: "Workspace", exact: true }).click();
     await expect(workspace.getByLabel("Command", { exact: true })).toHaveValue("");
-    await expect(workspace.getByRole("button", { name: "Run command", exact: true })).toBeDisabled();
+    await expect(workspace.getByLabel("Command", { exact: true })).not.toBeEditable();
     const world = await (await request.get("/api/world")).json();
     expect(world.nodes.filter((n: { type: string }) => n.type === "environment")).toHaveLength(1);
   } finally {

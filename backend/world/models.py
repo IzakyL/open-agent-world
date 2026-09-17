@@ -5,6 +5,7 @@ from enum import StrEnum
 from typing import Any, Annotated, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
+from backend.legion_workspace import WorkspaceLayout
 
 
 class CardType(StrEnum):
@@ -64,9 +65,9 @@ class AgentConfig(BaseModel):
     model_config = ConfigDict(extra="allow")
 
     system_instruction: str = Field(default="You are a helpful agent in Open Agent World.", json_schema_extra={"agentReadable": True, "agentWritable": True})
-    model: str = Field(default="gemini-3.7-flash", json_schema_extra={"agentReadable": True, "privileged": True})
+    model: str = Field(default="oaw:default", json_schema_extra={"agentReadable": True, "privileged": True})
     status: AgentStatus = AgentStatus.IDLE
-    runtime_provider_id: str | None = None
+    runtime_provider_id: str | None = Field(default=None, json_schema_extra={"privileged": True})
     max_concurrent_runs: Annotated[int, Field(ge=1, le=64)] = 1
     inherit_legion_model: bool = True
     legion_role: str = Field(default="", max_length=200, json_schema_extra={"agentReadable": True, "agentWritable": True})
@@ -75,12 +76,24 @@ class AgentConfig(BaseModel):
 class LegionConfig(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
+    mode: Literal["group", "team"] = "group"
     status: Literal["available"] = "available"
     description: str = Field(default="", max_length=2000, json_schema_extra={"agentReadable": True, "agentWritable": True})
     instruction: str = Field(default="", max_length=16000, json_schema_extra={"agentReadable": True, "agentWritable": True})
-    model_override: str = Field(default="", max_length=200)
+    model_override: str = Field(default="", max_length=200, json_schema_extra={"privileged": True})
     paused: bool = False
     shared_state_access: Literal["read_only", "read_write"] = "read_write"
+    workspace_layout: WorkspaceLayout | None = Field(default=None, json_schema_extra={"agentReadable": True, "agentWritable": True})
+
+    @model_validator(mode="before")
+    @classmethod
+    def upgrade_team_config(cls, value: Any) -> Any:
+        # Existing Legions predate optional team context. Preserve their intent.
+        if isinstance(value, dict) and "mode" not in value and any(
+            key in value for key in ("instruction", "model_override", "shared_state_access", "paused")
+        ):
+            return {**value, "mode": "team"}
+        return value
 
 
 class TextConfig(BaseModel):
@@ -99,10 +112,10 @@ class SandboxConfig(BaseModel):
     model_config = ConfigDict(extra="allow")
 
     status: SandboxStatus = SandboxStatus.STOPPED
-    runtime: str = Field(default="auto", min_length=1, max_length=200)
-    workspace_path: str | None = Field(default=None, max_length=4096)
-    workspace_access: Literal["read_only", "read_write"] = "read_write"
-    network_enabled: bool = False
+    runtime: str = Field(default="auto", min_length=1, max_length=200, json_schema_extra={"privileged": True})
+    workspace_path: str | None = Field(default=None, max_length=4096, json_schema_extra={"privileged": True})
+    workspace_access: Literal["read_only", "read_write"] = Field(default="read_write", json_schema_extra={"privileged": True})
+    network_enabled: bool = Field(default=False, json_schema_extra={"privileged": True})
     memory_bytes: int = Field(default=512 * 1024 * 1024, ge=16 * 1024 * 1024, le=8 * 1024 * 1024 * 1024)
     active_process_limit: int = Field(default=64, ge=1, le=256)
     command_timeout: float = Field(default=600, gt=0, le=36000)
@@ -158,6 +171,14 @@ class EquipmentBinding(BaseModel):
     relationship: str | None = None
 
 
+class MinisterRole(BaseModel):
+    """Host-granted canvas authority, independent of an Agent's plugin config."""
+    model_config = ConfigDict(extra="forbid")
+
+    control_radius: float = Field(default=1200, ge=200, le=3000, allow_inf_nan=False)
+    allow_canvas_edits: bool = True
+
+
 class CardCreate(BaseModel):
     """Wire model shared with the canvas.
 
@@ -170,6 +191,7 @@ class CardCreate(BaseModel):
     id: str | None = None
     parent_id: str | None = Field(default=None, max_length=100)
     equipment: EquipmentBinding | None = None
+    minister: MinisterRole | None = None
     type: str = Field(min_length=1, max_length=128)
     name: str | None = Field(default=None, min_length=1, max_length=200)
     position: Point = Field(default_factory=Point)
@@ -188,6 +210,7 @@ class CardPatch(BaseModel):
 
     parent_id: str | None = Field(default=None, max_length=100)
     equipment: EquipmentBinding | None = None
+    minister: MinisterRole | None = None
 
     name: str | None = Field(default=None, min_length=1, max_length=200)
     position: Point | None = None
@@ -238,6 +261,7 @@ class Card(BaseModel):
     id: str
     parent_id: str | None = None
     equipment: EquipmentBinding | None = None
+    minister: MinisterRole | None = None
     type: str
     name: str
     position: Point

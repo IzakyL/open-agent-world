@@ -1,10 +1,27 @@
 import { beforeEach, describe, expect, it } from "vitest";
-import { NODE_SURFACE_SUPPORT, surfaceLevelForNode, useNodeSurfaceStore } from "./nodeSurfaces";
+import { collapsedSurface, nodePresentation, NODE_SURFACE_SUPPORT, surfaceLevelForNode, useNodeSurfaceStore } from "./nodeSurfaces";
+import { TEST_CATALOG } from "./catalog.fixture";
+import type { NodePresentation, NodeSurfaceLevel } from "../types/world";
+import { buildCardDraft } from './helpers';
 
 describe("node surface state", () => {
+  it('restores template state to new IDs and preserves workspace size and compact return state', () => {
+    const original = { id: 'source', ...buildCardDraft('agent', { x: 0, y: 0 }) };
+    useNodeSurfaceStore.setState({ surfaceLevels: { source: 'workspace' }, baseLevels: { source: 'node' }, workspaceSizes: { source: { width: 1250, height: 900 } } });
+    const saved = useNodeSurfaceStore.getState().capturePresentation([original], TEST_CATALOG);
+    const restored = { ...original, id: 'copy' };
+    useNodeSurfaceStore.getState().restorePresentation([restored], TEST_CATALOG, { copy: saved.source });
+    useNodeSurfaceStore.getState().syncCards([restored], TEST_CATALOG);
+    expect(useNodeSurfaceStore.getState().surfaceLevels.copy).toBe('workspace');
+    expect(useNodeSurfaceStore.getState().workspaceSizes.copy).toEqual({ width: 1250, height: 900 });
+    useNodeSurfaceStore.getState().closeWorkspace('copy');
+    useNodeSurfaceStore.getState().closeInspector('copy');
+    expect(useNodeSurfaceStore.getState().surfaceLevels.copy).toBe('node');
+  });
   beforeEach(() => {
     useNodeSurfaceStore.setState({
       surfaceLevels: {},
+      presentations: {},
       baseLevels: {},
       dragging: false,
       connectingNodeId: undefined,
@@ -80,5 +97,97 @@ describe("node surface state", () => {
     actions.setDragging(false);
     actions.openInspector("second");
     expect(useNodeSurfaceStore.getState().surfaceLevels.second).toBe("inspector");
+  });
+
+  it.each(["conversation", "sandbox"])("initializes %s as a window and skips the inspector in both directions", type => {
+    const actions = useNodeSurfaceStore.getState();
+    actions.syncCards([{ id: "window", type }], TEST_CATALOG);
+    expect(useNodeSurfaceStore.getState().surfaceLevels.window).toBe("workspace");
+    actions.closeWorkspace("window");
+    expect(useNodeSurfaceStore.getState().surfaceLevels.window).toBe("preview");
+    actions.hidePreview("window");
+    actions.openPrimary("window");
+    expect(useNodeSurfaceStore.getState().surfaceLevels.window).toBe("workspace");
+    actions.closeWorkspace("window");
+    expect(useNodeSurfaceStore.getState().surfaceLevels.window).toBe("node");
+    actions.openInspector("window"); // Existing settings/deep-link callers also obey the policy.
+    expect(useNodeSurfaceStore.getState().surfaceLevels.window).toBe("workspace");
+  });
+
+  it("initializes once, preserves restored compact choices, and repairs removed surfaces", () => {
+    const actions = useNodeSurfaceStore.getState();
+    const cards = [{ id: "room", type: "conversation" }];
+    useNodeSurfaceStore.setState({ surfaceLevels: { room: "node" } });
+    actions.syncCards(cards, TEST_CATALOG);
+    expect(useNodeSurfaceStore.getState().surfaceLevels.room).toBe("node");
+    actions.showPreview("room");
+    actions.syncCards([], TEST_CATALOG);
+    actions.syncCards(cards, TEST_CATALOG);
+    expect(useNodeSurfaceStore.getState().surfaceLevels.room).toBe("preview");
+    useNodeSurfaceStore.setState({ surfaceLevels: { room: "inspector" } });
+    actions.syncCards(cards, TEST_CATALOG);
+    expect(useNodeSurfaceStore.getState().surfaceLevels.room).toBe("workspace");
+    actions.dismiss("room");
+    actions.syncCards(cards, TEST_CATALOG);
+    expect(useNodeSurfaceStore.getState().surfaceLevels.room).toBe("preview");
+  });
+
+  it("waits for the catalog before initializing and persists only instance choices", () => {
+    const actions = useNodeSurfaceStore.getState();
+    const cards = [{ id: "room", type: "conversation" }];
+    actions.syncCards(cards, { ...TEST_CATALOG, node_types: [] });
+    expect(useNodeSurfaceStore.getState().surfaceLevels.room).toBeUndefined();
+    actions.syncCards(cards, TEST_CATALOG);
+    const saved = useNodeSurfaceStore.persist.getOptions().partialize!(useNodeSurfaceStore.getState());
+    expect(saved).toMatchObject({ surfaceLevels: { room: "workspace" } });
+    expect(saved).not.toHaveProperty("presentations");
+  });
+
+  it("adapts legacy plugins that skip preview or inspector", () => {
+    const catalog = { ...TEST_CATALOG, node_types: [{ ...TEST_CATALOG.node_types[0], id: "legacy",
+      surfaces: { preview: false, inspector: false, workspace: true } }] };
+    expect(nodePresentation("legacy", catalog)).toEqual({ states: ["node", "workspace"], initial: "node", open: "workspace" });
+  });
+
+  it("Escape closes collapsible details even beside a workspace-only card", () => {
+    const actions = useNodeSurfaceStore.getState();
+    actions.syncCards([{ id: "text", type: "text" }, { id: "fixed", type: "fixed" }], {
+      ...TEST_CATALOG, node_types: [...TEST_CATALOG.node_types, { ...TEST_CATALOG.node_types[0], id: "fixed",
+        presentation: { states: ["workspace"], initial: "workspace", open: "workspace" } }],
+    });
+    actions.openPrimary("text");
+    actions.closeExpanded();
+    expect(useNodeSurfaceStore.getState().surfaceLevels).toEqual({ text: "preview", fixed: "workspace" });
+  });
+
+  it("Escape ignores deleted and unloaded windows without erasing their saved choices", () => {
+    const actions = useNodeSurfaceStore.getState();
+    actions.syncCards([{ id: "text", type: "text" }, { id: "room", type: "conversation" }], TEST_CATALOG);
+    actions.syncCards([{ id: "text", type: "text" }], TEST_CATALOG);
+    actions.openPrimary("text");
+    actions.closeExpanded();
+    actions.dismiss();
+    expect(useNodeSurfaceStore.getState().surfaceLevels).toEqual({ text: "preview", room: "workspace" });
+  });
+
+  it("supports every nonempty subset without entering an unavailable state", () => {
+    const all: NodeSurfaceLevel[] = ["node", "preview", "inspector", "workspace"];
+    for (let mask = 1; mask < 16; mask++) {
+      const states = all.filter((_, i) => mask & (1 << i));
+      for (const initial of states) {
+        const presentation: NodePresentation = { states, initial, open: states[states.length - 1] };
+        const catalog = { ...TEST_CATALOG, node_types: [{ ...TEST_CATALOG.node_types[0], id: "custom", presentation }] };
+        useNodeSurfaceStore.setState({ surfaceLevels: {}, baseLevels: {}, presentations: {} });
+        const actions = useNodeSurfaceStore.getState();
+        actions.syncCards([{ id: "custom", type: "custom" }], catalog);
+        expect(useNodeSurfaceStore.getState().surfaceLevels.custom).toBe(initial);
+        for (const action of [actions.openPrimary, actions.openInspector, actions.openWorkspace,
+          actions.closeWorkspace, actions.closeInspector, actions.showPreview, actions.hidePreview, actions.dismiss]) {
+          action("custom");
+          expect(states).toContain(useNodeSurfaceStore.getState().surfaceLevels.custom);
+        }
+        for (const level of states) expect(states).toContain(collapsedSurface(presentation, level));
+      }
+    }
   });
 });

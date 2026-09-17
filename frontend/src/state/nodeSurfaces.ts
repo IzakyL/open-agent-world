@@ -1,9 +1,9 @@
 import { create } from "zustand";
 import { createJSONStorage, persist } from "zustand/middleware";
 import { profileStorage } from "./profileStorage";
-import type { CardType, PluginCatalog } from "../types/world";
+import type { CardType, LegionNodePresentation, NodePresentation, NodeSurfaceLevel, PluginCatalog, WorldCard } from "../types/world";
 
-export type NodeSurfaceLevel = "node" | "preview" | "inspector" | "workspace";
+export type { NodeSurfaceLevel } from "../types/world";
 
 /** Shared by the visible card boundary and relationship geometry. */
 export const NODE_SURFACE_RADIUS: Record<NodeSurfaceLevel, number> = {
@@ -11,6 +11,7 @@ export const NODE_SURFACE_RADIUS: Record<NodeSurfaceLevel, number> = {
 };
 
 export interface NodeSurfaceSupport {
+  node?: boolean;
   preview: boolean;
   inspector: boolean;
   workspace: boolean;
@@ -34,9 +35,40 @@ export function nodeSurfaceSupport(
   type: CardType,
   catalog?: PluginCatalog,
 ): NodeSurfaceSupport {
-  return catalog?.node_types.find((definition) => definition.id === type)?.surfaces
-    ?? NODE_SURFACE_SUPPORT[type]
-    ?? GENERIC_SURFACE_SUPPORT;
+  const { states } = nodePresentation(type, catalog);
+  return { node: states.includes("node"), preview: states.includes("preview"),
+    inspector: states.includes("inspector"), workspace: states.includes("workspace") };
+}
+
+const SURFACE_ORDER: readonly NodeSurfaceLevel[] = ["node", "preview", "inspector", "workspace"];
+// Only used before a node's catalog definition is available (including synthetic nodes).
+const UNREGISTERED_PRESENTATION: NodePresentation = { states: SURFACE_ORDER, initial: "preview", open: "inspector" };
+
+export function nodePresentation(type: CardType, catalog?: PluginCatalog): NodePresentation {
+  const definition = catalog?.node_types.find(item => item.id === type);
+  if (definition?.presentation) return definition.presentation;
+  const support = definition?.surfaces ?? NODE_SURFACE_SUPPORT[type] ?? GENERIC_SURFACE_SUPPORT;
+  const states = SURFACE_ORDER.filter(level => level === "node" || support[level]);
+  return { states, initial: support.preview ? "preview" : "node",
+    open: support.inspector ? "inspector" : support.workspace ? "workspace" : support.preview ? "preview" : "node" };
+}
+
+function supportedLevel(presentation: NodePresentation, level: NodeSurfaceLevel): NodeSurfaceLevel {
+  return presentation.states.includes(level) ? level : presentation.open;
+}
+
+function baseLevel(presentation: NodePresentation, preferred?: NodeSurfaceLevel): NodeSurfaceLevel {
+  if (preferred && (preferred === "node" || preferred === "preview") && presentation.states.includes(preferred)) return preferred;
+  return (["preview", "node"] as const).find(level => presentation.states.includes(level))
+    ?? SURFACE_ORDER.find(level => presentation.states.includes(level))!;
+}
+
+/** Closing moves to the next smaller supported surface, restoring the chosen compact form. */
+export function collapsedSurface(presentation: NodePresentation, current: NodeSurfaceLevel, base?: NodeSurfaceLevel): NodeSurfaceLevel {
+  if (current === "workspace" && presentation.states.includes("inspector")) return "inspector";
+  if (current === "workspace" || current === "inspector") return baseLevel(presentation, base);
+  if (current === "preview" && presentation.states.includes("node")) return "node";
+  return current;
 }
 
 export const NODE_SURFACE_SIZE = {
@@ -50,29 +82,93 @@ export interface SurfaceSize { width: number; height: number }
 export const WORKSPACE_MIN_SIZE = { width: 640, height: 420 };
 
 interface NodeSurfaceState {
+  capturePresentation: (cards: readonly WorldCard[], catalog: PluginCatalog) => Record<string, LegionNodePresentation>;
+  restorePresentation: (cards: readonly WorldCard[], catalog: PluginCatalog, presentation?: Record<string, LegionNodePresentation>) => void;
+  presentations: Record<string, NodePresentation>;
+  syncCards: (cards: readonly Pick<WorldCard, "id" | "type">[], catalog: PluginCatalog) => void;
   workspaceSizes: Record<string, SurfaceSize>;
   resizeWorkspace: (nodeId: string, size: SurfaceSize) => void;
   surfaceLevels: Record<string, NodeSurfaceLevel>;
   connectingNodeId?: string;
   dragging: boolean;
   setDragging: (dragging: boolean) => void;
-  baseLevels: Record<string, "node" | "preview">;
+  baseLevels: Record<string, NodeSurfaceLevel>;
   drafts: Record<string, string>;
   maximizedWorkspaces: Record<string, boolean>;
   showPreview: (nodeId: string) => void;
   hidePreview: (nodeId: string) => void;
   openInspector: (nodeId: string) => void;
+  openPrimary: (nodeId: string) => void;
   closeInspector: (nodeId?: string) => void;
   dismiss: (nodeId?: string) => void;
   openWorkspace: (nodeId: string) => void;
   closeWorkspace: (nodeId?: string) => void;
+  closeExpanded: () => void;
   setDraft: (nodeId: string, value: string) => void;
   toggleWorkspaceMaximized: (nodeId: string) => void;
   beginConnection: (nodeId: string) => void;
   endConnection: () => void;
 }
 
-export const useNodeSurfaceStore = create<NodeSurfaceState>()(persist((set) => ({
+function presentationFor(state: NodeSurfaceState, id: string) {
+  return state.presentations[id] ?? UNREGISTERED_PRESENTATION;
+}
+
+function openSurface(state: NodeSurfaceState, id: string, requested?: NodeSurfaceLevel) {
+  if (state.connectingNodeId || state.dragging) return state;
+  const presentation = presentationFor(state, id);
+  const current = surfaceLevelForNode(id, state.surfaceLevels);
+  const level = supportedLevel(presentation, requested ?? presentation.open);
+  return {
+    baseLevels: { ...state.baseLevels, [id]: baseLevel(presentation,
+      current === "node" || current === "preview" ? current : state.baseLevels[id]) },
+    surfaceLevels: { ...state.surfaceLevels, [id]: level },
+  };
+}
+
+function closeSurfaces(state: NodeSurfaceState, target: NodeSurfaceLevel, nodeId?: string, liveOnly = false) {
+  if (state.connectingNodeId || state.dragging) return state;
+  return { surfaceLevels: Object.fromEntries(Object.entries(state.surfaceLevels).map(([id, level]) => [
+    id, level === target && (!nodeId || nodeId === id) && (!liveOnly || state.presentations[id])
+      ? collapsedSurface(presentationFor(state, id), level, state.baseLevels[id]) : level,
+  ])) };
+}
+
+export const useNodeSurfaceStore = create<NodeSurfaceState>()(persist((set, get) => ({
+  capturePresentation: (cards, catalog) => {
+    const state = get();
+    return Object.fromEntries(cards.map(card => [card.id, {
+      level: state.surfaceLevels[card.id] ?? nodePresentation(card.type, catalog).initial,
+      base_level: state.baseLevels[card.id] === 'node' ? 'node' : 'preview',
+      ...(state.workspaceSizes[card.id] ? { workspace_size: { ...state.workspaceSizes[card.id] } } : {}),
+    }]));
+  },
+  restorePresentation: (cards, catalog, saved = {}) => set(state => {
+    const surfaceLevels = { ...state.surfaceLevels }, baseLevels = { ...state.baseLevels }, workspaceSizes = { ...state.workspaceSizes };
+    for (const card of cards) {
+      const value = saved[card.id];
+      if (!value) continue;
+      const presentation = nodePresentation(card.type, catalog);
+      surfaceLevels[card.id] = supportedLevel(presentation, value.level);
+      baseLevels[card.id] = baseLevel(presentation, value.base_level ?? undefined);
+      if (value.workspace_size) workspaceSizes[card.id] = { ...value.workspace_size };
+    }
+    return { surfaceLevels, baseLevels, workspaceSizes };
+  }),
+  presentations: {},
+  syncCards: (cards, catalog) => set(state => {
+    const presentations: Record<string, NodePresentation> = {};
+    const surfaceLevels = { ...state.surfaceLevels }, baseLevels = { ...state.baseLevels };
+    for (const card of cards) {
+      // Wait for the catalog instead of persisting a guessed initial surface.
+      if (!catalog.node_types.some(type => type.id === card.type)) continue;
+      const presentation = nodePresentation(card.type, catalog);
+      presentations[card.id] = presentation;
+      surfaceLevels[card.id] = supportedLevel(presentation, surfaceLevels[card.id] ?? presentation.initial);
+      baseLevels[card.id] = baseLevel(presentation, baseLevels[card.id] ?? surfaceLevels[card.id]);
+    }
+    return { presentations, surfaceLevels, baseLevels };
+  }),
   workspaceSizes: {},
   resizeWorkspace: (nodeId, size) => set((state) => {
     if (!Number.isFinite(size.width) || !Number.isFinite(size.height)) return state;
@@ -92,6 +188,7 @@ export const useNodeSurfaceStore = create<NodeSurfaceState>()(persist((set) => (
   showPreview: (nodeId) => set((state) => {
     if (state.connectingNodeId || state.dragging) return state;
     if (["workspace", "inspector"].includes(state.surfaceLevels[nodeId])) return state;
+    if (!presentationFor(state, nodeId).states.includes("preview")) return state;
     return {
       surfaceLevels: { ...state.surfaceLevels, [nodeId]: "preview" },
       baseLevels: { ...state.baseLevels, [nodeId]: "preview" },
@@ -101,59 +198,41 @@ export const useNodeSurfaceStore = create<NodeSurfaceState>()(persist((set) => (
   hidePreview: (nodeId) => set((state) => {
     if (state.connectingNodeId || state.dragging) return state;
     if (["workspace", "inspector"].includes(state.surfaceLevels[nodeId])) return state;
+    if (!presentationFor(state, nodeId).states.includes("node")) return state;
     return {
       surfaceLevels: { ...state.surfaceLevels, [nodeId]: "node" },
       baseLevels: { ...state.baseLevels, [nodeId]: "node" },
     };
   }),
 
-  openInspector: (nodeId) => set((state) => {
-    if (state.connectingNodeId || state.dragging) return state;
-    const level = surfaceLevelForNode(nodeId, state.surfaceLevels);
-    return {
-      baseLevels: { ...state.baseLevels, [nodeId]: level === "node" || level === "preview"
-        ? level : state.baseLevels[nodeId] ?? "preview" },
-      surfaceLevels: { ...state.surfaceLevels, [nodeId]: "inspector" },
-    };
-  }),
+  openPrimary: (nodeId) => set(state => openSurface(state, nodeId)),
+  openInspector: (nodeId) => set(state => openSurface(state, nodeId, "inspector")),
 
-  closeInspector: (nodeId) => set((state) => {
-    if (state.connectingNodeId || state.dragging) return state;
-    return { surfaceLevels: Object.fromEntries(Object.entries(state.surfaceLevels).map(([id, level]) => [
-      id, level === "inspector" && (!nodeId || nodeId === id) ? state.baseLevels[id] ?? "preview" : level,
-    ])) };
-  }),
+  closeInspector: (nodeId) => set(state => closeSurfaces(state, "inspector", nodeId)),
 
   dismiss: (nodeId) => set((state) => {
     if (!nodeId) {
       return {
-        surfaceLevels: {},
-        baseLevels: {},
+        surfaceLevels: { ...state.surfaceLevels, ...Object.fromEntries(Object.entries(state.presentations).map(([id, p]) => [id, baseLevel(p, state.baseLevels[id])])) },
         connectingNodeId: undefined,
       };
     }
     return {
-      surfaceLevels: Object.fromEntries(Object.entries(state.surfaceLevels).filter(([id]) => id !== nodeId)),
-      baseLevels: Object.fromEntries(Object.entries(state.baseLevels).filter(([id]) => id !== nodeId)),
+      surfaceLevels: state.presentations[nodeId]
+        ? { ...state.surfaceLevels, [nodeId]: baseLevel(state.presentations[nodeId], state.baseLevels[nodeId]) }
+        : Object.fromEntries(Object.entries(state.surfaceLevels).filter(([id]) => id !== nodeId)),
       connectingNodeId: state.connectingNodeId === nodeId ? undefined : state.connectingNodeId,
     };
   }),
 
-  openWorkspace: (nodeId) => set((state) => {
-    if (state.connectingNodeId || state.dragging) return state;
-    const level = surfaceLevelForNode(nodeId, state.surfaceLevels);
-    return {
-      baseLevels: { ...state.baseLevels, [nodeId]: level === "node" || level === "preview"
-        ? level : state.baseLevels[nodeId] ?? "preview" },
-      surfaceLevels: { ...state.surfaceLevels, [nodeId]: "workspace" },
-    };
-  }),
+  openWorkspace: (nodeId) => set(state => openSurface(state, nodeId, "workspace")),
 
-  closeWorkspace: (nodeId) => set((state) => {
-    if (state.connectingNodeId || state.dragging) return state;
-    return { surfaceLevels: Object.fromEntries(Object.entries(state.surfaceLevels).map(([id, level]) => [
-      id, level === "workspace" && (!nodeId || nodeId === id) ? "inspector" : level,
-    ])) };
+  closeWorkspace: (nodeId) => set(state => closeSurfaces(state, "workspace", nodeId)),
+  closeExpanded: () => set(state => {
+    const target = (["workspace", "inspector"] as const).find(level =>
+      Object.entries(state.surfaceLevels).some(([id, current]) => state.presentations[id] && current === level
+        && collapsedSurface(presentationFor(state, id), current, state.baseLevels[id]) !== current));
+    return target ? closeSurfaces(state, target, undefined, true) : state;
   }),
 
   setDraft: (nodeId, value) => set((state) => ({

@@ -1,3 +1,4 @@
+import { createPortal } from 'react-dom';
 import { reportInteraction } from "../state/interactions";
 import { t, useLocale } from "../i18n";
 import { Box, Cpu, HardDrive, Settings2, X } from "lucide-react";
@@ -115,18 +116,18 @@ export function SettingsPanel() {
     }
   };
 
-  return (
+  return createPortal(
     <div className="dialog-backdrop settings-backdrop" onMouseDown={(event) => {
       if (event.target === event.currentTarget && !busy) setOpen();
     }}>
-      <form className="settings-dialog" onKeyDown={event => { if (event.key === "Escape" && !busy) setOpen(); }} role="dialog" aria-modal="true" aria-labelledby="settings-title" onSubmit={submit}>
+      <form className="settings-dialog" onKeyDown={event => { if (event.key === "Escape") { event.preventDefault(); event.stopPropagation(); if (!busy) setOpen(); } }} role="dialog" aria-modal="true" aria-labelledby="settings-title" onSubmit={submit}>
         <header>
           <div className="dialog-icon"><Settings2 size={19} /></div>
           <div>
             <span>{t("Application preferences")}</span>
             <h2 id="settings-title">{t("Settings")}</h2>
           </div>
-          <button type="button" className="icon-button" onClick={setOpen} disabled={busy} aria-label={t("Close settings")}><X size={16} /></button>
+          <button type="button" className="icon-button" onClick={setOpen} disabled={busy} data-tutorial="settings-close" aria-label={t("Close settings")}><X size={16} /></button>
         </header>
 
         <div className="settings-layout">
@@ -177,6 +178,7 @@ export function SettingsPanel() {
               value={sandbox.workspace_root ?? ""} disabled={!loaded || busy} placeholder={t("System-managed location")}
               onChange={(path) => setSandbox((current) => ({ ...current, workspace_root: path }))} onPickingChange={setPicking} />
             <small id="sandbox-default-workspace-help">{t("Enter an existing absolute folder on the backend computer, for example D:\\Workspaces. Each new Sandbox gets its own subfolder. Leave blank to use the system-managed location.")}</small>
+            <small>{t("Codex Agents without a custom project folder use the shared codex-workspace subfolder here. Changes apply on their next run; existing files stay in the old location.")}</small>
           </div>
           <label className="field-label">
             <span id="sandbox-default-runtime-label">{t("Default runtime")}</span>
@@ -198,6 +200,7 @@ export function SettingsPanel() {
           {section !== "deepl" && <button data-tutorial={section === "model" ? "model-save" : undefined} type="submit" className="primary-button" disabled={busy || (section === "storage" && (!storage?.editable || !storagePath.trim() || storagePath.trim() === storage.pending_path)) || (section === "sandbox" && !loaded) || (section === "model" && !modelLoaded)}>{saving ? t("Saving…") : t("Save settings")}</button>}
         </footer>
       </form>
-    </div>
+    </div>,
+    document.querySelector('dialog.legion-workspace[open]') ?? document.body,
   );
 }

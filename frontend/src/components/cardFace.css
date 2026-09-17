@@ -1,3 +1,9 @@
+/* Library and hand cards share one responsive size and neutral state palette. */
+:root { --compact-card-width: 106px; --compact-card-height: 122px; --compact-card-state: #353535; }
+:root[data-theme="dark"] { --compact-card-state: #d6d6d6; }
+@media (max-width: 620px) { :root { --compact-card-width: 96px; } }
+@media (max-height: 650px) { :root { --compact-card-height: 101px; } }
+
 .card-stock.card-stock {
   border: 1px solid color-mix(in srgb, var(--collection-color) 40%, var(--line-strong));
   border-radius: 10px;
@@ -8,7 +14,17 @@
 .card-face-corner { position: absolute; top: 6px; left: 6px; color: var(--collection-color); }
 .card-face-corner > svg, .card-face-corner > img { width: 12px; height: 12px; }
 .card-face-art { display: grid; place-items: center; flex: 1; min-height: 48px; color: var(--collection-color); }
+.card-face-art > .catalog-asset-icon { --catalog-icon-size: 32px; }
 .card-face-art > svg, .card-face-art > img { width: 32px; height: 32px; filter: drop-shadow(0 1px 0 var(--highlight)); }
 .card-face-copy { display: grid; gap: 5px; min-width: 0; }
 .card-face-copy strong { font-size: 14px; line-height: 1.25; overflow-wrap: anywhere; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
 .card-face-copy small { font-size: 10px; line-height: 1.5; color: var(--ink-soft); display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; overflow-wrap: anywhere; }
+
+.card-stock.card-stock--compact { display: flex; flex-direction: column; padding: 4px; box-shadow: inset 0 1px 0 var(--highlight), 3px 6px 10px var(--shadow); }
+.card-stock--compact .card-face { gap: 3px; padding: 5px; }
+.card-stock--compact .card-face-art { min-height: 27px; }
+.card-stock--compact .card-face-art > .catalog-asset-icon { --catalog-icon-size: 25px; }
+.card-stock--compact .card-face-art > svg, .card-stock--compact .card-face-art > img { width: 25px; height: 25px; }
+.card-stock--compact .card-face-copy { gap: 2px; }
+.card-stock--compact .card-face-copy strong { font-size: 10px; }
+.card-stock--compact .card-face-copy small { font-size: 8px; -webkit-line-clamp: 1; }

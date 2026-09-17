@@ -58,6 +58,10 @@ for (const width of [1280, 800]) test(`model setup guide follows settings contro
   await page.getByRole('button', { name: 'Next', exact: true }).click();
   await check('model-list', 'model-list');
   await page.getByRole('button', { name: 'Add model', exact: true }).click();
+  await expect(target('model-list').getByLabel('Model 1 display name', { exact: true })).toBeVisible();
+  await expect(target('model-list').getByLabel('Model 1 ID', { exact: true })).toBeVisible();
+  await expect(target('model-list').getByLabel('Model 1 ID', { exact: true })).toBeInViewport();
+  await page.screenshot({ path: `test-results/model-guide-inputs-${width}.png` });
   await page.getByLabel('Model 1 display name', { exact: true }).fill('Test model');
   await page.getByLabel('Model 1 ID', { exact: true }).fill('test-model');
   await page.getByRole('button', { name: 'Next', exact: true }).click();

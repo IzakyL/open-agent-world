@@ -16,6 +16,7 @@ export const availableModels = (catalog: ModelCatalog) => catalog.connections.fi
 
 export function importLegacyModels(catalog: ModelCatalog, legacy: ModelSettings): ModelCatalog {
   if (catalog.revision > 0 || catalog.connections.some(c => c.models.length)) return catalog;
+  if (!legacy.models.length) return catalog;
   const connection: ModelConnection = catalog.connections[0] ?? {
     id: "legacy", name: "Previous models", adapter: "legacy", base_url: "", enabled: true,
     auth_mode: "api_key", api_key_configured: false, models: [],
@@ -23,4 +24,17 @@ export function importLegacyModels(catalog: ModelCatalog, legacy: ModelSettings)
   return { ...catalog, connections: [{ ...connection, models: legacy.models.map(model => ({
     id: crypto.randomUUID(), name: model, model_id: model, enabled: true,
   })) }] };
+}
+
+/** Checks saved configuration, without claiming provider connectivity. */
+export function hasDefaultModelConfiguration(catalog: ModelCatalog): boolean {
+  return hasModelConfiguration(catalog, catalog.default_model);
+}
+
+/** An existing Agent can select a saved model independently of the global default. */
+export function hasModelConfiguration(catalog: ModelCatalog, selected: unknown): boolean {
+  const reference = !selected || selected === 'oaw:default' ? catalog.default_model : selected;
+  return catalog.connections.some(c => c.enabled
+    && c.models.some(m => m.enabled && modelRef(m.id) === reference)
+    && (c.auth_mode === "environment" || (c.auth_mode === "none" ? !!c.base_url : c.api_key_configured)));
 }

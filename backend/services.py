@@ -12,7 +12,9 @@ from dataclasses import dataclass, field, replace
 from datetime import UTC, datetime
 from pathlib import Path, PureWindowsPath, PurePosixPath
 from typing import TYPE_CHECKING, Any, TypeVar
-from uuid import uuid4
+from uuid import uuid4, uuid5, NAMESPACE_URL
+
+from backend.spatial import Rectangle
 
 if TYPE_CHECKING:
     from backend.skill_runtime import RunSkillScript
@@ -26,6 +28,7 @@ from backend.agents import (
 )
 from backend.capabilities.broker import CapabilityBroker
 from backend.card_library import CardLibraryStore
+from backend.visual_observation import VisualObservers
 from backend.config import Settings
 from backend.sandbox.settings import SandboxSettingsStore
 from backend.security import LlmPublicSettings, LlmSettingsStore
@@ -539,6 +542,7 @@ class ApplicationServices:
     # Short-lived desktop review requests. Restart expires them; approval never
     # becomes a durable grant or an Agent tool argument.
     _minister_proposals: dict[str, dict] = field(default_factory=dict, init=False, repr=False)
+    visual_observers: VisualObservers = field(default_factory=VisualObservers, init=False, repr=False)
     _execution_secrets: ContextVar[tuple[str, ...]] = field(
         default_factory=lambda: ContextVar("execution_secrets", default=()), init=False, repr=False)
     run_manager: RunManager | None = None
@@ -914,6 +918,8 @@ class ApplicationServices:
                         f"{type(rollback_error).__name__}: {rollback_error}"
                     )
                 raise
+            from backend.minister_policy import invalidate_changed_role
+            await invalidate_changed_role(self, current, card)
             await self.events.publish(
                 EventType.CARD_UPDATED,
                 node_id=card.id,
@@ -946,7 +952,7 @@ class ApplicationServices:
         async with self._node_mutation():
             updates = self.expand_card_updates(updates)
             context = self._node_lifecycle_context()
-            previous_parents = {item.node_id: self.world.get_card(item.node_id).parent_id for item in updates}
+            previous_cards = {item.node_id: self.world.get_card(item.node_id) for item in updates}
             prepared: list[tuple[CardBatchPatch, NodeLifecycleTransaction]] = []
             for item in updates:
                 if item.patch.config is not None:
@@ -985,14 +991,16 @@ class ApplicationServices:
                         )
                 raise
             for card in cards:
+                from backend.minister_policy import invalidate_changed_role
+                await invalidate_changed_role(self, previous_cards[card.id], card)
                 await self.events.publish(
                     EventType.CARD_UPDATED,
                     node_id=card.id,
                     payload={"node": card.model_dump(mode="json")},
                 )
-                if previous_parents[card.id] != card.parent_id:
+                if previous_cards[card.id].parent_id != card.parent_id:
                     from backend.node_containers import touch_parent
-                    touch_parent(self, previous_parents[card.id])
+                    touch_parent(self, previous_cards[card.id].parent_id)
                     touch_parent(self, card.parent_id)
         return cards
 
@@ -1585,9 +1593,9 @@ class ApplicationServices:
         ):
             raise ConflictError("Stop the Agent's active Runs before changing container membership")
 
-    async def form_legion_group(self, name: str, node_ids: list[str]) -> list[Card]:
+    async def form_legion_group(self, name: str, node_ids: list[str], *, content_bounds: Rectangle | None = None) -> list[Card]:
         async with self._node_mutation():
-            request = self.preview_legion_group(name, node_ids)
+            request = self.preview_legion_group(name, node_ids, content_bounds=content_bounds)
             cards = [self.world.get_card(node_id) for node_id in dict.fromkeys(node_ids)]
             for card in cards:
                 self._validate_membership_change(card, card.model_copy(update={"parent_id": request.id}))
@@ -1600,19 +1608,30 @@ class ApplicationServices:
                                           payload={"node": self.enrich_card(member).model_dump(mode="json")})
             return [group, *[self.enrich_card(m) for m in members]]
 
-    def preview_legion_group(self, name: str, node_ids: list[str]) -> CardCreate:
+    def preview_legion_group(self, name: str, node_ids: list[str], *, content_bounds: Rectangle | None = None) -> CardCreate:
         """Use the same existing group geometry for review and commit."""
         cards = [self.world.get_card(node_id) for node_id in dict.fromkeys(node_ids)]
         if not cards or any(c.type == "legion" or c.parent_id for c in cards):
             raise GraphValidationError("Select ungrouped member cards to form a Legion")
-        x = min(c.position.x for c in cards) - 480
-        y = min(c.position.y for c in cards) - 90
-        width = max(1100, max(c.position.x + c.size.width for c in cards) - x + 60)
-        height = max(700, max(c.position.y + c.size.height for c in cards) - y + 60)
+        from backend.world.layout import card_footprints
+        spec = self.plugins.node_type("legion").container
+        assert spec is not None
+        bounds = list(card_footprints(cards, self.plugins).values())
+        # The browser knows expanded surfaces; reserve header space above them.
+        # API-only formation still encloses the standard preview surfaces.
+        bounds.extend(Rectangle(c.position.x - 64, c.position.y - 102, 224, 300)
+                      for c in cards if not c.equipment and not self.plugins.node_type(c.type).container)
+        if content_bounds is not None:
+            bounds.append(content_bounds)
+        left, top, right, bottom = spec.content_inset
+        x = min(rect.x for rect in bounds) - left
+        y = min(rect.y for rect in bounds) - top
+        width = max(spec.min_size[0], max(rect.x + rect.width for rect in bounds) - x + right)
+        height = max(spec.min_size[1], max(rect.y + rect.height for rect in bounds) - y + bottom)
         if width > 4096 or height > 4096:
             raise GraphValidationError("Move the selected cards closer together before grouping")
         return CardCreate(id=str(uuid4()), type="legion", name=name,
-            position={"x": x, "y": y}, size={"width": width, "height": height})
+            position={"x": x, "y": y}, size={"width": width, "height": height}, config={"mode": "group"})
 
     async def capture_legion(self, request: LegionCapture) -> LegionSummary:
         # Commands may mutate read-write hard links before their resource
@@ -1691,6 +1710,8 @@ class ApplicationServices:
                 )
             if definition.template_status is not None:
                 config["status"] = definition.template_status
+            if definition.template_remap_config is not None:
+                config = definition.template_remap_config(config, node_keys)
             config = self.plugins.validate_config(card.type, config)
             dependencies: list[LegionTemplateDependency] = []
             if definition.template_handler is not None:
@@ -1737,6 +1758,7 @@ class ApplicationServices:
                 expanded=card.expanded,
                 status=status,
                 config=config,
+                presentation=getattr(request, "presentation", {}).get(card.id),
                 dependencies=dependencies,
                 payload_version=payload_version,
                 payload=payload,
@@ -1880,7 +1902,9 @@ class ApplicationServices:
                 f"legion {legion_id!r} is incompatible: " + "; ".join(summary.issues)
             )
 
-        node_ids = {node.key: str(uuid4()) for node in record.blueprint.nodes}
+        removed_keys = {node.key for node in record.blueprint.nodes if request.unwrap and node.type == "legion"}
+        template_nodes = [node for node in record.blueprint.nodes if node.key not in removed_keys]
+        node_ids = {node.key: str(uuid4()) for node in template_nodes}
         created_nodes: list[Card] = []
         created_edges: list[Edge] = []
         creation_receipts: dict[
@@ -1891,17 +1915,20 @@ class ApplicationServices:
             if request.as_group and not any(n.type == "legion" for n in record.blueprint.nodes):
                 wrapper = await self._create_card(CardCreate(
                     type="legion", name=record.name,
-                    position={"x": request.position.x - 480, "y": request.position.y - 90},
-                    size={"width": min(4096, record.blueprint.bounds.width + 540), "height": min(4096, max(700, record.blueprint.bounds.height + 150))},
-                    config={"description": record.description},
+                    position={"x": request.position.x - 180, "y": request.position.y - 90},
+                    size={"width": min(4096, record.blueprint.bounds.width + 240), "height": min(4096, max(700, record.blueprint.bounds.height + 150))},
+                    config={"description": record.description, "mode": "group"},
                 ), _creation_receipts=creation_receipts, _publish_event=False)
                 created_nodes.append(wrapper)
             from backend.node_containers import parent_first
-            for node in parent_first(record.blueprint.nodes, key=lambda n: n.key, parent=lambda n: n.owner_key or n.parent_key):
+            for node in parent_first(template_nodes, key=lambda n: n.key, parent=lambda n: n.owner_key or n.parent_key):
+                definition = self.plugins.node_type(node.type)
+                config = (definition.template_remap_config(dict(node.config), node_ids)
+                          if definition.template_remap_config else dict(node.config))
                 created_nodes.append(await self._create_card(
                     CardCreate(
                         id=node_ids[node.key],
-                        parent_id=node_ids[node.parent_key] if node.parent_key else (wrapper.id if wrapper and not node.owner_key else None),
+                        parent_id=node_ids.get(node.parent_key) if node.parent_key else (wrapper.id if wrapper and not node.owner_key else None),
                         equipment={"owner_id": node_ids[node.owner_key], "relationship": node.equipment_relationship} if node.owner_key else None,
                         type=node.type,
                         name=node.name,
@@ -1911,7 +1938,7 @@ class ApplicationServices:
                         },
                         size=node.size,
                         expanded=node.expanded,
-                        config=dict(node.config),
+                        config=config,
                     ),
                     template_payload_version=node.payload_version,
                     template_payload=node.payload,
@@ -1930,6 +1957,8 @@ class ApplicationServices:
                     write_shared_state(self.world, self.state, node_ids[node.key],
                                        LegionStateWrite(value=node.initial_shared_state, expected_revision=0))
             for edge in record.blueprint.edges:
+                if edge.source in removed_keys or edge.target in removed_keys:
+                    continue
                 created_edges.append(await self.create_edge(EdgeCreate(
                     source=node_ids[edge.source],
                     target=node_ids[edge.target],
@@ -1961,6 +1990,7 @@ class ApplicationServices:
             node_ids=node_ids,
             nodes=created_nodes,
             edges=created_edges,
+            presentation={node_ids[node.key]: node.presentation for node in template_nodes if node.presentation is not None},
         )
 
     async def _compensate_legion_instance(
@@ -3258,10 +3288,18 @@ class ApplicationServices:
                 content += "\n\n" + json.dumps(detail, ensure_ascii=False, indent=2, default=str)
         else:
             return None
-        message = self.conversations.add_message(conversation_id, session_id,
-            sender_kind="agent", sender_id=record.agent_id,
-            sender_name=self._conversation_agent_name(record.agent_id), content=content,
-            run_id=record.run_id, kind=kind, is_final=False)
+        provider_message_id = event.payload.get('provider_message_id') if kind == 'text' else None
+        if isinstance(provider_message_id, str) and provider_message_id:
+            message_id = str(uuid5(NAMESPACE_URL, json.dumps([
+                'oaw:provider-message', conversation_id, session_id, record.run_id, provider_message_id])))
+            message = self.conversations.update_provider_message(conversation_id, session_id,
+                message_id=message_id, run_id=record.run_id, sender_id=record.agent_id,
+                sender_name=self._conversation_agent_name(record.agent_id), content=content)
+        else:
+            message = self.conversations.add_message(conversation_id, session_id,
+                sender_kind="agent", sender_id=record.agent_id,
+                sender_name=self._conversation_agent_name(record.agent_id), content=content,
+                run_id=record.run_id, kind=kind, is_final=False)
         await self._publish_conversation_message(message)
         return message.id
 
@@ -3703,7 +3741,12 @@ def create_services(
             if default_runtime_provider_id is not None
             else settings.agent_runtime
         ),
-        provider_options={"google.adk": {"app_name": "open-agent-world", "model_connections": ModelConnectionStore(services.llm_settings)}},
+        provider_options={
+            "google.adk": {"app_name": "open-agent-world", "model_connections": ModelConnectionStore(services.llm_settings)},
+            "openai.codex": {
+                "workspace_root": SandboxSettingsStore(database, settings.data_root).resolve_workspace_root,
+            },
+        },
         inactivity_timeout_seconds=settings.run_inactivity_timeout_seconds,
         execution_deadline_seconds=settings.run_execution_deadline_seconds,
         cleanup_timeout_seconds=settings.run_cleanup_timeout_seconds,

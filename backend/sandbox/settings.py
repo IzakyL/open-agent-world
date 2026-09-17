@@ -36,6 +36,13 @@ class SandboxSettingsStore:
             ).fetchone()
         return SandboxSettings.model_validate_json(row["value_json"]) if row else SandboxSettings()
 
+    def resolve_workspace_root(self) -> Path:
+        """Resolve the current host default, including its system-managed fallback."""
+        root = self.read().workspace_root
+        if root is None:
+            return self.validator.root
+        return Path(self.validator.validate_workspace(root))
+
     def save(self, settings: SandboxSettings) -> SandboxSettings:
         root = self.validator.validate_workspace(settings.workspace_root)
         settings = settings.model_copy(update={"workspace_root": root})

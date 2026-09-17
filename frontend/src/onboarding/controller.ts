@@ -3,6 +3,8 @@ import { createJSONStorage, persist } from 'zustand/middleware';
 import { profileStorage } from '../state/profileStorage';
 import { worldApi, apiErrorMessage } from '../api/client';
 import { useWorldStore, mergeCards } from '../state/worldStore';
+import { t } from '../i18n';
+import { hasDefaultModelConfiguration, hasModelConfiguration } from '../state/modelConnections';
 import { useCardLibrary } from '../state/cardLibrary';
 import { NODE_SURFACE_SIZE, useNodeSurfaceStore } from '../state/nodeSurfaces';
 import { beginGlueEdit, persistGlue, useGlueStore, type GlueBox } from '../state/glue';
@@ -10,9 +12,9 @@ import { observeInteractions, type WorldInteraction } from '../state/interaction
 import { positionSurfaceAtNodeCenter } from '../canvas/nodeDisplacement';
 import { getConnectionOptions } from '../state/relationships';
 import { STEPS, stepComplete, type Baseline, type Demonstration, type Observation, type Role, type Target } from './steps';
-import type { WorldCard, WorldSnapshot, WorldPosition } from '../types/world';
+import type { LegionSummary, WorldCard, WorldSnapshot, WorldPosition } from '../types/world';
 
-const TYPES: Record<Role, string> = { demo: 'text', practice: 'text', agent: 'agent', conversation: 'conversation', sandbox: 'sandbox', glueA: 'text', glueB: 'text', minister: 'core.minister' };
+const TYPES: Record<Role, string> = { demo: 'text', practice: 'text', agent: 'agent', conversation: 'conversation', sandbox: 'sandbox', glueA: 'text', glueB: 'text', ministerRole: 'core.minister-role', minister: 'agent' };
 export interface DemoRecord { id: string; name: string; created_at?: string; contentRevision?: number }
 export interface TutorialSession {
   id: string;
@@ -29,6 +31,7 @@ interface TutorialState {
   busy: boolean;
   error?: string;
   target?: Target;
+  quickStart?: { agentId: string; conversationId: string };
   celebration: number;
   ready: boolean;
 }
@@ -37,12 +40,12 @@ export const useTutorialStore = createStore<TutorialState>()(persist((): Tutoria
 }), {
   name: 'oaw-onboarding-v1', version: 1,
   storage: createJSONStorage(() => profileStorage),
-  partialize: ({ status, session }) => ({ status, session }),
+  partialize: ({ status, session, quickStart }) => ({ status, session, quickStart }),
   // Future incompatible step sequences resume at a reviewable entrance.
   merge: (saved, current) => {
     const value = saved as Partial<TutorialState> | undefined;
     const session = value?.session;
-    return { ...current, status: value?.status ?? 'new', session: session && {
+    return { ...current, quickStart: value?.quickStart, status: value?.status ?? 'new', session: session && {
       ...session, step: STEPS.some(step => step.id === session.step) ? session.step : 'enter',
     } };
   },
@@ -54,7 +57,7 @@ export interface GuideVisuals {
   place: (id: string, signal: AbortSignal) => Promise<void>;
   connect: (source: string, target: string, signal: AbortSignal) => Promise<void | (() => void)>;
   move: (id: string, position: WorldPosition, signal: AbortSignal) => Promise<void>;
-  focus: (ids: string[]) => Promise<void>;
+  focus: (ids: string[], reserveCardSpace?: boolean) => Promise<void>;
 }
 let visuals: GuideVisuals | undefined;
 let baseline: Baseline | undefined;
@@ -92,9 +95,10 @@ function goNext() {
   transitioning = true;
   try {
     // Close only this tutorial's working surfaces, at chapter boundaries the user chose.
-    if (['conversation', 'sandbox', 'glue-demo', 'minister'].includes(next.id)) {
+    if (['conversation', 'sandbox', 'glue-demo', 'minister-card', 'minister'].includes(next.id)) {
       for (const id of Object.values(state().session?.refs ?? {})) useNodeSurfaceStore.getState().dismiss(id);
     }
+    if (next.id === 'minister' && state().session?.refs.agent) void visuals?.focus([state().session!.refs.agent!, state().session!.refs.ministerRole!].filter(Boolean));
     if (step.expects === 'connect') world().selectEdge(undefined);
     if (next.id === 'configure' && step.id === 'model-save') useWorldStore.setState({ settingsOpen: false });
     saveSession({ step: next.id, completedDemo: undefined });
@@ -104,6 +108,10 @@ function goNext() {
       world().selectCards(world().selectedCardIds.filter(id => id !== state().session?.refs[next.role!]), { syncCanvas: true });
     }
   } finally { transitioning = false; }
+  if (next.id === 'minister-card') void runTask(async signal => {
+    await prepareDeck(['core.minister-role']); ensureActive(signal);
+    if (state().session?.refs.agent) await visuals?.focus([state().session!.refs.agent!], true);
+  });
   // Several genuine actions may already be satisfied (e.g. clicking also selects).
   queueMicrotask(() => observe());
 }
@@ -117,6 +125,7 @@ function observe(event?: WorldInteraction) {
     const card = candidates.find(card => world().selectedCardIds.includes(card.id)) ?? candidates.at(-1);
     if (card) saveSession({ refs: { ...s.session.refs, [step.role]: card.id } });
   }
+  if (step.id === 'minister' && cardFor('agent')?.minister) saveSession({ refs: { ...state().session!.refs, minister: cardFor('agent')!.id } });
   const complete = stepComplete(step, state().session!.refs, baseline, observation(), event);
   if (step.review) { if (state().ready !== complete) useTutorialStore.setState({ ready: complete }); }
   else if (complete) goNext();
@@ -260,16 +269,7 @@ async function demonstrate(action: Demonstration, signal: AbortSignal) {
       } finally { end(); }
       break;
     }
-    case 'minister': {
-      await prepareDeck(['core.minister']);
-      ensureActive(signal);
-      const preferred = center(-130, -30);
-      // Leave room for the canvas composer and settings button as well as the orb.
-      const position = visuals?.findSpace?.(preferred, { width: 480, height: 360 }) ?? preferred;
-      const card = await create('minister', position, false, signal);
-      await visuals?.focus([card.id]);
-      break;
-    }
+
   }
 }
 
@@ -355,6 +355,7 @@ export const tutorial = {
     } catch (error) { useTutorialStore.setState({ error: apiErrorMessage(error) }); }
     finally { useTutorialStore.setState({ busy: false }); }
   },
+  pause() { if (!state().busy) useTutorialStore.setState({ view: 'paused' }); },
   resume() { useTutorialStore.setState({ view: 'active', error: undefined }); rebase(); observe(); },
   async replay() {
     if (state().busy || stopping) return;
@@ -367,15 +368,19 @@ export const tutorial = {
   async directly() {
     useTutorialStore.setState({ status: 'skipped', view: 'hidden', error: undefined });
   },
-  async minister() {
+  async fromBlueprint(blueprint: LegionSummary, preset: boolean) {
     if (state().busy) return;
     useTutorialStore.setState({ busy: true, error: undefined });
     try {
-      await prepareDeck(['core.minister']);
-      const card = await world().createCard('core.minister', center(-120, -35));
-      if (!card) throw new Error('The Minister could not be placed. Please retry.');
-      useNodeSurfaceStore.getState().openInspector(card.id);
-      useTutorialStore.setState({ status: 'skipped', view: 'hidden' });
+      await prepareDeck(['agent', 'conversation', 'text', 'sandbox']);
+      const instance = await world().instantiateLegion(blueprint.id, undefined, { blueprint, preset, unwrap: true });
+      if (!instance) throw new Error('The blueprint could not be placed. Check the notification and retry.');
+      const agent = instance.nodes.find(card => card.type === 'agent');
+      const conversation = instance.nodes.find(card => card.type === 'conversation');
+      useTutorialStore.setState({ status: 'skipped', view: 'hidden',
+        quickStart: agent && conversation ? { agentId: agent.id, conversationId: conversation.id } : undefined });
+      await visuals?.focus(instance.nodes.map(card => card.id));
+      if (agent && !hasModelConfiguration(world().modelCatalog, agent.config.model)) useWorldStore.setState({ settingsOpen: true });
     } catch (error) { useTutorialStore.setState({ error: apiErrorMessage(error) }); }
     finally { useTutorialStore.setState({ busy: false }); }
   },
@@ -387,15 +392,16 @@ export const tutorial = {
       if (!baseline || !stepComplete(step, state().session!.refs, baseline, observation())) return;
       return runTask(async signal => {
         const library = useCardLibrary.getState();
-        const id = library.selectedDeckId || library.snapshot!.active_deck_id;
+        const id = library.snapshot!.active_deck_id;
         if (!await library.edit({ action: 'activate_deck', id })) throw new Error(library.error || 'Your deck could not be activated. Retry.');
         ensureActive(signal); library.close(); goNext();
       });
     }
+    if (step.id === 'minister') { if (state().ready) goNext(); return; }
     if (step.id === 'finish') return tutorial.exit('completed');
     if (step.id === 'workflow') await visuals?.focus(state().session?.refs.demo ? [state().session!.refs.demo!] : []);
     if (step.action) return tutorial.perform(step.action);
-    if (!step.expects || step.optional) goNext();
+    if (!step.expects || step.optional || (step.review && state().ready)) goNext();
   },
   perform(action: Demonstration) {
     if (state().session?.completedDemo === currentStep().id) return;
@@ -410,12 +416,23 @@ export const tutorial = {
     try {
       await cleanup();
       useTutorialStore.setState({ status, session: undefined, view: 'hidden', target: undefined, ready: false });
+      if (!hasDefaultModelConfiguration(world().modelCatalog)) {
+        useWorldStore.setState({ settingsOpen: true });
+        world().pushToast({ tone: 'neutral', title: t('Set up your default model'),
+          detail: t('Add your API key, check the Base URL, and choose a default model in Settings before using your agents.') });
+      }
     } catch (error) { useTutorialStore.setState({ view: 'paused', error: apiErrorMessage(error) }); }
     finally { stopping = false; useTutorialStore.setState({ busy: false }); }
   },
   recover() {
     return runTask(async signal => {
       const step = currentStep(), role = step.role;
+      if ((step.id === 'minister' && !cardFor('ministerRole') && !cardFor('agent')?.minister) || step.id === 'minister-card') {
+        await prepareDeck(['core.minister-role']); ensureActive(signal);
+        saveSession({ step: 'minister-card' }); rebase();
+        if (state().session?.refs.agent) await visuals?.focus([state().session!.refs.agent!], true);
+        return;
+      }
       // Refresh missing subjects from the authoritative world before deciding a
       // replacement is necessary. Panning/culling is not deletion.
       const needed: Role[] = step.action === 'connect' || step.expects === 'connect' ? ['agent', step.action === 'connect' ? 'conversation' : 'sandbox']

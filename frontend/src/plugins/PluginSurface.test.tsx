@@ -25,7 +25,9 @@ it("loads the actual local plugin entry and saves through the scoped host SDK", 
   const update = install("openai.codex", { settings: "settings" });
   vi.spyOn(worldApi, "getAgentInfo").mockResolvedValue({ session_id: "session-one", details: { source: "desktop" } });
   render(<PluginSurface card={card} slot="settings" level="inspector"><p>Fallback</p></PluginSurface>);
-  expect(await screen.findByText("desktop")).toBeTruthy();
+  expect(await screen.findByText("Advanced settings")).toBeTruthy();
+  expect(worldApi.getAgentInfo).not.toHaveBeenCalled();
+  expect(screen.queryByText("Local runtime")).toBeNull();
   expect(screen.queryByText("Fallback")).toBeNull();
   fireEvent.change(screen.getByLabelText("Effort"), { target: { value: "high" } });
   await waitFor(() => expect(update).toHaveBeenCalledWith(card.id, { config: { effort: "high" } }));
@@ -58,5 +60,5 @@ it("renders a plugin resource icon without a vendor mapping", () => {
   const { container } = render(<CatalogIcon definition={{ icon: "unknown", icon_url: "/api/plugins/example/assets/logo" }} size={25} />);
   const icon = container.querySelector(".catalog-asset-icon") as HTMLElement;
   expect(icon.style.mask).toContain("/api/plugins/example/assets/logo");
-  expect(icon.style.width).toBe("25px");
+  expect(icon.style.width).toBe("var(--catalog-icon-size, 25px)");
 });

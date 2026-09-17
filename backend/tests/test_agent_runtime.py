@@ -90,7 +90,7 @@ def test_adk_litellm_connection_settings_are_encrypted_and_restored(data_root: P
                 "api_key": "session-secret",
             }
             model = runtime._adk_model("openai/gpt-4o-mini")
-            assert type(model).__name__ == "LiteLlm"
+            assert type(model).__name__ == "ResilientLiteLlm"
             assert model._additional_args == runtime._litellm_connection
             assert "session-secret" not in response.text
     finally:

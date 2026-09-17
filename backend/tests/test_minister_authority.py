@@ -1,10 +1,11 @@
 """Real services and scoped runtime tools; no production model calls."""
 import pytest
+from datetime import UTC, datetime, timedelta
 
-from backend.errors import PermissionDeniedError, RevisionConflictError
-from backend.minister import MINISTER_TYPE, INSTRUCTION, PREVIOUS_INSTRUCTION, runtime_instruction
+from backend.errors import PermissionDeniedError, RevisionConflictError, ResourceValidationError
+from backend.minister import INSTRUCTION, PREVIOUS_INSTRUCTION, runtime_instruction
 from backend.tests.conftest import create_node
-from backend.tests.test_minister import invoke
+from backend.tests.test_minister import invoke, create_minister
 
 
 def versions(client, minister):
@@ -18,8 +19,8 @@ def approve(client, minister, proposal, expected=200):
 
 
 def test_normal_agent_administration_and_batch_are_autonomous(client):
-    minister = create_node(client, MINISTER_TYPE)
-    assert minister['config']['allow_canvas_edits'] is True
+    minister = create_minister(client)
+    assert minister['minister']['allow_canvas_edits'] is True
     agent = invoke(client, minister, 'create', type='agent', name='Chat helper', position={'x': 130, 'y': 0},
                    config={'system_instruction': 'Help the user with their questions.'}, versions=versions(client, minister))
     assert agent['type'] == 'agent' and 'id' in agent
@@ -40,8 +41,9 @@ def test_normal_agent_administration_and_batch_are_autonomous(client):
     assert 'You cannot change your own' in PREVIOUS_INSTRUCTION
 
 
-def test_delete_requires_actual_effect_review_and_one_use_approval(client):
-    minister = create_node(client, MINISTER_TYPE)
+@pytest.mark.parametrize('aged', [False, True])
+def test_delete_requires_actual_effect_review_and_one_use_approval(client, aged):
+    minister = create_minister(client)
     agent = create_node(client, 'agent', size={'width': 96, 'height': 96})
     note = create_node(client, 'text', name='Attached notes', size={'width': 96, 'height': 96},
                        equipment={'owner_id': agent['id'], 'relationship': 'read'})
@@ -52,6 +54,10 @@ def test_delete_requires_actual_effect_review_and_one_use_approval(client):
     assert {item['name'] for item in proposal['changes']} == {agent['name'], note['name']}
     assert any(item['target'] == chat['id'] for item in proposal['connections'])
     assert client.get(f"/api/nodes/{agent['id']}").status_code == 200
+    if aged:
+        client.app.state.services._minister_proposals[proposal['proposal_id']]['expires_at'] = datetime.now(UTC) - timedelta(days=1)
+        reviews = client.get(f"/api/ministers/{minister['id']}/proposals").json()
+        assert any(item['id'] == proposal['proposal_id'] and item['status'] == 'pending' for item in reviews)
     approve(client, minister, proposal)
     assert client.get(f"/api/nodes/{agent['id']}").status_code == 404
     assert client.get(f"/api/nodes/{note['id']}").status_code == 404
@@ -59,9 +65,9 @@ def test_delete_requires_actual_effect_review_and_one_use_approval(client):
     approve(client, minister, proposal, 409)
 
 
-@pytest.mark.parametrize('change', ['human_edit', 'new_edge', 'scope', 'pause', 'other_minister'])
+@pytest.mark.parametrize('change', ['human_edit', 'new_edge', 'scope', 'pause', 'reappoint', 'other_minister'])
 def test_approval_revalidates_scope_graph_and_revisions(client, change):
-    minister = create_node(client, MINISTER_TYPE)
+    minister = create_minister(client)
     note = create_node(client, 'text', size={'width': 96, 'height': 96})
     agent = create_node(client, 'agent', size={'width': 96, 'height': 96})
     proposal = invoke(client, minister, 'delete', node_ids=[note['id']], versions=versions(client, minister))
@@ -70,16 +76,19 @@ def test_approval_revalidates_scope_graph_and_revisions(client, change):
     elif change == 'new_edge':
         client.post('/api/edges', json={'source': agent['id'], 'target': note['id'], 'relationship': 'read'})
     elif change in {'scope', 'pause'}:
-        client.patch(f"/api/nodes/{minister['id']}", json={'config': {'control_radius': 450} if change == 'scope' else {'allow_canvas_edits': False}})
+        client.patch(f"/api/nodes/{minister['id']}", json={'minister': {'control_radius': 450} if change == 'scope' else {'allow_canvas_edits': False}})
+    elif change == 'reappoint':
+        client.patch(f"/api/nodes/{minister['id']}", json={'minister': None})
+        client.patch(f"/api/nodes/{minister['id']}", json={'minister': minister['minister']})
     else:
-        other = create_node(client, MINISTER_TYPE)
+        other = create_minister(client)
         invoke(client, other, 'rename', node_id=note['id'], name='Another actor', versions=versions(client, other))
     approve(client, minister, proposal, 409)
     assert client.get(f"/api/nodes/{note['id']}").status_code == 200
 
 
 def test_sensitive_configuration_and_capability_grants_are_confirmable(client):
-    minister = create_node(client, MINISTER_TYPE)
+    minister = create_minister(client)
     agent = create_node(client, 'agent', size={'width': 96, 'height': 96})
     sandbox = create_node(client, 'sandbox', size={'width': 96, 'height': 96})
     proposal = invoke(client, minister, 'update', updates=[{'node_id': sandbox['id'], 'patch': {'config': {'network_enabled': True}}}], versions=versions(client, minister))
@@ -97,24 +106,24 @@ def test_sensitive_configuration_and_capability_grants_are_confirmable(client):
 
 
 def test_no_secret_or_authority_bypass_even_with_confirmation_arguments(client):
-    minister = create_node(client, MINISTER_TYPE)
+    minister = create_minister(client)
     agent = create_node(client, 'agent', size={'width': 96, 'height': 96}, config={'api_key': 'stored-secret'})
-    other = create_node(client, MINISTER_TYPE)
+    other = create_minister(client)
     for target, patch in [(agent, {'config': {'api_key': 'submitted-secret'}}),
                           (agent, {'config': {'status': 'running'}}),
-                          (minister, {'config': {'control_radius': 3000}}),
-                          (other, {'config': {'allow_canvas_edits': True, 'control_radius': 2500}}),
+                          (minister, {'minister': {'control_radius': 3000}}),
+                          (other, {'minister': {'allow_canvas_edits': True, 'control_radius': 2500}}),
                           (other, {'position': {'x': 200, 'y': 200}})]:
-        with pytest.raises(PermissionDeniedError):
+        with pytest.raises((PermissionDeniedError, ResourceValidationError)):
             invoke(client, minister, 'update', updates=[{'node_id': target['id'], 'patch': patch}], versions=versions(client, minister))
-    with pytest.raises(PermissionDeniedError):
-        invoke(client, minister, 'create', type=MINISTER_TYPE, name='Escalation', position={}, versions=versions(client, minister))
+    with pytest.raises((PermissionDeniedError, ResourceValidationError)):
+        invoke(client, minister, 'update', updates=[{'node_id': agent['id'], 'patch': {'minister': {}}}], versions=versions(client, minister))
     assert 'stored-secret' not in str(invoke(client, minister, 'inspect'))
     assert client.get(f"/api/ministers/{minister['id']}/proposals").json() == []
 
 
 def test_group_attach_detach_glue_and_scope_effects(client):
-    minister = create_node(client, MINISTER_TYPE, config={'control_radius': 1500})
+    minister = create_minister(client, config={'control_radius': 1500})
     agent = create_node(client, 'agent', size={'width': 96, 'height': 96}, position={'x': 0, 'y': 0})
     note = create_node(client, 'text', size={'width': 96, 'height': 96}, position={'x': 200, 'y': 0})
     invoke(client, minister, 'organize', operation='glue', node_ids=[agent['id']], target_id=note['id'], versions=versions(client, minister))
@@ -139,7 +148,7 @@ def test_group_attach_detach_glue_and_scope_effects(client):
 
 
 def test_review_detects_resource_edits_without_reading_content(client):
-    minister = create_node(client, MINISTER_TYPE)
+    minister = create_minister(client)
     note = create_node(client, 'text', content='Private content stays private', size={'width': 96, 'height': 96})
     proposal = invoke(client, minister, 'delete', node_ids=[note['id']], versions=versions(client, minister))
     assert proposal['resources'][0]['size_bytes'] == len('Private content stays private')
@@ -151,7 +160,7 @@ def test_review_detects_resource_edits_without_reading_content(client):
 
 
 def test_glue_scope_revision_and_resize_follow_all_peers(client):
-    minister = create_node(client, MINISTER_TYPE)
+    minister = create_minister(client)
     a = create_node(client, 'text', position={'x': 0, 'y': 0}, size={'width': 96, 'height': 96})
     b = create_node(client, 'text', position={'x': 200, 'y': 0}, size={'width': 96, 'height': 96})
     invoke(client, minister, 'organize', operation='glue', node_ids=[a['id']], target_id=b['id'], versions=versions(client, minister))
@@ -189,7 +198,7 @@ def test_validated_indirect_sensitive_changes_also_require_confirmation(client):
 
     install_test_plugin(services.plugins, 'test.review', lambda registration: registration.register_node_type(
         replace(services.plugins.node_type('agent'), id='test.review.agent', config_model=Config)))
-    minister = create_node(client, MINISTER_TYPE)
+    minister = create_minister(client)
     proposal = invoke(client, minister, 'create', type='test.review.agent', name='Reviewed plugin Agent', position={},
         config={'system_instruction': 'request elevated behavior'}, versions=versions(client, minister))
     assert proposal['status'] == 'confirmation_required'
@@ -199,17 +208,16 @@ def test_validated_indirect_sensitive_changes_also_require_confirmation(client):
     assert next(card for card in services.world.list_cards() if card.type == 'test.review.agent').config['host_permission'] is True
 
 
-def test_sandbox_creation_is_reviewable_and_shared_glue_survives_reload(tmp_path):
+def test_sandbox_creation_is_autonomous_and_shared_glue_survives_reload(tmp_path):
     from fastapi.testclient import TestClient
     from backend.config import Settings
     from backend.main import create_app
     settings = Settings.for_data_root(tmp_path / 'world')
     with TestClient(create_app(settings)) as client:
-        minister = create_node(client, MINISTER_TYPE)
-        proposal = invoke(client, minister, 'create', type='sandbox', name='Local workplace', position={}, versions=versions(client, minister))
-        assert proposal['risk'] == 'CONFIRM'
-        assert proposal['resources'][-1]['kind'] == 'sandbox defaults'
-        approve(client, minister, proposal)
+        minister = create_minister(client)
+        sandbox = invoke(client, minister, 'create', type='sandbox', name='Local workplace', position={}, versions=versions(client, minister))
+        assert sandbox['type'] == 'sandbox' and sandbox['status'] == 'stopped'
+        assert client.get(f"/api/ministers/{minister['id']}/proposals").json() == []
         a = create_node(client, 'text', position={'x': 100, 'y': 0}, size={'width': 96, 'height': 96})
         b = create_node(client, 'text', position={'x': 300, 'y': 0}, size={'width': 96, 'height': 96})
         invoke(client, minister, 'organize', operation='glue', node_ids=[a['id']], target_id=b['id'], versions=versions(client, minister))
@@ -217,3 +225,65 @@ def test_sandbox_creation_is_reviewable_and_shared_glue_survives_reload(tmp_path
     with TestClient(create_app(settings)) as reopened:
         assert reopened.get('/api/canvas/glue').json() == saved
         assert reopened.get(f"/api/ministers/{minister['id']}/proposals").json() == []
+
+
+def test_ordinary_plugin_creation_configuration_and_connections_need_no_review(client):
+    from pydantic import BaseModel
+    from backend.plugins import NodeTypeDefinition, RelationshipDefinition
+    from backend.tests.plugin_support import install_test_plugin
+
+    class Config(BaseModel):
+        description: str = ''
+
+    def register(registration):
+        registration.register_node_type(NodeTypeDefinition(
+            id='test.ordinary', label='Ordinary card', description='Local notes', icon='file', color='#888888',
+            deck_id='test', deck_label='Test', deck_icon='file', default_name='Notes', default_size=(96, 96),
+            default_status='available', statuses=frozenset({'available'}), config_model=Config))
+        registration.register_relationship(RelationshipDefinition(
+            id='test.ordinary.use', label='Use notes', short_label='use', description='Connect local notes',
+            source_traits=frozenset({'core.agent'}), target_types=frozenset({'test.ordinary'})))
+
+    install_test_plugin(client.app.state.services.plugins, 'test.ordinary', register)
+    minister = create_minister(client)
+    agent = create_node(client, 'agent', size={'width': 96, 'height': 96})
+    card = invoke(client, minister, 'create', type='test.ordinary', name='Local notes', position={'x': 150, 'y': 0},
+                  config={'description': 'Initial notes'}, versions=versions(client, minister))
+    assert card['type'] == 'test.ordinary'
+    invoke(client, minister, 'update', updates=[{'node_id': card['id'], 'patch': {'config': {'description': 'Updated notes'}}}],
+           versions=versions(client, minister))
+    view = invoke(client, minister, 'inspect', source_id=agent['id'], target_id=card['id'])
+    assert view['connection_options'][0]['risk'] == 'ALLOW'
+    edge = invoke(client, minister, 'connect', source=agent['id'], target=card['id'], relationship='test.ordinary.use', versions=view['versions'])
+    invoke(client, minister, 'disconnect', edge_id=edge['id'], versions=versions(client, minister))
+    invoke(client, minister, 'organize', operation='attach', node_ids=[card['id']], target_id=agent['id'],
+           relationship='test.ordinary.use', versions=versions(client, minister))
+    assert client.get(f"/api/nodes/{card['id']}").json()['equipment']['owner_id'] == agent['id']
+    assert client.get(f"/api/ministers/{minister['id']}/proposals").json() == []
+
+
+def test_existing_sensitive_connection_does_not_block_ordinary_configuration_or_revocation(client):
+    minister = create_minister(client)
+    agent = create_node(client, 'agent', size={'width': 96, 'height': 96})
+    sandbox = create_node(client, 'sandbox', size={'width': 96, 'height': 96})
+    edge = client.post('/api/edges', json={'source': agent['id'], 'target': sandbox['id'], 'relationship': 'execute'}).json()
+    invoke(client, minister, 'update', updates=[{'node_id': agent['id'], 'patch': {'config': {'system_instruction': 'Be brief.'}}}],
+           versions=versions(client, minister))
+    invoke(client, minister, 'disconnect', edge_id=edge['id'], versions=versions(client, minister))
+    assert client.get(f"/api/nodes/{agent['id']}").json()['config']['system_instruction'] == 'Be brief.'
+    assert client.get(f"/api/ministers/{minister['id']}/proposals").json() == []
+
+
+def test_nested_sensitive_fields_still_require_confirmation():
+    from pydantic import BaseModel, Field
+    from backend.plugins.config_policy import config_write_risk
+
+    class HostSettings(BaseModel):
+        access: bool = Field(default=False, json_schema_extra={'privileged': True})
+
+    class Config(BaseModel):
+        settings: HostSettings = Field(default_factory=HostSettings)
+        description: str = ''
+
+    assert config_write_risk(Config, {'description': 'Ordinary text'}) == 'ALLOW'
+    assert config_write_risk(Config, {'settings': {'access': True}}) == 'CONFIRM'

@@ -1,10 +1,11 @@
 import { useOnViewportChange, useStore, type Viewport } from "@xyflow/react";
 import { ViewportPortal } from "./FlowPortal";
-import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
+import { memo, useCallback, useEffect, useRef, useState, type CSSProperties } from "react";
 import { CHUNK_SIZE, getViewportChunkKeys } from "../state/chunks";
 import { useWorldStore } from "../state/worldStore";
 import type { FlowViewportState } from "../types/world";
-import { getTerrainChunk, parseChunkKey, terrainResolutionForZoom } from "./terrain";
+import { terrainResolutionForZoom } from "./terrain";
+import { useTerrainChunks } from './useTerrainChunks';
 
 interface TerrainView {
   keys: string[];
@@ -13,12 +14,13 @@ interface TerrainView {
 }
 
 function terrainViewFor(viewport: FlowViewportState): TerrainView {
-  const keys = getViewportChunkKeys(viewport);
+  const visible = new Set(getViewportChunkKeys(viewport, 0));
+  const keys = getViewportChunkKeys(viewport).sort((a, b) => Number(visible.has(b)) - Number(visible.has(a)));
   const resolution = terrainResolutionForZoom(viewport.zoom);
   return { keys, resolution, signature: `${resolution}|${keys.join(",")}` };
 }
 
-export function ContourLayer() {
+export const ContourLayer = memo(function ContourLayer() {
   // React Flow scales an HTML ancestor. SVG vector-effect does not compensate
   // that outer CSS transform, so convert screen pixels back to world units.
   const zoom = useStore(state => state.transform[2]);
@@ -40,10 +42,7 @@ export function ContourLayer() {
   useOnViewportChange({ onChange: onViewportChange, onEnd: onViewportChange });
   useEffect(() => acceptViewport(storedViewport), [acceptViewport, storedViewport]);
 
-  const chunks = useMemo(() => terrainSeed === null ? [] : terrainView.keys.flatMap((key) => {
-    const coordinates = parseChunkKey(key);
-    return coordinates ? [getTerrainChunk(coordinates.x, coordinates.y, terrainView.resolution, terrainSeed)] : [];
-  }), [terrainView, terrainSeed]);
+  const chunks = useTerrainChunks(terrainView.keys, terrainView.resolution, terrainSeed);
 
   return (
     <ViewportPortal>
@@ -70,4 +69,4 @@ export function ContourLayer() {
       ))}
     </ViewportPortal>
   );
-}
+});

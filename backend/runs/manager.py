@@ -17,7 +17,7 @@ from backend.agents import (
     RuntimeProvider,
 )
 from backend.errors import RuntimeUnavailableError
-from backend.legions.runtime import group_context
+from backend.legions.runtime import group_context, member_team
 from backend.events.hub import EventHub
 from backend.events.models import EventType
 from backend.plugins import PluginRegistry
@@ -468,6 +468,7 @@ class RunManager:
             if task_to_wait is not None:
                 await asyncio.gather(task_to_wait, return_exceptions=True)
             self.store.update_lifecycle(run_id, cleanup='uncertain' if current.lifecycle.get('session_lost') or provider is None else 'complete',
+                cleanup_reason=None,
                 termination_scope='provider-owned execution; remote side effects are not inferred')
         pending = self._cleanup_tasks.get(run_id)
         if pending is not None and pending.done() and (pending.cancelled() or pending.exception() is not None):
@@ -624,10 +625,43 @@ class RunManager:
             deadline = asyncio.get_running_loop().time() + self.execution_deadline_seconds
             active_tools = 0
             pending_event = None
+            # The provider owns context variables (tracing, sessions and tool
+            # scopes) across yields. Advancing each event in a fresh Task, or
+            # closing in the caller, breaks those scopes during Stop. One
+            # demand-driven reader owns iteration AND closure for the full turn.
+            demands = asyncio.Queue()
+
+            async def read_stream():
+                try:
+                    while True:
+                        waiter = await demands.get()
+                        try:
+                            event = await anext(stream)
+                        except (Exception, asyncio.CancelledError) as error:
+                            if not waiter.done():
+                                if isinstance(error, asyncio.CancelledError):
+                                    waiter.cancel()
+                                else:
+                                    waiter.set_exception(error)
+                            return
+                        if not waiter.done():
+                            waiter.set_result(event)
+                finally:
+                    closer = getattr(stream, 'aclose', None)
+                    if closer is not None:
+                        try:
+                            await closer()
+                        except Exception as error:
+                            self.store.update_lifecycle(record.run_id, cleanup='failed',
+                                cleanup_reason=f'Provider stream cleanup failed: {error}')
+                            raise
+
+            reader = asyncio.create_task(read_stream(), name=f'provider-stream:{record.run_id}')
             try:
                 while True:
                     try:
-                        pending_event = asyncio.ensure_future(anext(stream))
+                        pending_event = asyncio.get_running_loop().create_future()
+                        demands.put_nowait(pending_event)
                         while True:
                             remaining = deadline - asyncio.get_running_loop().time()
                             if remaining <= 0:
@@ -679,17 +713,15 @@ class RunManager:
                         if self.get_run(record.run_id).status in TERMINAL_RUN_STATUSES:
                             break
             finally:
-                if pending_event is not None and not pending_event.done():
-                    pending_event.cancel()
+                if pending_event is not None:
+                    if not pending_event.done():
+                        pending_event.cancel()
                     await asyncio.gather(pending_event, return_exceptions=True)
-                closer = getattr(stream, "aclose", None)
-                if closer is not None:
-                    try:
-                        await closer()
-                    except Exception as error:
-                        self.store.update_lifecycle(record.run_id, cleanup='failed',
-                            cleanup_reason=f'Provider stream cleanup failed: {error}')
-                        raise
+                if not reader.done():
+                    reader.cancel()
+                result, = await asyncio.gather(reader, return_exceptions=True)
+                if isinstance(result, Exception):
+                    raise result
             current = self.get_run(record.run_id)
             if current.status is RunStatus.RUNNING:
                 # Provider protocol: a turn must end with an explicit terminal
@@ -752,7 +784,7 @@ class RunManager:
             self.state.ensure_scope("agent", record.agent_id, schema_id="core.agent"),
         ]
         card = self.world.maybe_get_card(record.agent_id)
-        if card is not None and card.parent_id and self.world.get_card(card.parent_id).type == "legion":
+        if card is not None and member_team(self.world, card) is not None:
             scopes.insert(1, self.state.ensure_scope("legion", card.parent_id, schema_id="core.legion"))
         if record.context_id is not None:
             scopes.append(
@@ -832,7 +864,7 @@ class RunManager:
     def _check_concurrency(self, card: Card) -> None:
         if any(r.lifecycle.get('cleanup') in {'pending', 'failed'} for r in self.list_runs(agent_id=card.id)):
             raise RuntimeUnavailableError('Agent admission is closed until its pending Run cleanup is resolved')
-        if card.parent_id and self.world.get_card(card.parent_id).type == "legion" and self.world.get_card(card.parent_id).config.get("paused"):
+        if (team := member_team(self.world, card)) is not None and team.config.get("paused"):
             raise RuntimeUnavailableError("Legion is paused; its members cannot start new Runs")
         configured = card.config.get("max_concurrent_runs", 1)
         limit = configured if isinstance(configured, int) and configured > 0 else 1
@@ -869,7 +901,7 @@ class RunManager:
     @staticmethod
     def _agent_config(card: Card) -> AgentConfig:
         instruction = str(card.config.get("system_instruction", ""))
-        if card.type == "core.minister":
+        if card.minister is not None:
             from backend.minister import runtime_instruction
             instruction = runtime_instruction(instruction)
         provider_config = {
@@ -889,7 +921,7 @@ class RunManager:
             agent_id=card.id,
             name=card.name,
             system_instruction=instruction,
-            model=str(card.config.get("model", "gemini-3.7-flash")),
+            model=str(card.config.get("model", "oaw:default")),
             runtime_provider_id=(
                 str(card.config["runtime_provider_id"])
                 if card.config.get("runtime_provider_id")

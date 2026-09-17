@@ -1,10 +1,10 @@
-import { useId } from "react";
+import { memo, useId } from "react";
 import { useStore } from "@xyflow/react";
 import { ViewportPortal } from "../canvas/FlowPortal";
 import "./surfaceBridge.css";
 
 /** A pointer-inert area between two canvas surfaces, independent of graph relationships. */
-export function SurfaceBridge({ sourceId, targetId }: { sourceId: string; targetId: string }) {
+export const SurfaceBridge = memo(function SurfaceBridge({ sourceId, targetId }: { sourceId: string; targetId: string }) {
   const gradientId = `surface-bridge-${useId().replaceAll(":", "")}`;
   const source = useStore((state) => state.nodeLookup.get(sourceId));
   const target = useStore((state) => state.nodeLookup.get(targetId));
@@ -27,4 +27,4 @@ export function SurfaceBridge({ sourceId, targetId }: { sourceId: string; target
     </linearGradient></defs>
     <path d={d} fill={`url(#${gradientId})`} />
   </svg></ViewportPortal>;
-}
+});

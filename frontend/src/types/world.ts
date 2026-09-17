@@ -1,5 +1,12 @@
 export type CardType = string;
 
+export type NodeSurfaceLevel = "node" | "preview" | "inspector" | "workspace";
+export interface NodePresentation {
+  states: readonly NodeSurfaceLevel[];
+  initial: NodeSurfaceLevel;
+  open: NodeSurfaceLevel;
+}
+
 export type AgentStatus = "idle" | "running" | "waiting" | "error";
 export type SandboxStatus = "stopped" | "ready" | "running" | "error";
 export type SandboxWorkspaceAccess = "read_write" | "read_only";
@@ -104,6 +111,8 @@ export interface WorldCard {
   revision?: number;
   parent_id?: string | null;
   equipment?: { owner_id: string; relationship: string | null } | null;
+  /** Host-granted role; the original Agent type and runtime config stay intact. */
+  minister?: { control_radius: number; allow_canvas_edits: boolean } | null;
   type: CardType;
   name: string;
   position: WorldPosition;
@@ -164,6 +173,8 @@ export interface NodeTypeCatalogItem {
     inspector: boolean;
     workspace: boolean;
   };
+  /** Authoritative when present; older plugins are adapted from surfaces. */
+  presentation?: NodePresentation;
   /** Whether this plugin node can be captured inside a reusable Legion. */
   templateable: boolean;
   /** Whether a user may create this node directly from the card library. */
@@ -240,6 +251,18 @@ export interface LegionInstantiation {
   legion_id: string;
   nodes: WorldCard[];
   edges: WorldEdge[];
+  presentation?: Record<string, LegionNodePresentation>;
+}
+
+export interface LegionNodePresentation {
+  level: NodeSurfaceLevel;
+  base_level?: "node" | "preview" | null;
+  workspace_size?: WorldSize | null;
+}
+
+export interface LegionDeployOptions {
+  unwrap?: boolean;
+  preset?: boolean;
 }
 
 export interface RuntimeEvent {

@@ -1,5 +1,6 @@
 """Exercise real OAW lifecycle and broker; live model test is explicit opt-in."""
 import os
+import json
 import getpass
 import subprocess
 import sys
@@ -21,8 +22,8 @@ def make_client(tmp_path, live=False):
     settings = Settings.for_data_root(tmp_path / 'world')
     services = create_services(settings, plugins=registry)
     command = None if live else [sys.executable, str(Path(__file__).with_name('fake_server.py')), str(tmp_path / 'protocol.jsonl')]
-    services.run_manager.provider_options['openai.codex'] = {'state_directory': tmp_path / 'state', 'server_command': command}
-    return TestClient(create_app(settings, services=services)), services
+    services.run_manager.provider_options['openai.codex'].update({'state_directory': tmp_path / 'state', 'server_command': command})
+    return TestClient(create_app(settings, services=services), client=('127.0.0.1', 50000)), services
 
 
 def create_agent(client, tmp_path):
@@ -116,6 +117,90 @@ def test_palette_card_can_be_created_before_workspace_is_configured(tmp_path):
             assert info.json()['details']['available'] is True
             invalid = client.patch(f'/api/nodes/{agent}', json={'config': {'runtime_provider_id': 'core.mock'}})
             assert invalid.status_code == 422
+    finally:
+        services.close()
+
+
+@pytest.mark.parametrize('custom_default', [False, True])
+def test_blank_project_runs_in_shared_default_and_follows_setting_changes(tmp_path, custom_default):
+    client, services = make_client(tmp_path)
+    root = tmp_path / 'workspaces' if custom_default else services.settings.data_root
+    root.mkdir(parents=True, exist_ok=True)
+    try:
+        with client:
+            if custom_default:
+                assert client.put('/api/settings/sandbox', json={'workspace_root': str(root)}).status_code == 200
+            agents = []
+            for _ in range(2):
+                response = client.post('/api/nodes', json={'type': 'openai.codex.agent'})
+                assert response.status_code == 201, response.text
+                agents.append(response.json()['id'])
+            workspace = root / 'codex-workspace'
+            assert not workspace.exists()  # Discovery and card creation do not write project files.
+
+            def run(agent):
+                response = client.post(f'/api/agents/{agent}/run', json={'prompt': 'hello'})
+                assert response.status_code == 202, response.text
+                record = wait_run(client, response.json()['run_id'])
+                assert record['status'] == 'succeeded', record
+                client.portal.call(services.run_manager.wait_execution, record['run_id'])
+
+            for agent in agents:
+                run(agent)
+                assert client.get(f'/api/nodes/{agent}').json()['config']['workspace_path'] == ''
+            assert workspace.is_dir()
+            marker = workspace / 'keep.txt'
+            marker.write_text('keep')
+            other = tmp_path / 'new-default'
+            other.mkdir()
+            assert client.put('/api/settings/sandbox', json={'workspace_root': str(other)}).status_code == 200
+            run(agents[0])
+            assert (other / 'codex-workspace').is_dir()
+            assert marker.read_text() == 'keep'
+            # Explicit overrides take precedence; clearing restores default behavior.
+            assert client.patch(f'/api/nodes/{agents[0]}', json={'config': {'workspace_path': str(tmp_path)}}).status_code == 200
+            run(agents[0])
+            assert client.patch(f'/api/nodes/{agents[0]}', json={'config': {'workspace_path': ''}}).status_code == 200
+            run(agents[0])
+            protocol = [json.loads(line) for line in (tmp_path / 'protocol.jsonl').read_text().splitlines()]
+            threads = [p for p in protocol if p.get('method') in {'thread/start', 'thread/resume'}]
+            assert [p['params']['cwd'] for p in threads] == [
+                str(workspace), str(workspace), str(other / 'codex-workspace'), str(tmp_path), str(other / 'codex-workspace'),
+            ]
+            assert threads[2]['method'] == 'thread/start'  # A changed directory gets its own conversation scope.
+    finally:
+        services.close()
+
+
+def test_minister_role_uses_codex_runtime_and_keeps_native_configuration(tmp_path):
+    import json
+    client, services = make_client(tmp_path)
+    try:
+        with client:
+            agent = create_agent(client, tmp_path)
+            before = client.get(f'/api/nodes/{agent}').json()
+            response = client.post(f'/api/agents/{agent}/run', json={'prompt': 'hello'})
+            normal = wait_run(client, response.json()['run_id'])
+            assert normal['status'] == 'succeeded'
+            client.portal.call(services.run_manager.wait_execution, normal['run_id'])
+            assert client.patch(f'/api/nodes/{agent}', json={'minister': {}}).status_code == 200
+            after = client.get(f'/api/nodes/{agent}').json()
+            assert after['type'] == 'openai.codex.agent'
+            for key, value in before['config'].items():
+                assert after['config'][key] == value
+            response = client.post(f'/api/agents/{agent}/run', json={'prompt': 'minister'})
+            promoted = wait_run(client, response.json()['run_id'])
+            assert promoted['status'] == 'succeeded', promoted
+            assert promoted['runtime_provider_id'] == normal['runtime_provider_id'] == 'openai.codex'
+            client.portal.call(services.run_manager.wait_execution, promoted['run_id'])
+            protocol = [json.loads(line) for line in (tmp_path / 'protocol.jsonl').read_text().splitlines()]
+            sessions = [item['params'] for item in protocol if item.get('method') in {'thread/start', 'thread/resume'}]
+            assert 'local canvas administrator' not in sessions[0]['developerInstructions']
+            assert 'local canvas administrator' in sessions[-1]['developerInstructions']
+            assert before['config']['system_instruction'] in sessions[-1]['developerInstructions']
+            assert sessions[-1]['cwd'] == sessions[0]['cwd'] and sessions[-1]['sandbox'] == sessions[0]['sandbox']
+            assert client.patch(f'/api/nodes/{agent}', json={'minister': None}).status_code == 200
+            assert not any(cap.kind.startswith('minister.') for cap in services.capabilities.derive(agent).capabilities)
     finally:
         services.close()
 

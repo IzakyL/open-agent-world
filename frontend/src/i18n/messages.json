@@ -1,4 +1,134 @@
 {
+  "Workspace layouts support at most 100 views.": ["Workspace layouts support at most 100 views.", "工作区最多支持 100 个展示区块。"],
+  "Arrange {v0}": ["Arrange {v0}","排列 {v0}"],
+  "Hide {v0}": ["Hide {v0}","隐藏 {v0}"],
+  "Card sections": ["Card sections","卡片功能区"],
+  "Hidden sections": ["Hidden sections","已隐藏的功能区"],
+  "Restore hidden sections to their original cards.": ["Restore hidden sections to their original cards.","将隐藏的功能区恢复到原来的卡片中。"],
+  "Hidden": ["Hidden","已隐藏"],
+  "In workspace": ["In workspace","已独立放置"],
+  "In card": ["In card","卡片内"],
+  "Restore to card": ["Restore to card","恢复到卡片"],
+  "Restore {v0} to card": ["Restore {v0} to card","将 {v0} 恢复到卡片"],
+  "This section is currently unavailable. Its layout is preserved.": ["This section is currently unavailable. Its layout is preserved.","此功能区当前不可用，已保留其布局。"],
+  "Hover over a section to arrange or hide it. Restore sections from the card list.": ["Hover over a section to arrange or hide it. Restore sections from the card list.","悬停在功能区上可拖出排列或隐藏；可从卡片列表恢复。"],
+  "Unplaced workspace cards": ["Unplaced workspace cards", "未放置的工作区卡片"],
+  "Unplaced card details": ["Unplaced card details", "未放置卡片详情"],
+  "Collapse card details": ["Collapse card details", "收起卡片详情"],
+  "Unplaced cards are available in the bottom bar. All members keep their connections and continue working.": ["Unplaced cards are available in the bottom bar. All members keep their connections and continue working.", "未放置的卡片可从底栏打开。所有成员保留连接并继续运行。"],
+  "Region tabs": ["Region tabs", "分区标签页"],
+  "Add selected card as tab": ["Add selected card as tab", "将所选卡片添加为标签页"],
+  "Add tab": ["Add tab", "添加标签页"],
+  "Drop on a title bar to add a tab, or on a region edge to split. You can also select a card and use the docking buttons.": ["Drop on a title bar to add a tab, or on a region edge to split. You can also select a card and use the docking buttons.", "拖到标题栏可添加标签页，拖到分区边缘可拆分。也可以先选卡片，再点击添加标签页或停靠按钮。"],
+  "Done editing": ["Done editing", "完成编辑"],
+  "Finish editing to use this card": ["Finish editing to use this card", "完成编辑后即可使用这张卡片"],
+  "Drag dividers to resize; sizes save automatically. Use Edit layout to move cards.": ["Drag dividers to resize; sizes save automatically. Use Edit layout to move cards.", "拖动分隔线调整大小，比例自动保存；移动卡片请进入编辑布局。"],
+  "Copy back to composer": ["Copy back to composer", "放回输入框"],
+  "Workspace mode": ["Workspace mode", "工作区模式"],
+  "{v0} workspace mode": ["{v0} workspace mode", "{v0} 工作区模式"],
+  "LEGION WORKSPACE": ["LEGION WORKSPACE", "LEGION 工作区"],
+  "Unsaved layout": ["Unsaved layout", "布局尚未保存"],
+  "Layout saved": ["Layout saved", "布局已保存"],
+  "Preview layout": ["Preview layout", "预览布局"],
+  "Edit layout": ["Edit layout", "编辑布局"],
+  "Save layout": ["Save layout", "保存布局"],
+  "Cancel layout changes": ["Cancel layout changes", "取消布局修改"],
+  "Back to canvas": ["Back to canvas", "返回画布"],
+  "Workspace cards": ["Workspace cards", "工作区卡片"],
+  "Workspace layout": ["Workspace layout", "工作区布局"],
+  "Layout editor": ["Layout editor", "窗口编辑模式"],
+  "Live workspace": ["Live workspace", "实时工作区"],
+  "Dock left": ["Dock left", "停靠左侧"],
+  "Dock right": ["Dock right", "停靠右侧"],
+  "Dock above": ["Dock above", "停靠上方"],
+  "Dock below": ["Dock below", "停靠下方"],
+  "{v0}: {v1}": ["{v0}: {v1}", "{v0}：{v1}"],
+  "Placed in workspace": ["Placed in workspace", "已放入工作区"],
+  "Remove {v0} from layout": ["Remove {v0} from layout", "从布局移出 {v0}"],
+  "Resize workspace regions": ["Resize workspace regions", "调整工作区分区大小"],
+  "Build your workspace": ["Build your workspace", "搭建你的工作区"],
+  "Place selected card": ["Place selected card", "放入所选卡片"],
+  "Preview layout to use this card": ["Preview layout to use this card", "切换到预览即可使用这张卡片"],
+  "Drag a card to an edge of a region. Or select a card, then choose a docking button.": ["Drag a card to an edge of a region. Or select a card, then choose a docking button.", "把卡片拖到分区边缘，或先选择卡片，再点击停靠按钮。"],
+  "Drop the first card here, then split regions to arrange the rest.": ["Drop the first card here, then split regions to arrange the rest.", "把第一张卡片拖到这里，再向各个方向拆分布局。"],
+  "Choose Edit layout to add cards to this window.": ["Choose Edit layout to add cards to this window.", "点击「编辑布局」，向窗口中添加卡片。"],
+  "Only placed cards appear here. All members keep their connections and continue working.": ["Only placed cards appear here. All members keep their connections and continue working.", "只显示放入布局的卡片。所有成员仍保留连接并继续工作。"],
+  "Add cards to this Legion on the canvas first.": ["Add cards to this Legion on the canvas first.", "请先在画布上为这个 Legion 添加成员卡片。"],
+  "Drag dividers to resize. Removing a pane keeps its card in the Legion.": ["Drag dividers to resize. Removing a pane keeps its card in the Legion.", "拖动分隔线调整大小。移出分区后，卡片仍留在 Legion 中。"],
+  "Use Edit layout to rearrange panes. Save to library on the canvas to reuse this workspace.": ["Use Edit layout to rearrange panes. Save to library on the canvas to reuse this workspace.", "点击「编辑布局」调整分区；回到画布「保存到库」，即可复用这套工作区。"],
+  "Layout could not be saved. Your draft is still here.": ["Layout could not be saved. Your draft is still here.", "布局保存失败，草稿已保留。"],
+  "This split is too deep. Choose another region.": ["This split is too deep. Choose another region.", "此处分区层级已达上限，请选择其他区域。"],
+  "This layout changed elsewhere. Reload it before saving.": ["This layout changed elsewhere. Reload it before saving.", "布局已在其他位置修改，请重新加载后再保存。"],
+  "Reload layout": ["Reload layout", "重新加载布局"],
+  "Save your layout or discard the changes before returning to the canvas.": ["Save your layout or discard the changes before returning to the canvas.", "返回画布前，请保存布局或放弃此次修改。"],
+  "Keep editing": ["Keep editing", "继续编辑"],
+  "Discard layout and close": ["Discard layout and close", "放弃布局修改并关闭"],
+  "LEGION · GROUP": ["LEGION · GROUP", "LEGION · 群组"],
+  "members": ["members", "个成员"],
+  "Legion settings": ["Legion settings", "Legion 设置"],
+  "Close Legion settings": ["Close Legion settings", "关闭 Legion 设置"],
+  "Enable shared team settings": ["Enable shared team settings", "启用团队共享设置"],
+  "Member Agents receive these settings and shared variables when starting a Run.": ["Member Agents receive these settings and shared variables when starting a Run.", "成员 Agent 在开始新一轮运行时会收到这些设置与共享变量。"],
+  "Group only: organize cards without sharing instructions, models or variables. Saved team settings stay inactive.": ["Group only: organize cards without sharing instructions, models or variables. Saved team settings stay inactive.", "仅分组：整理卡片，不共享指令、模型或变量。已保存的团队设置暂不生效。"],
+  "Save nodes, connections, positions and display states (1–4).": ["Save nodes, connections, positions and display states (1–4).", "保存节点、连接、位置及 1–4 级显示状态。"],
+  "Legion was not saved. Check the notification and try again.": ["Legion was not saved. Check the notification and try again.", "Legion 未保存，请查看通知后重试。"],
+  "What would you like to do here?": ["What would you like to do here?", "你想在这里做什么？"],
+  "Choose a starting blueprint. You can change every card and connection.": ["Choose a starting blueprint. You can change every card and connection.", "选一个蓝图开始，所有卡片和连接都可以自由调整。"],
+  "General assistant": ["General assistant", "通用助手"],
+  "Coding workspace": ["Coding workspace", "编程工作台"],
+  "Multi-Agent collaboration": ["Multi-Agent collaboration", "多 Agent 协作"],
+  "An Agent and a Conversation for everyday questions and ideas.": ["An Agent and a Conversation for everyday questions and ideas.", "一个 Agent 和一个对话空间，处理日常问题与想法。"],
+  "An Agent, a Conversation and a Sandbox for building and running code.": ["An Agent, a Conversation and a Sandbox for building and running code.", "Agent、对话与 Sandbox，搭建并运行你的代码。"],
+  "A planner, a builder and a reviewer connected to one shared Conversation.": ["A planner, a builder and a reviewer connected to one shared Conversation.", "规划、执行与评审三个 Agent，共用一个对话空间。"],
+  "Loading blueprints…": ["Loading blueprints…", "正在加载蓝图…"],
+  "Use a saved Legion as a blueprint": ["Use a saved Legion as a blueprint", "使用已保存的 Legion 作为蓝图"],
+  "Only the nodes and connections are placed. Shared Legion settings stay in the saved template.": ["Only the nodes and connections are placed. Shared Legion settings stay in the saved template.", "展开后只放置内部节点与连接；Legion 共享设置保留在原模板中。"],
+  "The blueprint could not be placed. Check the notification and retry.": ["The blueprint could not be placed. Check the notification and retry.", "蓝图未能放置，请查看通知后重试。"],
+  "Use the crown to chat. Open the Agent’s Minister tab for permissions and confirmations; its workspace keeps the history.": ["Use the crown to chat. Open the Agent’s Minister tab for permissions and confirmations; its workspace keeps the history.", "点击皇冠交谈。在 Agent 的 Minister 标签页设置权限、确认变更；历史仍在 Agent 工作区中。"],
+  "Minister permissions": ["Minister permissions", "Minister 权限"],
+  "Minister settings": ["Minister settings", "Minister 设置"],
+  "Agent card": ["Agent card", "Agent 卡片"],
+  "Manage nearby cards with this Agent’s existing model and tools.": ["Manage nearby cards with this Agent’s existing model and tools.", "使用这个 Agent 原有的模型和工具管理附近卡片。"],
+  "When off, this Agent can only inspect nearby cards.": ["When off, this Agent can only inspect nearby cards.", "关闭后，这个 Agent 只能查看附近卡片。"],
+  "Sensitive or destructive changes still need your confirmation.": ["Sensitive or destructive changes still need your confirmation.", "敏感或破坏性变更仍需你确认。"],
+  "Open Agent history": ["Open Agent history", "查看 Agent 历史"],
+  "Keep this Agent, its model, tools and history. Only Minister permissions are removed.": ["Keep this Agent, its model, tools and history. Only Minister permissions are removed.", "保留这个 Agent 及其模型、工具和历史，仅移除 Minister 权限。"],
+  "Open your Agent card and choose the Minister tab. Its permissions and confirmations live there; history stays in the Agent workspace.": ["Open your Agent card and choose the Minister tab. Its permissions and confirmations live there; history stays in the Agent workspace.", "打开 Agent 卡片，选择 Minister 标签页，即可设置权限、确认变更。历史仍在 Agent 工作区里。"],
+  "Roles": ["Roles", "角色"],
+  "Role card": ["Role card", "角色卡"],
+  "Drag onto an Agent": ["Drag onto an Agent", "拖到 Agent 卡片上"],
+  "Drag this role card onto an Agent to appoint it as Minister.": ["Drag this role card onto an Agent to appoint it as Minister.", "将这张角色卡拖到 Agent 卡片上，即可将其晋升为 Minister。"],
+  "The card is absorbed. Your Agent becomes a Minister and keeps its own model and tools.": ["The card is absorbed. Your Agent becomes a Minister and keeps its own model and tools.", "角色卡被吸收，Agent 晋升为 Minister，并保留原有模型和工具。"],
+  "Here is a new card in your deck: Minister role. Place it beside your Agent.": ["Here is a new card in your deck: Minister role. Place it beside your Agent.", "卡组里多了一张新卡：Minister 角色卡。把它放到你的 Agent 旁边。"],
+  "Drag the Minister role card onto your Agent. The card is absorbed, and your Agent is promoted with its original model and tools.": ["Drag the Minister role card onto your Agent. The card is absorbed, and your Agent is promoted with its original model and tools.", "将 Minister 角色卡拖到 Agent 上。角色卡会被吸收，Agent 播放晋升动画，并保留原来的模型和工具。"],
+  "The role card was not applied": ["The role card was not applied", "角色卡未能应用"],
+  "Quick Start": ["Quick Start", "快速开始"],
+  "Start Empty": ["Start Empty", "空白开始"],
+  "Recommended · A guided walk through your first world": ["Recommended · A guided walk through your first world", "推荐 · 一步步搭建你的第一个世界"],
+  "Quick Start setup": ["Quick Start setup", "快速开始设置"],
+  "Your first workspace": ["Your first workspace", "你的第一个工作区"],
+  "Connect a model to start chatting": ["Connect a model to start chatting", "连接模型，开始对话"],
+  "Connect a model": ["Connect a model", "连接模型"],
+  "Your Agent and Conversation are connected. Save a model connection in Settings, then come back to your Conversation.": ["Your Agent and Conversation are connected. Save a model connection in Settings, then come back to your Conversation.", "Agent 和对话卡已连接。在设置中保存模型连接后，就可以回来开始对话了。"],
+  "Your Agent and Conversation are connected. Review your Agent’s settings, then send your first message.": ["Your Agent and Conversation are connected. Review your Agent’s settings, then send your first message.", "Agent 和对话卡已连接。检查 Agent 的设置，然后发送第一条消息。"],
+  "Open Conversation": ["Open Conversation", "打开对话"],
+  "Appoint as Minister": ["Appoint as Minister", "任命为 Minister"],
+  "Minister role": ["Minister role", "Minister 角色"],
+  "Minister Agent": ["Minister Agent", "担任 Minister 的 Agent"],
+  "Remove Minister role": ["Remove Minister role", "移除 Minister 角色"],
+  "Minister role appointed": ["Minister role appointed", "已任命 Minister"],
+  "This Agent can now manage nearby cards. Use its Minister badge to chat and open history. Sensitive or destructive actions still need your confirmation.": ["This Agent can now manage nearby cards. Use its Minister badge to chat and open history. Sensitive or destructive actions still need your confirmation.", "这个 Agent 现在可以管理附近的卡片了。通过 Minister 徽章交谈、查看历史；敏感或破坏性操作仍需要你确认。"],
+  "Minister capabilities": ["Minister capabilities", "Minister 能力"],
+  "Agent settings": ["Agent settings", "Agent 设置"],
+  "Agent name": ["Agent name", "Agent 名称"],
+  "Your Agent is now a Minister and still uses its original model and tools. Click its new Minister badge to talk right here on the canvas.": ["Your Agent is now a Minister and still uses its original model and tools. Click its new Minister badge to talk right here on the canvas.", "你的 Agent 现在担任 Minister，仍使用原来的模型和工具。点击新出现的 Minister 徽章，就能直接在画布上交谈。"],
+  "The settings button beside the Minister badge opens history, nearby cards, and confirmations. Open it now.": ["The settings button beside the Minister badge opens history, nearby cards, and confirmations. Open it now.", "Minister 徽章旁的设置按钮可以打开历史、附近卡片和待确认操作。现在试着打开它。"],
+  "Other controls are locked. Pause to explore freely.": ["Other controls are locked. Pause to explore freely.", "??????????????????"],
+  "Pause tutorial": ["Pause tutorial", "????"],
+  "Use default model": ["Use default model", "??????"],
+  "Choose a default model": ["Choose a default model", "??????"],
+  "Set up your default model": ["Set up your default model", "???????"],
+  "Add your API key, check the Base URL, and choose a default model in Settings before using your agents.": ["Add your API key, check the Base URL, and choose a default model in Settings before using your agents.", "?????????????? API Key??? Base URL?????????"],
   "Continue": ["Continue", "继续"],
   "The Text card is here. Take a moment to look; when you are ready, we will place yours.": ["The Text card is here. Take a moment to look; when you are ready, we will place yours.", "文本卡已经放好了。先看一看，准备好后点继续，再来放置你的卡片。"],
   "Both cards are now connected with Participate. Follow the line from the Agent to the Conversation, then continue when you are ready.": ["Both cards are now connected with Participate. Follow the line from the Agent to the Conversation, then continue when you are ready.", "两张卡已通过“参与”连接。沿着连线看看智能体与对话的关系，准备好了再继续。"],
@@ -4380,9 +4510,9 @@
     "Show the connection",
     "演示连接"
   ],
-  "Click the Conversation, then its Open workspace button. That’s where your sessions and messages live.": [
-    "Click the Conversation, then its Open workspace button. That’s where your sessions and messages live.",
-    "点击对话卡片，再点击“打开工作区”，会话和消息都在里面。"
+  "Conversation opens as a window for your sessions and messages. If you fold it into a card, click the card to reopen the window.": [
+    "Conversation opens as a window for your sessions and messages. If you fold it into a card, click the card to reopen the window.",
+    "对话会直接以窗口打开，会话和消息都在里面。收起为卡片后，点击卡片即可重新打开窗口。"
   ],
   "Try “Help me plan a small garden.” Choose the Agent in the session or @mention it, then send. A configured model is needed for its reply.": [
     "Try “Help me plan a small garden.” Choose the Agent in the session or @mention it, then send. A configured model is needed for its reply.",
@@ -4416,9 +4546,9 @@
     "If a port is covered, move a card aside. Execute needs a running Sandbox; Start/Stop also lets the Agent manage it.",
     "端口被遮挡时，可移开卡片。“执行”需要已运行的沙箱，“启动/停止”还允许智能体管理沙箱。"
   ],
-  "Open the Sandbox to see its runtime and workspace settings. Start it here when you’re ready to execute. Connections compose what an Agent can do.": [
-    "Open the Sandbox to see its runtime and workspace settings. Start it here when you’re ready to execute. Connections compose what an Agent can do.",
-    "打开沙箱查看运行环境和工作区设置，准备执行时在这里启动。不同的连接组合决定智能体能做什么。"
+  "Sandbox opens as a window. Use the Settings tab to choose its runtime and working folder. Start it when you are ready to execute.": [
+    "Sandbox opens as a window. Use the Settings tab to choose its runtime and working folder. Start it when you are ready to execute.",
+    "沙箱会直接以窗口打开。在“设置”页选择运行环境和工作目录，准备执行时再启动。"
   ],
   "This is where you choose the runtime and workspace, then start your Sandbox. We can leave it stopped for now. Your three cards already describe a working system.": [
     "This is where you choose the runtime and workspace, then start your Sandbox. We can leave it stopped for now. Your three cards already describe a working system.",
@@ -6479,5 +6609,129 @@
   "Remove {card} from {deck}": [
     "Remove {card} from {deck}",
     "从{deck}移除{card}"
+  ],
+  "Project folder": [
+    "Project folder",
+    "项目目录"
+  ],
+  "Required before running": [
+    "Required before running",
+    "运行前必填"
+  ],
+  "Use an existing absolute folder path. Codex reads project files and runs commands here; file access below controls editing.": [
+    "Use an existing absolute folder path. Codex reads project files and runs commands here; file access below controls editing.",
+    "填写已存在文件夹的绝对路径。Codex 会在这里读取项目文件、执行命令；能否修改文件由下方的文件权限控制。"
+  ],
+  "Default uses your local Codex settings.": [
+    "Default uses your local Codex settings.",
+    "默认沿用本机 Codex 的模型与推理设置。"
+  ],
+  "Continue keeps context per conversation; fresh starts over each run. File access applies to this local project, independently of OAW Sandbox cards.": [
+    "Continue keeps context per conversation; fresh starts over each run. File access applies to this local project, independently of OAW Sandbox cards.",
+    "继续会话会保留各对话的上下文；每次新建则重新开始。文件权限作用于本机项目目录，与 OAW Sandbox 卡片独立。"
+  ],
+  "Advanced settings": [
+    "Advanced settings",
+    "高级设置"
+  ],
+  "Local Codex": [
+    "Local Codex",
+    "程序来源"
+  ],
+  "Native executable": [
+    "Native executable",
+    "程序路径"
+  ],
+  "Reasoning effort": [
+    "Reasoning effort",
+    "推理强度"
+  ],
+  "Session mode": [
+    "Session mode",
+    "会话模式"
+  ],
+  "Native file access": [
+    "Native file access",
+    "文件权限"
+  ],
+  "Additional instructions": [
+    "Additional instructions",
+    "补充指令"
+  ],
+  "Auto prefers the desktop App's native runtime, then CLI.": [
+    "Auto prefers the desktop App's native runtime, then CLI.",
+    "自动优先使用桌面应用的运行程序，其次使用 CLI。"
+  ],
+  "Used when Local Codex is manual. Select codex.exe, not a shell wrapper.": [
+    "Used when Local Codex is manual. Select codex.exe, not a shell wrapper.",
+    "手动指定时，填写 codex.exe 的路径。"
+  ],
+  "continue": [
+    "continue",
+    "继续会话"
+  ],
+  "fresh": [
+    "fresh",
+    "每次新建"
+  ],
+  "workspace-write": [
+    "workspace-write",
+    "允许修改项目"
+  ],
+  "manual": [
+    "manual",
+    "手动指定"
+  ],
+  "desktop": [
+    "desktop",
+    "桌面应用"
+  ],
+  "Uses default workspace": [
+    "Uses default workspace",
+    "使用默认工作目录"
+  ],
+  "Default Workspace location / codex-workspace": [
+    "Default Workspace location / codex-workspace",
+    "默认工作目录 / codex-workspace"
+  ],
+  "Leave blank to share codex-workspace under Default Workspace location, created on first run. Or enter an existing absolute project folder.": [
+    "Leave blank to share codex-workspace under Default Workspace location, created on first run. Or enter an existing absolute project folder.",
+    "留空则共用“默认工作目录”下的 codex-workspace，首次运行时自动创建。也可填写已有项目文件夹的绝对路径。"
+  ],
+  "Leave blank to use codex-workspace under Default Workspace location. Or enter an existing absolute project folder.": [
+    "Leave blank to use codex-workspace under Default Workspace location. Or enter an existing absolute project folder.",
+    "留空使用“默认工作目录”下的 codex-workspace，或填写已有项目文件夹的绝对路径。"
+  ],
+  "Codex Agents without a custom project folder use the shared codex-workspace subfolder here. Changes apply on their next run; existing files stay in the old location.": [
+    "Codex Agents without a custom project folder use the shared codex-workspace subfolder here. Changes apply on their next run; existing files stay in the old location.",
+    "未指定项目目录的 Codex Agent 共用这里的 codex-workspace 子文件夹。更改后下次运行生效，已有文件保留在原位置。"
+  ],
+  "Drop cards here to add": [
+    "Drop cards here to add",
+    "将卡片拖到这里添加"
+  ],
+  "Add to current deck": [
+    "Add to current deck",
+    "添加到当前卡组"
+  ],
+  "Drag cards into your deck below": [
+    "Drag cards into your deck below",
+    "将卡片拖入下方卡组"
+  ],
+  "Drag Text, Agent, Conversation and Sandbox into your deck below. You can create a new deck there, too.": [
+    "Drag Text, Agent, Conversation and Sandbox into your deck below. You can create a new deck there, too.",
+    "将 Text、Agent、Conversation 和 Sandbox 拖入下方卡组。也可以在那里新建卡组。"
+  ],
+  "You can also click Add to current deck. Switch decks using the tabs below.": [
+    "You can also click Add to current deck. Switch decks using the tabs below.",
+    "也可以点击“添加到当前卡组”，通过下方标签切换卡组。"
+  ],
+  "Edit deck": [
+    "Edit deck",
+    "编辑卡组"
+  ],
+  "Deleting a deck keeps its cards in your collection.": [
+    "Deleting a deck keeps its cards in your collection.",
+    "删除卡组会保留卡片库中的卡片。"
   ]
 }

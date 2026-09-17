@@ -1,4 +1,5 @@
 """Stable contracts for trusted Open Agent World Python plugins."""
+from backend.agents.media import ToolImage, VisualToolResult, codex_tool_content
 from backend.execution_config import ComputeTarget, EnvironmentProfile, SecretRequirement
 from backend.resources.artifact_models import ArtifactPublish, ArtifactMaterialize
 
@@ -62,6 +63,7 @@ from backend.plugins import (
     NodeTemplateRestoreContext,
     NodeTemplateRestoreResources,
     NodeTypeDefinition,
+    NodePresentation,
     Plugin,
     PluginDescriptor,
     PluginDefinition,
@@ -76,7 +78,9 @@ from backend.runs import InvocationContext, RuntimeInput
 from backend.world.models import Card, CardCreate, CardPatch, Edge
 
 __all__ = [
+    "ToolImage", "VisualToolResult", "codex_tool_content",
     "PackDefinition",
+    "NodePresentation",
     "NodeDocumentTransformation",
     "ArtifactPublish",
     "ArtifactMaterialize",

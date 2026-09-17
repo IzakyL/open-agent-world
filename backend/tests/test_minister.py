@@ -7,10 +7,20 @@ from backend.agents.tools import build_scoped_tool_callables
 from backend.capabilities.provider import WorldAgentCapabilityProvider
 from backend.errors import PermissionDeniedError, RevisionConflictError
 from backend.main import create_app
-from backend.minister import INSTRUCTION, LEGACY_INSTRUCTION, MINISTER_TYPE, control
+from backend.minister import INSTRUCTION, LEGACY_INSTRUCTION, control
 from backend.tests.conftest import create_node
 from backend.tests.minister_runtime import runtime_services
 from backend.world.models import CardCreate, CardPatch
+
+
+def create_minister(client, **overrides):
+    config = dict(overrides.pop('config', {}))
+    role = {key: config.pop(key) for key in ('control_radius', 'allow_canvas_edits') if key in config}
+    overrides.setdefault('size', {'width': 96, 'height': 96})
+    agent = create_node(client, 'agent', config=config, **overrides)
+    response = client.patch(f"/api/nodes/{agent['id']}", json={'minister': role})
+    assert response.status_code == 200, response.text
+    return response.json()
 
 
 def call(client, method, *args, **kwargs):
@@ -25,7 +35,7 @@ def invoke(client, minister, action, **args):
 
 
 def test_circle_queries_protect_secrets_search_and_reject_corner_cards(client):
-    minister = create_node(client, MINISTER_TYPE, config={"control_radius": 400, "allow_canvas_edits": False})
+    minister = create_minister(client, config={"control_radius": 400, "allow_canvas_edits": False})
     inside = create_node(client, "agent", name="Local helper", position={"x": 100, "y": 100},
                          size={"width": 96, "height": 96}, config={"api_key": "private-test-secret"})
     # Inside the enclosing square but outside the true circle, including card extents.
@@ -34,7 +44,7 @@ def test_circle_queries_protect_secrets_search_and_reject_corner_cards(client):
     assert inside["id"] in {node["id"] for node in view["nodes"]}
     assert corner["id"] not in {node["id"] for node in view["nodes"]}
     assert "private-test-secret" not in str(view)
-    assert view["allowed_operations"] == ["inspect"]
+    assert view["allowed_operations"] == ["inspect", "observe"]
     assert invoke(client, minister, "inspect", query="HELPER")["total"] == 1
     assert client.get(f"/api/ministers/{minister['id']}/world", params={"query": "Corner"}).json()["total"] == 0
     with pytest.raises(PermissionDeniedError):
@@ -42,8 +52,8 @@ def test_circle_queries_protect_secrets_search_and_reject_corner_cards(client):
 
 
 def test_small_tools_use_ids_live_scope_and_shared_revisions(client):
-    first = create_node(client, MINISTER_TYPE, config={"allow_canvas_edits": True})
-    second = create_node(client, MINISTER_TYPE, config={"allow_canvas_edits": True})
+    first = create_minister(client, config={"allow_canvas_edits": True})
+    second = create_minister(client, config={"allow_canvas_edits": True})
     agent = create_node(client, "agent", position={"x": 120, "y": 0}, size={"width": 96, "height": 96})
     observed = invoke(client, first, "inspect")["versions"]
     note = invoke(client, first, "create", type="text", name="Local note", position={"x": 200, "y": 200}, versions=observed)
@@ -60,11 +70,11 @@ def test_small_tools_use_ids_live_scope_and_shared_revisions(client):
         invoke(client, first, "rename", node_id=note["id"], name="Overwritten", versions=observed)
     assert client.get(f"/api/nodes/{note['id']}").json()["name"] == "Human edit"
     with pytest.raises(PermissionDeniedError):
-        invoke(client, first, "move", node_id=note["id"], position={"x": 550, "y": 550}, versions=invoke(client, first, "inspect")["versions"])
+        invoke(client, first, "move", node_id=note["id"], position={"x": 1500, "y": 1500}, versions=invoke(client, first, "inspect")["versions"])
 
 
 def test_preflight_self_participation_private_chat_and_readiness(client):
-    minister = create_node(client, MINISTER_TYPE, config={"allow_canvas_edits": False})
+    minister = create_minister(client, config={"allow_canvas_edits": False})
     private = client.post(f"/api/ministers/{minister['id']}/chat").json()
     chat = create_node(client, "conversation", name="Agent chat area", position={"x": 180, "y": 150}, size={"width": 96, "height": 96})
     def inspect_pair():
@@ -77,7 +87,7 @@ def test_preflight_self_participation_private_chat_and_readiness(client):
     assert view["connection_options"][0]["permitted"] is False
     assert {"read", "participate", "execute_manage", "read_edit"} <= {item["id"] for item in view["relationship_types"]}
     assert next(node for node in view["nodes"] if node["id"] == chat["id"])["chat_readiness"]["routing_ready"] is False
-    assert client.patch(f"/api/nodes/{minister['id']}", json={"config": {"allow_canvas_edits": True}}).status_code == 200
+    assert client.patch(f"/api/nodes/{minister['id']}", json={"minister": {"allow_canvas_edits": True}}).status_code == 200
     view = inspect_pair()
     assert view["connection_options"][0]["permitted"]
     edge = invoke(client, minister, "connect", source=minister["id"], target=chat["id"], relationship="participate", versions=view["versions"])
@@ -93,7 +103,7 @@ def test_preflight_self_participation_private_chat_and_readiness(client):
 
 
 def test_preflight_and_commit_reject_external_consequences_and_live_revocation(client):
-    minister = create_node(client, MINISTER_TYPE, config={"allow_canvas_edits": True})
+    minister = create_minister(client, config={"allow_canvas_edits": True})
     chat = create_node(client, "conversation", size={"width": 96, "height": 96})
     outside = create_node(client, "text", position={"x": 5000, "y": 0})
     assert client.post("/api/edges", json={"source": chat["id"], "target": outside["id"], "relationship": "conversation_notes"}).status_code == 201
@@ -104,13 +114,13 @@ def test_preflight_and_commit_reject_external_consequences_and_live_revocation(c
     clean = create_node(client, "conversation", size={"width": 96, "height": 96})
     view = invoke(client, minister, "inspect", source_id=minister["id"], target_id=clean["id"])
     assert view["connection_options"][0]["permitted"]
-    client.patch(f"/api/nodes/{minister['id']}", json={"config": {"allow_canvas_edits": False}})
+    client.patch(f"/api/nodes/{minister['id']}", json={"minister": {"allow_canvas_edits": False}})
     with pytest.raises(PermissionDeniedError):
         invoke(client, minister, "connect", source=minister["id"], target=clean["id"], relationship="participate", versions=view["versions"])
 
 
 def test_existing_ministers_receive_current_goal_harness_without_overwriting_preferences(client):
-    minister = create_node(client, MINISTER_TYPE, config={"system_instruction": LEGACY_INSTRUCTION})
+    minister = create_minister(client, config={"system_instruction": LEGACY_INSTRUCTION})
     services = client.app.state.services
     card = services.world.get_card(minister["id"])
     assert services.run_manager._agent_config(card).system_instruction == INSTRUCTION
@@ -119,14 +129,14 @@ def test_existing_ministers_receive_current_goal_harness_without_overwriting_pre
     assert services.run_manager._agent_config(services.world.get_card(card.id)).system_instruction.endswith("Host preferences:\nUse Chinese.")
 
 
-def test_minister_cannot_acquire_other_tools_or_reconfigure_other_ministers(client):
-    minister = create_node(client, MINISTER_TYPE, config={"allow_canvas_edits": True})
-    other = create_node(client, MINISTER_TYPE)
+def test_minister_keeps_host_granted_tools_but_cannot_reconfigure_other_scopes(client):
+    minister = create_minister(client, config={"allow_canvas_edits": True})
+    other = create_minister(client)
     sandbox = create_node(client, "sandbox")
     client.post("/api/edges", json={"source": minister["id"], "target": sandbox["id"], "relationship": "execute"})
     provider = WorldAgentCapabilityProvider(client.app.state.services)
     tools = call(client, provider.list_tools, minister["id"])
-    assert {tool.name for tool in tools} == {"canvas_inspect", "canvas_create", "canvas_move", "canvas_rename", "canvas_connect", "canvas_disconnect", "canvas_update", "canvas_delete", "canvas_organize"}
+    assert {tool.name for tool in tools if tool.name.startswith("canvas_")} == {"canvas_observe", "canvas_inspect", "canvas_create", "canvas_move", "canvas_rename", "canvas_connect", "canvas_disconnect", "canvas_update", "canvas_delete", "canvas_organize"}
     assert next(p for t in tools if t.name == "canvas_move" for p in t.parameters if p.name == "position").python_type is dict
     assert next(p for t in tools if t.name == "canvas_move" for p in t.parameters if p.name == "versions").python_type is dict
     with pytest.raises(PermissionDeniedError):
@@ -139,19 +149,19 @@ def test_minister_cannot_acquire_other_tools_or_reconfigure_other_ministers(clie
 
 
 def test_radius_and_revocation_are_live_without_reconfiguring_running_provider(client, monkeypatch):
-    minister = create_node(client, MINISTER_TYPE, config={"allow_canvas_edits": True})
+    minister = create_minister(client, config={"allow_canvas_edits": True})
     note = create_node(client, "text", position={"x": 280, "y": 0}, size={"width": 96, "height": 96})
     facade = control(client.app.state.services, minister["id"], editing=True)
     observed = invoke(client, minister, "inspect")["versions"]
     async def fail_update(*args):
         raise AssertionError("A live grant change must not reconfigure the running provider")
     monkeypatch.setattr(type(client.app.state.services.run_manager), "update_agent", fail_update)
-    assert client.patch(f"/api/nodes/{minister['id']}", json={"config": {"control_radius": 200}}).status_code == 200
+    assert client.patch(f"/api/nodes/{minister['id']}", json={"minister": {"control_radius": 200}}).status_code == 200
     with pytest.raises(PermissionDeniedError):
         call(client, facade.move_card, note["id"], {"x": 60, "y": 60}, observed)
     assert client.patch(f"/api/nodes/{minister['id']}", json={"position": {"x": 280, "y": 0}}).status_code == 200
     assert note["id"] in {n["id"] for n in invoke(client, minister, "inspect")["nodes"]}
-    assert client.patch(f"/api/nodes/{minister['id']}", json={"config": {"allow_canvas_edits": False}}).status_code == 200
+    assert client.patch(f"/api/nodes/{minister['id']}", json={"minister": {"allow_canvas_edits": False}}).status_code == 200
     with pytest.raises(PermissionDeniedError):
         call(client, facade.move_card, note["id"], {"x": 290, "y": 20}, observed)
 
@@ -161,8 +171,8 @@ def test_radius_and_revocation_are_live_without_reconfiguring_running_provider(c
 async def test_two_real_runs_share_versions_and_report_conflicts(tmp_path, human_edit):
     services = runtime_services(tmp_path)
     try:
-        first = await services.create_card(CardCreate(type=MINISTER_TYPE, name="North", config={"allow_canvas_edits": True}))
-        second = await services.create_card(CardCreate(type=MINISTER_TYPE, name="South", config={"allow_canvas_edits": True}))
+        first = await services.create_card(CardCreate(type="agent", minister={}, name="North", size={"width": 96, "height": 96}))
+        second = await services.create_card(CardCreate(type="agent", minister={}, name="South", size={"width": 96, "height": 96}))
         note = await services.create_card(CardCreate(type="text", position={"x": 100, "y": 100}, size={"width": 96, "height": 96}))
         runtime = services.run_manager.default_provider()
         runs = await asyncio.gather(*(services.run_manager.start_run(node.id, f"race:{note.id}") for node in (first, second)))
@@ -184,15 +194,14 @@ async def test_two_real_runs_share_versions_and_report_conflicts(tmp_path, human
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize("patch", [
-    CardPatch(config={"allow_canvas_edits": False}),
-    CardPatch(config={"control_radius": 200}),
-    CardPatch(position={"x": 1000, "y": 0}),
+    CardPatch(minister={"allow_canvas_edits": False}),
+    CardPatch(minister={"control_radius": 200}),
+    CardPatch(position={"x": 2500, "y": 0}),
 ])
 async def test_host_can_revoke_one_running_minister_without_interrupting_another(tmp_path, patch):
     services = runtime_services(tmp_path)
     try:
-        ministers = [await services.create_card(CardCreate(type=MINISTER_TYPE, name=name,
-                     config={"allow_canvas_edits": True})) for name in ("North", "South")]
+        ministers = [await services.create_card(CardCreate(type="agent", minister={}, name=name, size={"width": 96, "height": 96})) for name in ("North", "South")]
         note = await services.create_card(CardCreate(type="text", position={"x": 100, "y": 100}, size={"width": 96, "height": 96}))
         runtime = services.run_manager.default_provider()
         runs = await asyncio.gather(*(services.run_manager.start_run(node.id, f"race:{note.id}") for node in ministers))
@@ -212,7 +221,7 @@ async def test_host_can_revoke_one_running_minister_without_interrupting_another
 def test_attached_chat_uses_durable_conversation_and_equipment_cleanup(tmp_path):
     services = runtime_services(tmp_path)
     with TestClient(create_app(services.settings, services=services)) as client:
-        minister = create_node(client, MINISTER_TYPE)
+        minister = create_minister(client)
         chat = client.post(f"/api/ministers/{minister['id']}/chat").json()
         assert chat == client.post(f"/api/ministers/{minister['id']}/chat").json()
         conversation, session = chat["conversation_id"], chat["session_id"]
@@ -263,16 +272,16 @@ def test_failed_chat_scenario_now_builds_a_routable_area_and_receives_a_reply(tm
     services = runtime_services(tmp_path)
     try:
         with TestClient(create_app(services.settings, services=services)) as client:
-            minister = create_node(client, MINISTER_TYPE, name="Minister", position={"x": 39, "y": 3300},
+            minister = create_minister(client, name="Minister", position={"x": 39, "y": 3300},
                                    config={"system_instruction": LEGACY_INSTRUCTION, "allow_canvas_edits": False})
             participant = create_node(client, "agent", name="Chat helper", position={"x": 200, "y": 3300}, size={"width": 96, "height": 96}) if use_existing_agent else None
             private = client.post(f"/api/ministers/{minister['id']}/chat").json()
             reply = send_and_read_reply(client, private["conversation_id"], private["session_id"], minister["id"], "帮我配置个聊天环境？")
             assert "只能查看" in reply and "已配置" not in reply
             assert len(services.world.list_cards()) == (3 if use_existing_agent else 2)
-            client.patch(f"/api/nodes/{minister['id']}", json={"config": {"allow_canvas_edits": True}})
+            client.patch(f"/api/nodes/{minister['id']}", json={"minister": {"allow_canvas_edits": True}})
             reply = send_and_read_reply(client, private["conversation_id"], private["session_id"], minister["id"], "现在试试")
-            participant = participant or next(node.model_dump() for node in services.world.list_cards() if node.type == "agent")
+            participant = participant or next(node.model_dump() for node in services.world.list_cards() if node.type == "agent" and not node.minister)
             assert "已配置" in reply and "尚未验证" in reply and participant["name"] in reply
             assert not any(word in reply for word in ("edits_allowed", "writable_config_fields", "canvas_connect"))
             assert all(node.type != "text" for node in services.world.list_cards())
@@ -296,7 +305,7 @@ def test_chat_setup_reports_partial_completion_when_an_actor_moves_the_participa
     services = runtime_services(tmp_path)
     try:
         with TestClient(create_app(services.settings, services=services)) as client:
-            minister = create_node(client, MINISTER_TYPE, config={"allow_canvas_edits": True})
+            minister = create_minister(client, config={"allow_canvas_edits": True})
             participant = create_node(client, "agent", position={"x": 100, "y": 0}, size={"width": 96, "height": 96})
             async def move_participant():
                 await services.update_card(participant["id"], CardPatch(position={"x": 5000, "y": 0}))
@@ -315,13 +324,13 @@ def test_chat_setup_repairs_the_reported_leftover_area_without_duplicate_convers
     services = runtime_services(tmp_path)
     try:
         with TestClient(create_app(services.settings, services=services)) as client:
-            minister = create_node(client, MINISTER_TYPE, position={"x": 39, "y": 3300}, config={"allow_canvas_edits": True})
+            minister = create_minister(client, position={"x": 39, "y": 3300}, config={"allow_canvas_edits": True})
             create_node(client, "text", name="聊天说明", position={"x": 290, "y": 3332}, size={"width": 96, "height": 96})
             area = create_node(client, "conversation", name="Agent 对话区", position={"x": 180, "y": 3450}, size={"width": 96, "height": 96})
             private = client.post(f"/api/ministers/{minister['id']}/chat").json()
             before = {node.id for node in services.world.list_cards()}
             reply = send_and_read_reply(client, private["conversation_id"], private["session_id"], minister["id"], "我需要你去配置一个我跟agent聊天的地盘")
-            participant = next(node.model_dump() for node in services.world.list_cards() if node.type == "agent")
+            participant = next(node.model_dump() for node in services.world.list_cards() if node.type == "agent" and not node.minister)
             assert "已配置" in reply and "尚未验证" in reply
             assert {node.id for node in services.world.list_cards()} == before | {participant['id']}
             ready = invoke(client, minister, "inspect", query=area["id"])["nodes"][0]["chat_readiness"]

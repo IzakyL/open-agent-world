@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { normalizeCard } from "../api/client";
 import { TEST_CATALOG } from "./catalog.fixture";
 import { buildCardDraft } from "./helpers";
-import { canEquip, equipmentOwner } from "./equipment";
+import { canEquip, equipmentOwner, useEquipmentDrag } from "./equipment";
 import { ownedDescendants, parentFirst } from "./containers";
 import { validateConnection } from "./relationships";
 import type { PluginCatalog, WorldCard } from "../types/world";
@@ -11,6 +11,19 @@ const catalog: PluginCatalog = TEST_CATALOG;
 const card = (id: string, type: string): WorldCard => ({ id, ...buildCardDraft(type, { x: 0, y: 0 }) });
 
 describe("equipment contracts", () => {
+  it("publishes drag intent only when the resource or target changes", () => {
+    const resource = card('dragged', 'sandbox');
+    useEquipmentDrag.getState().set(resource);
+    let notifications = 0;
+    const unsubscribe = useEquipmentDrag.subscribe(() => notifications++);
+    useEquipmentDrag.getState().set(resource);
+    useEquipmentDrag.getState().set(resource);
+    expect(notifications).toBe(0);
+    useEquipmentDrag.getState().set(resource, 'owner');
+    expect(notifications).toBe(1);
+    unsubscribe();
+    useEquipmentDrag.getState().set();
+  });
   it("rejects owner connections in either direction, including nested equipment", () => {
     const owner = card("owner", "agent");
     const resource = { ...card("resource", "sandbox"), equipment: { owner_id: owner.id, relationship: "execute" } };

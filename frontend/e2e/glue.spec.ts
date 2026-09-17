@@ -1,13 +1,20 @@
 ﻿import { expect, test } from '@playwright/test';
+import { resetTutorialProfile } from './tutorial-profile';
+
+test.beforeEach(async ({ request }) => {
+  await resetTutorialProfile(request);
+  const glue = await (await request.get('/api/canvas/glue')).json();
+  expect((await request.patch('/api/canvas/glue', { data: { revision: glue.revision, boxes: {}, bonds: [] } })).ok()).toBe(true);
+});
 test('glue joins cards, moves the group, resizes from a free corner and survives reload', async ({ page, request }) => {
   const a = `glue-a-${Date.now()}`, b = `glue-b-${Date.now()}`;
-  for (const [id, x] of [[a, 220], [b, 660]] as const) expect((await request.post('/api/nodes', { data: { id, type: 'text', name: id, position: { x, y: 300 } } })).ok()).toBeTruthy();
+  for (const [id, x] of [[a, 220], [b, 660]] as const) expect((await request.post('/api/nodes', { data: { id, type: 'text', name: id, position: { x, y: 300 }, size: { width: 96, height: 96 } } })).ok()).toBeTruthy();
   try {
     await page.addInitScript(() => localStorage.setItem('oaw-canvas-viewport-v1', JSON.stringify({ state: { viewport: { x: 0, y: 0, zoom: 1, width: 1280, height: 800 } }, version: 0 })));
     await page.goto('/');
     const first = page.locator(`.react-flow__node[data-id="${a}"]`), second = page.locator(`.react-flow__node[data-id="${b}"]`);
     await expect(first).toBeVisible(); await expect(second).toBeVisible();
-    await page.getByRole('button', { name: '万能胶', exact: true }).click();
+    await page.getByRole('button', { name: 'Glue', exact: true }).click();
     const r1 = (await first.boundingBox())!, r2 = (await second.boundingBox())!;
     await page.mouse.move(r1.x + 35, r1.y + 25); await page.mouse.down();
     await page.mouse.move(r1.x + 35 + r2.x - r1.x - r1.width, r1.y + 25, { steps: 15 });
@@ -40,6 +47,9 @@ test('glue joins cards, moves the group, resizes from a free corner and survives
       const left = (await first.boundingBox())!, right = (await second.boundingBox())!;
       return Math.abs(left.x + left.width - right.x);
     }).toBeLessThan(2);
+    // Hide the selected group's floating detach control before using the
+    // compact card's restore control immediately beneath it.
+    await page.locator('#oaw-world-map .react-flow__pane').click({ position: { x: 1100, y: 80 } });
     await first.getByRole('button', { name: `Expand ${a} card` }).click();
     await expect.poll(async () => Math.round((await first.boundingBox())!.width)).toBe(224);
     await expect.poll(async () => Math.round((await first.boundingBox())!.height)).toBe(Math.round(glued1.height + 40));
@@ -49,7 +59,7 @@ test('glue joins cards, moves the group, resizes from a free corner and survives
     await expect.poll(async () => Math.round((await first.boundingBox())!.width)).toBe(224);
     await page.reload(); await expect(first).toHaveClass(/is-glued/);
     await first.click({ modifiers: ['Shift'], position: { x: 35, y: 25 } });
-    await page.getByRole('button', { name: '解除粘连', exact: true }).click();
+    await page.getByRole('button', { name: 'Detach glue', exact: true }).click();
     await expect(first).not.toHaveClass(/is-glued/);
     await expect(second).not.toHaveClass(/is-glued/);
     await first.getByRole('button', { name: `Collapse ${a} card` }).click();
@@ -67,13 +77,11 @@ test('stitched relationship opens the original settings and detaching restores t
   const edge = await request.post('/api/edges', { data: { source: a, target: b, relationship: 'participate' } });
   expect(edge.ok()).toBeTruthy();
   try {
-    await page.addInitScript(({ a, b }) => {
-      localStorage.setItem('oaw-canvas-viewport-v1', JSON.stringify({ state: { viewport: { x: 0, y: 0, zoom: 1, width: 1280, height: 800 } }, version: 0 }));
-      localStorage.setItem('oaw-glue-v1', JSON.stringify({ state: { boxes: {
-        [a]: { x: 155, y: 220, width: 286, height: 156, level: 'preview' },
-        [b]: { x: 441, y: 220, width: 286, height: 196, level: 'preview' },
-      }, bonds: [{ a, b, side: 'right' }] }, version: 0 }));
-    }, { a, b });
+    const glue = await (await request.get('/api/canvas/glue')).json();
+    expect((await request.patch('/api/canvas/glue', { data: { revision: glue.revision, boxes: {
+      [a]: { x: 155, y: 220, width: 224, height: 300, level: 'preview' },
+      [b]: { x: 379, y: 220, width: 224, height: 300, level: 'preview' },
+    }, bonds: [{ a, b, side: 'right' }] } })).ok()).toBe(true);
     await page.goto('/');
     await page.locator('.glue-stitch').click();
     await expect(page.getByRole('complementary', { name: 'Selected relationship' })).toBeVisible();
@@ -83,9 +91,9 @@ test('stitched relationship opens the original settings and detaching restores t
     const h = (await handle.boundingBox())!;
     await page.mouse.move(h.x + 7, h.y + 7); await page.mouse.down();
     await page.mouse.move(h.x + 7, h.y + 43, { steps: 10 }); await page.mouse.up();
-    await expect.poll(async () => Math.round((await first.boundingBox())!.height)).toBe(196);
+    await expect.poll(async () => Math.round((await first.boundingBox())!.height)).toBe(336);
     await page.screenshot({ path: 'test-results/glue-stitched.png' });
-    await page.getByRole('button', { name: '解除粘连', exact: true }).click();
+    await page.getByRole('button', { name: 'Detach glue', exact: true }).click();
     await expect(page.locator('.glue-stitch')).toHaveCount(0);
     await expect(page.locator('.semantic-edge-path')).toHaveCount(1);
   } finally { await request.delete(`/api/nodes/${a}`); await request.delete(`/api/nodes/${b}`); }

@@ -1,4 +1,4 @@
-"""The small builtin Minister: a live circular grant and ordinary Agent tools."""
+"""The Minister role: a live circular grant layered on any ordinary Agent."""
 from __future__ import annotations
 
 from typing import Any, Literal
@@ -7,10 +7,57 @@ from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
 from backend.canvas_control import CanvasBounds, CanvasCardPatch, CanvasScope, CanvasVersions
 from backend.capabilities.models import Capability, CapabilitySet
-from backend.errors import GraphValidationError, PermissionDeniedError, ResourceValidationError
-from backend.world.models import AgentConfig, CardCreate, Point, Size
+from backend.errors import PermissionDeniedError, ResourceValidationError, RevisionConflictError
+from backend.world.models import AgentConfig, CardCreate, CardPatch, MinisterRole, Point, Size
 
-MINISTER_TYPE = "core.minister"
+MINISTER_ROLE_CARD = 'core.minister-role'
+
+
+class MinisterRoleCardConfig(BaseModel):
+    model_config = ConfigDict(extra='forbid')
+
+
+class AppointmentRequest(BaseModel):
+    model_config = ConfigDict(extra='forbid')
+    expected_revision: int = Field(ge=1)
+    source_id: str | None = None
+    source_revision: int | None = Field(default=None, ge=1)
+
+
+async def appoint(services, node_id, request: AppointmentRequest):
+    """The host applies an inert role card; consuming it and granting the role commit together."""
+    from backend.canvas_glue import read_glue
+    from backend.events.models import RuntimeEvent, EventType
+    async with services._node_mutation():
+        target = services.world.get_card(node_id)
+        if not services.plugins.has_trait(target.type, 'core.agent'):
+            raise ResourceValidationError('Apply the Minister role card to an Agent')
+        if target.minister or target.revision != request.expected_revision:
+            raise RevisionConflictError('The Agent changed; check it before applying the role card again')
+        source = services.world.get_card(request.source_id) if request.source_id else None
+        if source:
+            if source.type != MINISTER_ROLE_CARD:
+                raise ResourceValidationError('Choose a Minister role card')
+            if source.revision != request.source_revision:
+                raise RevisionConflictError('The role card changed; try again')
+            if (source.parent_id or source.equipment or services.world.owned_descendants(source.id)
+                    or services.world.list_edges_from(source.id) or services.world.list_edges_to(source.id)
+                    or source.id in read_glue(services)['boxes']):
+                raise ResourceValidationError('Detach the Minister role card from its group, equipment and connections before applying it')
+        elif request.source_revision is not None:
+            raise ResourceValidationError('Choose the source role card')
+        with services.events.committed_batch(), services.database.transaction(immediate=True):
+            updated = services.world.update_card(node_id, CardPatch(minister=MinisterRole()))
+            if source:
+                services.world.delete_cards([source.id])
+        updated = services.enrich_card(updated)
+        services.events.publish_event_nowait(RuntimeEvent(type=EventType.CARD_UPDATED, node_id=node_id,
+            payload={'node': updated.model_dump(mode='json')}))
+        if source:
+            services.events.publish_event_nowait(RuntimeEvent(type=EventType.CARD_DELETED, node_id=source.id,
+                payload={'node': source.model_dump(mode='json')}))
+        return updated
+
 LEGACY_INSTRUCTION = """You are the Minister, a local canvas assistant. Use canvas_inspect before acting.
 Your circular scope follows your node and is enforced on every tool call. The user controls
 its radius and whether edits are allowed. Never claim a change unless the tool succeeded.
@@ -69,7 +116,7 @@ grant, edit other Ministers, delete cards, execute code or launch other agents.
 Connections never expand your canvas authority or your intrinsic tool set."""
 
 
-INSTRUCTION = """You are Minister, a powerful local canvas administrator.
+PRE_ROLE_INSTRUCTION = """You are Minister, a powerful local canvas administrator.
 Translate each request into a short goal, requirements and completion criteria;
 state a concise plan in the user's language, inspect, and execute. Preserve the
 goal across follow-ups such as 'try now'. Finish partial setups before duplicating
@@ -79,7 +126,9 @@ Within your live circle, ordinary creation (including Agent cards), normal confi
 movement, resizing, layout batches, grouping, glue and supported connections are
 normal administration. Use inspection's card types, configuration policies and
 relationship preflight. Sensitive changes and dangerous grants require the user's
-confirmation in your panel. Deletion generally requires confirmation. A pending
+confirmation beside you on the canvas. Ordinary plugin cards and resource connections
+do not require confirmation unless inspection explicitly marks them sensitive.
+Deletion generally requires confirmation. A pending
 proposal has NOT executed: describe its actual effects and wait for the user's
 decision. Never submit approval yourself or treat a chat message as approval.
 After approval, inspect the result and continue any remaining work.
@@ -114,19 +163,36 @@ Do not expose policy field names, revision tokens or tool limitations as product
 rules. After changes inspect every completion criterion and report remaining work.
 """
 
+INSTRUCTION = PRE_ROLE_INSTRUCTION.replace(
+    'You are Minister, a powerful local canvas administrator.',
+    'You have the Minister role in addition to your original Agent identity and tools.\n'
+    'As Minister, you are a powerful local canvas administrator.',
+).replace(
+    'Relationships do not expand your scope or intrinsic\ntools.',
+    'Relationships do not expand your Minister scope. Your original host-granted\n'
+    'Agent tools remain available; the role does not change native runtime permissions.',
+)
+
 
 def runtime_instruction(saved: str) -> str:
     # Existing cards persist their old default. Apply the current harness on each
     # run without rewriting host preferences or migrating the user's world.
-    return INSTRUCTION if saved in {"", LEGACY_INSTRUCTION, PREVIOUS_INSTRUCTION, INSTRUCTION} else INSTRUCTION + "\n\nHost preferences:\n" + saved
+    return INSTRUCTION if saved in {"", LEGACY_INSTRUCTION, PREVIOUS_INSTRUCTION, PRE_ROLE_INSTRUCTION, INSTRUCTION} else INSTRUCTION + "\n\nHost preferences:\n" + saved
 
 
-class MinisterConfig(AgentConfig):
-    model_config = ConfigDict(extra="forbid")
-    system_instruction: str = Field(default=INSTRUCTION, json_schema_extra={"privileged": True})
-    control_radius: float = Field(default=1200, ge=200, le=3000, allow_inf_nan=False,
-                                  json_schema_extra={"privileged": True})
-    allow_canvas_edits: bool = Field(default=True, json_schema_extra={"privileged": True})
+def migrate_legacy_ministers(database, registry):
+    """One narrow, atomic migration; keep IDs, ownership, runs and chat history."""
+    import json
+    with database.transaction(immediate=True) as db:
+        for row in db.execute("SELECT id, config_json FROM cards WHERE type = 'core.minister'").fetchall():
+            config = json.loads(row['config_json'])
+            role = MinisterRole(control_radius=config.pop('control_radius', 1200),
+                                allow_canvas_edits=config.pop('allow_canvas_edits', True))
+            if config.get('system_instruction', '') in {'', LEGACY_INSTRUCTION, PREVIOUS_INSTRUCTION, PRE_ROLE_INSTRUCTION, INSTRUCTION}:
+                config['system_instruction'] = AgentConfig().system_instruction
+            config = registry.validate_config('agent', config)
+            db.execute("UPDATE cards SET type='agent', plugin_id=?, config_json=?, minister_json=?, revision=revision+1 WHERE id=?",
+                       (registry.node_type_owner_id('agent'), json.dumps(config), role.model_dump_json(), row['id']))
 
 
 class MinisterBounds(CanvasBounds):
@@ -140,7 +206,7 @@ class MinisterBounds(CanvasBounds):
 
 def minister_card(services, node_id):
     card = services.world.get_card(node_id)
-    if card.type != MINISTER_TYPE:
+    if card.minister is None or not services.plugins.has_trait(card.type, "core.agent"):
         raise PermissionDeniedError("Canvas tools belong only to a Minister")
     return card
 
@@ -151,12 +217,12 @@ def control(services, node_id, *, editing=False, review=None):
         review = lambda effect: review_change(services, node_id, effect)
     def authorize(actor_id):
         card = minister_card(services, actor_id)
-        radius = card.config["control_radius"]
+        radius = card.minister.control_radius
         cx, cy = card.position.x + card.size.width / 2, card.position.y + card.size.height / 2
         return CanvasScope(
             bounds=MinisterBounds(x=cx - radius, y=cy - radius, width=radius * 2, height=radius * 2),
             operations={"query", "create", "delete", "move", "resize", "configure", "rename", "connect", "disconnect", "update_edge", "reparent", "attach", "detach", "group", "glue"}
-                if editing and card.config["allow_canvas_edits"] else {"query"},
+                if editing and card.minister.allow_canvas_edits else {"query"},
             node_types={item.id for item in services.plugins.catalog().node_types},
             relationships={item.id for item in services.plugins.catalog().relationships if not item.generated},
             principal_relationships={"read", "view", "read_edit", "participate", "communicate"},
@@ -172,6 +238,10 @@ class InspectRequest(BaseModel):
     limit: int = Field(default=40, ge=1, le=100)
     source_id: str = Field(default="", description="Optional connection preflight source; supply target_id too. Use the principal ID for yourself.")
     target_id: str = Field(default="", description="Optional connection preflight target; supply source_id too.")
+
+
+class ObserveRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
 
 
 class CreateRequest(BaseModel):
@@ -245,6 +315,7 @@ class OrganizeRequest(BaseModel):
 
 # The existing registry and projection build ordinary scoped runtime tools.
 TOOLS = {
+    "observe": (ObserveRequest, "See a current screenshot of your jurisdiction in the connected OAW canvas. Requires an image-capable model. Returns actual image input, card IDs, scope and versions; missing/unmounted cards and masked content are reported. Use canvas_inspect for complete state, existing scoped tools to act, then observe again to verify. Requires OAW to be open."),
     "inspect": (InspectRequest, "Inspect/search the local world and your controller identity. Returns current permission, relationship types, version tokens and Conversation readiness. Supply source_id and target_id to preflight a connection before acting. Empty query lists cards; paginate with offset/limit."),
     "create": (CreateRequest, "Create a normal card, including an Agent, inside your circle. Use catalog types and config fields from inspection. Sensitive creation returns a proposal awaiting human confirmation. Coordinates are absolute canvas coordinates. Inspect first."),
     "move": (MoveRequest, "Move an card to absolute canvas coordinates. Its whole saved rectangle and all affected cards must stay inside your circle. Supply inspected versions."),
@@ -260,7 +331,7 @@ TOOLS = {
 def capabilities(broker, card):
     result = []
     for action in TOOLS:
-        if action != "inspect" and not card.config["allow_canvas_edits"]:
+        if action not in {"inspect", "observe"} and not card.minister.allow_canvas_edits:
             continue
         definition = broker.plugins.capability_definition(f"minister.{action}")
         result.append(Capability(id=f"minister.{action}:{card.id}", kind=definition.kind,
@@ -312,12 +383,12 @@ async def inspect(services, node_id, request):
                 "edges": [edge for edge in view["edges"] if edge["source"] in ids or edge["target"] in ids],
                 "next_offset": request.offset + len(nodes) if request.offset + len(nodes) < len(matches) else None,
                 "scope": {"center": {"x": card.position.x + card.size.width / 2, "y": card.position.y + card.size.height / 2},
-                          "radius": card.config["control_radius"]},
+                          "radius": card.minister.control_radius},
                 "permission": "I can organize and configure this area. Destructive or sensitive effects require your confirmation."
-                    if card.config["allow_canvas_edits"] else "I currently only have permission to inspect this area.",
+                    if card.minister.allow_canvas_edits else "I currently only have permission to inspect this area.",
                 "relationship_types": [{"id": kind, "description": services.plugins.relationship(kind).description}
                                        for kind in sorted(control(services, node_id)._scope().relationships)],
-                "allowed_operations": list(TOOLS) if card.config["allow_canvas_edits"] else ["inspect"], **preflight}
+                "allowed_operations": list(TOOLS) if card.minister.allow_canvas_edits else ["inspect", "observe"], **preflight}
 
 
 def chat_readiness(services, conversation_id, visible_ids):
@@ -347,6 +418,9 @@ async def invoke(services, capability, arguments):
     except ValidationError:
         raise ResourceValidationError("Invalid canvas tool arguments; follow its schema and copy versions from canvas_inspect") from None
     node_id = capability.agent_id
+    if action == "observe":
+        from backend.visual_observation import observe
+        return await observe(services, node_id)
     # Hold the existing barrier across the policy check and the facade call.
     async with services._node_mutation(read_only=action == "inspect"):
         minister_card(services, node_id)
@@ -380,24 +454,17 @@ async def ensure_chat(services, node_id):
 
 def register(registry):
     from backend.plugins import CapabilityDefinition, NodeTypeDefinition
-    from backend.plugins.builtin import AgentNodeBehavior
-    from backend.plugins.lifecycle import NodeLifecycleTransaction
 
-    class MinisterLifecycle(AgentNodeBehavior):
-        async def prepare_create(self, context, node, request):
-            if node.parent_id or node.equipment:
-                raise GraphValidationError("Place Ministers directly on the canvas")
-            return await super().prepare_create(context, node, request)
-
-        async def prepare_update(self, context, current, updated, request):
-            if updated.parent_id or updated.equipment:
-                raise GraphValidationError("Place Ministers directly on the canvas")
-            # Host grant changes must take effect while the provider is running.
-            # They are read live by the facade and do not reconfigure the model.
-            runtime_fields = (current.config.keys() | updated.config.keys()) - {"control_radius", "allow_canvas_edits"}
-            if current.name == updated.name and all(current.config.get(key) == updated.config.get(key) for key in runtime_fields):
-                return NodeLifecycleTransaction()
-            return await super().prepare_update(context, current, updated, request)
+    registry.register_node_type(NodeTypeDefinition(
+        id=MINISTER_ROLE_CARD, label='Minister role',
+        description='Drag this role card onto an Agent to appoint it as Minister.',
+        icon='crown', color='#527e68', deck_id='roles', deck_label='Roles', deck_icon='crown',
+        default_name='Minister role', default_size=(224, 300), default_status='available',
+        statuses=frozenset({'available'}), config_model=MinisterRoleCardConfig,
+        traits=frozenset({'core.minister-role'}),
+        surfaces={'preview': True, 'inspector': False, 'workspace': False},
+        canvas_create_requires_confirmation=False,
+    ))
 
     async def handler(context, capability, arguments):
         return await context.minister_action(capability, arguments)
@@ -415,8 +482,3 @@ def register(registry):
             schema["properties"]["position"]["description"] = "Absolute canvas coordinates as an object with numeric x and y."
         registry.register_capability(CapabilityDefinition(kind=f"minister.{action}", tool_name=f"canvas_{action}",
             target_parameter="minister", description=description, input_schema=schema), handler)
-    registry.register_node_type(NodeTypeDefinition(id=MINISTER_TYPE, label="Minister", description="Local canvas assistant with a visible control radius",
-        icon="scan", color="#48796b", deck_id="agents", deck_label="Agents", deck_icon="bot", default_name="Minister",
-        default_size=(96, 96), default_status="idle", statuses=frozenset({"idle", "running", "waiting", "error"}),
-        config_model=MinisterConfig, traits=frozenset({"core.agent", "ui.minister.v1"}),
-        surfaces={"preview": False, "inspector": True, "workspace": False}, lifecycle=MinisterLifecycle()))

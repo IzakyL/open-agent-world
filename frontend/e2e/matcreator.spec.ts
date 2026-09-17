@@ -139,17 +139,12 @@ test('palette Toolset drops directly into an inline graph workspace', async ({ p
   const workspace = container.getByRole('region', { name: 'Demo knowledge workspace', exact: true });
   await expect(workspace).toBeVisible();
   await page.getByRole('tab', { name: /Tools/ }).click();
-  const palette = page.locator('.palette-item').filter({ hasText: 'Materials Core' });
+  const palette = page.locator('[data-palette-card="matcreator.core"]');
   const destination = workspace.locator('.kdg-canvas');
   async function dragPalette() {
     await page.locator('.component-palette').hover({ position: { x: 20, y: 20 } });
-    const dataTransfer = await page.evaluateHandle(() => new DataTransfer());
-    await palette.dispatchEvent('dragstart', { dataTransfer });
     const target = await destination.boundingBox();
-    const event = { dataTransfer, clientX: Math.max(50, target!.x + target!.width * .65), clientY: target!.y + 100 };
-    await destination.dispatchEvent('dragover', event);
-    await destination.dispatchEvent('drop', event);
-    await palette.dispatchEvent('dragend', { dataTransfer });
+    await palette.dragTo(destination, { targetPosition: { x: target!.width * .65, y: 100 } });
   }
   const cancelled = new Promise<void>(resolve => page.once('dialog', async dialog => { expect(dialog.message()).toContain('Materials Core'); await dialog.dismiss(); resolve(); }));
   await dragPalette();
