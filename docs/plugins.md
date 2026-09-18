@@ -161,6 +161,13 @@ canonical compact example.
 
 ## Native file resources
 
+Plugin API 1.20 adds `PluginDescriptor.requires_plugins`, a tuple of plugin IDs.
+The loader orders local and installed plugins by these dependencies before
+registration, and reports missing dependencies or cycles before installing them.
+Direct registry installation also requires dependencies to be installed first.
+Declare these when a preset references another plugin's node types, for example
+MatCreator's `requires_plugins=("science.structure-viewer",)`.
+
 Plugin API 1.19 adds host observation budgets to Sandbox execution and package
 installation, plus `CapabilityContext.wait_sandbox_operation(...)`. Long operations
 return a running receipt; plugins can await that ID without relaunching work.

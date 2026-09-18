@@ -42,9 +42,9 @@ def definition():
     layout = {"version": 2, "hidden_sections": [], "root": split("horizontal", .22,
         split("vertical", .45, pane("conversation", "sessions"), pane("sandbox", "files")),
         split("horizontal", .51, pane("conversation", "conversation"),
-            split("vertical", .66,
+            split("vertical", .5,
                 tabs(view("tasks"), view("sandbox", "preview"), view("knowledge"), view("conversation", "participants")),
-                pane("sandbox"))))}
+                tabs(view("sandbox"), view("structure")))))}
     nodes = [
         PresetNode(key="group", type="legion", name="MatCreator research", parent_key=None, presentation="preview",
                    config={"mode": "group", "description": "Materials research: plan, execute, verify and learn.", "workspace_layout": layout}),
@@ -53,16 +53,19 @@ def definition():
         PresetNode(key="conversation", type="conversation", name="Research conversation", x=540, y=220),
         PresetNode(key="sandbox", type="sandbox", name="Research files & compute", x=900, y=220),
         PresetNode(key="tasks", type="matcreator.tasks", name="Research tasks", x=180, y=720),
+        PresetNode(key="structure", type="science.structure-viewer", name="Structure viewer", x=540, y=720),
         PresetNode(key="knowledge", type="matcreator.kdg", name="Research knowledge", x=900, y=720),
     ]
     edges = [PresetEdge(source="agent", target=target, relationship=relationship) for target, relationship in (
         ("conversation", "participate"), ("sandbox", "execute"),
         ("tasks", "matcreator.tasks.manage"), ("knowledge", "matcreator.kdg.learn"))]
+    edges.extend(PresetEdge(source="structure", target=target, relationship="core.file-preview")
+                 for target in ("conversation", "sandbox"))
     for index, (key, name) in enumerate((("core", "Materials Core"), ("simulation", "Atomistic Simulation"),
                                        ("ai", "Materials AI"), ("research", "Research / Remote Compute"))):
         nodes.append(PresetNode(key=key, type="matcreator." + key, name=name,
                                x=180 + (index % 2) * 1400, y=1540 + (index // 2) * 1500))
         edges.append(PresetEdge(source="agent", target=key, relationship="matcreator." + key + ".use"))
-    return LegionPresetDefinition(id="matcreator.research", name="MatCreator research",
+    return LegionPresetDefinition(id="matcreator.research", name="MatCreator research", revision=2,
         description="Materials research with sessions, files, conversation, a task board and scientific skills.",
         nodes=tuple(nodes), edges=tuple(edges))

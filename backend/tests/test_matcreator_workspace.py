@@ -39,7 +39,14 @@ def test_research_preset_deploys_complete_independent_workspaces_and_can_be_save
     assert all(a[key] in layout_text for key in ['conversation', 'sandbox', 'tasks', 'knowledge'])
     assert all(section in layout_text for section in ['sessions', 'files', 'conversation', 'preview'])
     assert {'card_id': a['sandbox']} in _views(layout['root'])
-    assert len(first['edges']) == 8
+    assert nodes[a['structure']]['type'] == 'science.structure-viewer'
+    lower_right = layout['root']['second']['second']['second']
+    assert lower_right['kind'] == 'tabs'
+    assert lower_right['views'] == [{'card_id': a['sandbox']}, {'card_id': a['structure']}]
+    assert {(edge['source'], edge['target'], edge['relationship']) for edge in first['edges']
+            if edge['source'] == a['structure']} == {
+        (a['structure'], a[target], 'core.file-preview') for target in ('conversation', 'sandbox')}
+    assert len(first['edges']) == 10
     assert document(client, a['core'])['value']['skills']
     created = edit(client, a['tasks'], 'create_plan', {'title': 'Copper', 'session_id': 'source-session', 'tasks': [
         {'id': 'build', 'title': 'Build copper', 'status': 'done', 'result': '32 atoms', 'outputs': ['copper.xyz']}]})
@@ -55,6 +62,9 @@ def test_research_preset_deploys_complete_independent_workspaces_and_can_be_save
     assert plan['tasks'][0]['result'] == '' and plan['tasks'][0]['outputs'] == []
     group = next(node for node in copy.json()['nodes'] if node['type'] == 'legion')
     assert board['id'] in json.dumps(group['config']['workspace_layout'])
+    viewer = next(node for node in copy.json()['nodes'] if node['type'] == 'science.structure-viewer')
+    assert viewer['id'] in json.dumps(group['config']['workspace_layout'])
+    assert len([edge for edge in copy.json()['edges'] if edge['source'] == viewer['id']]) == 2
     assert not any(node_id in json.dumps(group['config']['workspace_layout']) for node_id in a.values())
 
 
@@ -133,6 +143,14 @@ def test_invalid_plugin_presets_do_not_partially_install():
         registry.install(PluginDefinition(PluginDescriptor(id='example', version='1', plugin_api_version='1.18'), register))
     assert not registry.has_plugin('example')
     assert registry.legion_presets() == ()
+
+
+def test_research_preset_requires_enabled_structure_viewer(client):
+    services = client.app.state.services
+    services.plugins.set_enabled('science.structure-viewer', False)
+    assert 'matcreator.research' not in {item['id'] for item in client.get('/api/legions/presets').json()}
+    services.plugins.set_enabled('science.structure-viewer', True)
+    assert 'matcreator.research' in {item['id'] for item in client.get('/api/legions/presets').json()}
 
 
 def test_research_board_survives_restart_and_scoped_tool_projection(tmp_path):

@@ -68,6 +68,34 @@ test('MatCreator preset opens sessions, files, conversation and a persistent res
   expect(fit.scrollHeight).toBeLessThanOrEqual(fit.height + 1);
   await expect(workspace.getByRole('region', { name: 'Sandbox terminal', exact: true })).toBeVisible();
   await expect(workspace.getByRole('button', { name: 'Start', exact: true })).toBeVisible();
+  // Exercise the preset's real Conversation grant and renderer in its lower-right tab.
+  const conversation = await (await request.get(`/api/conversations/${instance.node_ids.conversation}`)).json();
+  const sessionBase = `/api/conversations/${instance.node_ids.conversation}/sessions/${conversation.sessions[0].id}`;
+  const uploaded = await request.post(`${sessionBase}/attachments?filename=helium.xyz`, {
+    data: Buffer.from('1\nHelium\nHe 0 0 0\n'), headers: { 'Content-Type': 'application/octet-stream' },
+  });
+  expect(uploaded.status()).toBe(201);
+  const attachment = await uploaded.json();
+  expect((await request.post(`${sessionBase}/messages`, { data: {
+    attachments: [{ version_id: attachment.version_id, path: attachment.path }],
+  } })).status()).toBe(202);
+  await workspace.getByRole('button', { name: 'Open helium.xyz', exact: true }).click();
+  await workspace.getByRole('tab', { name: 'Structure viewer', exact: true }).click();
+  const viewer = workspace.locator('.structure-viewer--workspace');
+  await expect(viewer).toBeVisible();
+  await expect(viewer.locator('.structure-canvas')).toHaveAttribute('data-atom-count', '1', { timeout: 30_000 });
+  await expect(viewer.locator('canvas').first()).toBeVisible();
+  // Wait for an actual interactive atom, not just a parsed file or blank canvas.
+  await expect(async () => {
+    const box = (await viewer.locator('canvas').first().boundingBox())!;
+    await page.mouse.move(box.x + 5, box.y + 5);
+    await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
+    await expect(viewer.locator('.elem-name')).toHaveText('Helium', { timeout: 500 });
+  }).toPass({ timeout: 15_000 });
+  await page.screenshot({ path: 'test-results/matcreator-structure-viewer.png' });
+  // Switching tabs retains access to the Sandbox controls.
+  await workspace.getByRole('tab', { name: 'Research files & compute', exact: true }).click();
+  await expect(workspace.getByRole('button', { name: 'Start', exact: true })).toBeVisible();
   await workspace.getByRole('tab', { name: /Research files & compute · File preview/ }).click();
   await workspace.getByRole('tab', { name: 'Research knowledge', exact: true }).click();
   await expect(workspace.getByRole('region', { name: 'Know-Do Graph workspace', exact: true })).toBeVisible();

@@ -12,10 +12,16 @@ cards to the current world beforehand.
 
 The layout provides Sessions and Files on the left, Conversation in the middle,
 and Research tasks / File preview / Research knowledge / Participants
-as tabs on the right. Below those tabs, Sandbox controls, settings and the terminal
-stay directly accessible. Scientific Toolsets and the MatCreator Agent stay available
+as tabs on the right. The lower-right tabs contain Sandbox controls/settings/terminal
+and **Structure viewer**. The viewer follows structure files opened from either
+the Conversation or Sandbox through their `core.file-preview` connections.
+Scientific Toolsets and the MatCreator Agent stay available
 in the workspace's bottom bar. Edit layout with the standard Legion controls;
 saving to the library preserves its arrangement and remaps owners on deployment.
+
+The plugin requires the bundled `science.structure-viewer` plugin (loaded first
+through its declared plugin dependency). New deployments include this viewer;
+existing canvas formations keep their user-edited layout and connections.
 
 The preset connects one native OAW Agent to a Conversation, a stopped Sandbox,
 the task board, all four scientific Toolsets, and the Know-Do Graph with **Use and

@@ -6,7 +6,7 @@ from importlib.metadata import EntryPoint, entry_points
 from pathlib import Path
 
 from backend.plugins.builtin import create_builtin_registry
-from backend.plugins.registry import PluginRegistry
+from backend.plugins.registry import PluginDescriptor, PluginRegistry
 
 
 ENTRY_POINT_GROUP = "open_agent_world.plugins"
@@ -61,12 +61,36 @@ def load_plugin_registry(plugin_directory: Path | None = None, *, plugin_directo
         for entry in sorted(selected, key=lambda item: item.name)
         if (entry.name, entry.value) not in local_keys
     ]
+    pending = []
     for entry_point, origin in candidates:
         try:
             factory = entry_point.load()
             if not callable(factory):
                 raise TypeError("entry point must expose a plugin factory")
             plugin = factory()
+            if not isinstance(getattr(plugin, "descriptor", None), PluginDescriptor):
+                raise TypeError("plugin descriptor must be a PluginDescriptor")
+            pending.append((plugin, entry_point, origin))
+        except Exception as exc:
+            raise RuntimeError(f"Cannot load plugin {entry_point.name!r} from {origin}: {exc}") from exc
+    # Resolve declared dependencies before registration so cross-plugin presets
+    # are validated atomically against their actual node/relationship owners.
+    ordered = []
+    available = {plugin.id for plugin in registry.plugins()}
+    while pending:
+        ready = [item for item in pending if set(item[0].descriptor.requires_plugins) <= available]
+        if not ready:
+            details = "; ".join(
+                f"{plugin.descriptor.id} from {origin} requires {', '.join(sorted(set(plugin.descriptor.requires_plugins) - available))}"
+                for plugin, _, origin in pending
+            )
+            raise RuntimeError(f"Missing or cyclic plugin dependencies: {details}")
+        for item in ready:
+            pending.remove(item)
+            ordered.append(item)
+            available.add(item[0].descriptor.id)
+    for plugin, entry_point, origin in ordered:
+        try:
             registry.install(plugin)
             if isinstance(origin, Path):
                 with origin.open("rb") as stream:

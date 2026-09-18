@@ -26,7 +26,7 @@ from backend.plugins.documents import NodeDocumentDefinition
 from backend.plugins.containers import NodeContainerDefinition
 from backend.plugins.execution import NodeExecutionDefinition
 
-PLUGIN_API_VERSION = "1.19"
+PLUGIN_API_VERSION = "1.20"
 _IDENTIFIER = re.compile(r"^[a-z][a-z0-9]*(?:[._:/-][a-z0-9]+)*$")
 _API_VERSION = re.compile(r"^(0|[1-9]\d*)\.(0|[1-9]\d*)$")
 
@@ -52,6 +52,7 @@ class PluginDescriptor(BaseModel):
     name: str | None = Field(default=None, min_length=1, max_length=120)
     description: str | None = Field(default=None, max_length=500)
     python_requirements: tuple[str, ...] = ()
+    requires_plugins: tuple[str, ...] = ()
 
 
 class PackDefinition(BaseModel):
@@ -454,6 +455,12 @@ class PluginRegistry:
             )
         if descriptor.id in self._plugins:
             raise ValueError(f"plugin {descriptor.id!r} is already installed")
+        for dependency in descriptor.requires_plugins:
+            self.validate_identifier(dependency, "plugin dependency")
+            if not self.has_plugin(dependency):
+                raise PluginCompatibilityError(
+                    f"plugin {descriptor.id!r} requires plugin {dependency!r} to be installed first"
+                )
         register = getattr(plugin, "register", None)
         if not callable(register):
             raise TypeError(f"plugin {descriptor.id!r} must define register(registration)")
