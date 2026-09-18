@@ -132,6 +132,21 @@ class SandboxStateError(SandboxError):
     pass
 
 
+class SandboxOperationError(SandboxError):
+    """An operational failure, safe to return without ending an Agent turn."""
+
+    code = "sandbox_operation_failed"
+    retryable = False
+
+    def feedback(self):
+        return {"ok": False, "error": {"code": self.code,
+            "type": type(self).__name__, "message": str(self), "retryable": self.retryable}}
+
+
+class SandboxPreparationError(SandboxOperationError):
+    code = "environment_preparation_failed"
+
+
 class SandboxSecurityError(SandboxError):
     """A required native security primitive could not be established."""
 
@@ -146,6 +161,9 @@ class SandboxValidationError(SandboxError, ValueError):
     pass
 
 
-class SandboxBusyError(SandboxStateError, SandboxValidationError):
+class SandboxBusyError(SandboxOperationError, SandboxStateError, SandboxValidationError):
     """A temporary shared-resource conflict that the caller can retry."""
+
+    code = "resource_busy"
+    retryable = True
 

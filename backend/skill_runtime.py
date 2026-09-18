@@ -21,6 +21,8 @@ class RunSkillScript(BaseModel):
     environment_id: StrictStr | None = None
     target_id: StrictStr | None = None
     timeout_seconds: float | None = Field(default=None, gt=0, le=3600, strict=True, allow_inf_nan=False)
+    wait_seconds: float | None = Field(default=None, ge=0, le=60, strict=True, allow_inf_nan=False,
+        description="Seconds to await the result before returning an operation_id. Wait later with wait_sandbox_operation; do not resubmit running work.")
     skill_id: StrictStr = Field(description="World node ID returned by reading an authorized Skill or listing its Toolbox.")
     script_path: StrictStr = Field(validation_alias=AliasChoices("script", "script_path"),
         description="Relative bundled file, for example scripts/check.py.")
@@ -37,6 +39,9 @@ class RunSkillScript(BaseModel):
 
 def skill_script_schema():
     schema = RunSkillScript.model_json_schema()
+    # Public host calls retain synchronous defaults; Agent tools opt into yielding.
+    schema["properties"]["wait_seconds"] = {"type": "number", "minimum": 0, "maximum": 60,
+        "default": 1, "description": "Host observation budget. Use wait_sandbox_operation with the returned operation_id for unfinished work."}
     del schema["properties"]["skill_id"]
     del schema["properties"]["environment_id"]
     del schema["properties"]["target_id"]

@@ -77,8 +77,11 @@ def _envelope(request: dict[str, Any]) -> bytes:
 
 
 def _error(raw: dict[str, str]) -> Exception:
-    from .models import SandboxNetworkError
+    from .models import SandboxNetworkError, SandboxOperationError, SandboxBusyError, SandboxPreparationError
     kind = {
+        "SandboxOperationError": SandboxOperationError,
+        "SandboxBusyError": SandboxBusyError,
+        "SandboxPreparationError": SandboxPreparationError,
         "SandboxNetworkError": SandboxNetworkError,
         "SandboxNotFoundError": SandboxNotFoundError,
         "SandboxValidationError": SandboxValidationError,
@@ -155,6 +158,12 @@ class WslSandboxBackend(SandboxBackend):
         except asyncio.CancelledError:
             await task
             raise
+
+    async def python_status(self):
+        from .python_runtime import SharedPythonRuntime
+        import hashlib
+        root = self._managed_root / "runtime" / "platforms" / hashlib.sha256(self._runtime_id.encode()).hexdigest()[:16]
+        return await asyncio.to_thread(SharedPythonRuntime(root).snapshot)
 
     def _payload(self, operation: str, sandbox_id: str, **values: Any) -> dict[str, Any]:
         return {"operation": operation, "sandbox_id": sandbox_id,
@@ -353,7 +362,8 @@ class WslSandboxBackend(SandboxBackend):
                 cancelled=raw["cancelled"])
             return result
         except BaseException as error:
-            if not isinstance(error, asyncio.CancelledError):
+            from .models import SandboxOperationError
+            if not isinstance(error, (asyncio.CancelledError, SandboxOperationError)):
                 self._failed.add(sandbox_id)
             raise
         finally:

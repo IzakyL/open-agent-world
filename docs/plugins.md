@@ -161,6 +161,13 @@ canonical compact example.
 
 ## Native file resources
 
+Plugin API 1.19 adds host observation budgets to Sandbox execution and package
+installation, plus `CapabilityContext.wait_sandbox_operation(...)`. Long operations
+return a running receipt; plugins can await that ID without relaunching work.
+Existing direct host calls remain synchronous when the observation budget is
+omitted; Agent-facing tools opt into a one-second default observation budget.
+See [Shared Python and operation waiting](shared-python-runtime.md#agent-execution-and-waiting).
+
 Plugin API 1.18 adds `registration.register_legion_preset(LegionPresetDefinition(...))`.
 Import `LegionPresetDefinition`, `PresetNode` and `PresetEdge` from
 `open_agent_world.plugin_api`. Preset IDs must use the plugin namespace. Declare

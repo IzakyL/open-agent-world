@@ -190,32 +190,39 @@ class _CapabilityContext:
         }, (ToolImage(path.read_bytes(), record.media_type),))
 
     async def execute_sandbox(
-        self, agent_id: str, sandbox_id: str, argv: list[str], *, environment_id: str | None = None, target_id: str | None = None, timeout_seconds: float | None = None
+        self, agent_id: str, sandbox_id: str, argv: list[str], *, environment_id: str | None = None, target_id: str | None = None, timeout_seconds: float | None = None, wait_seconds: float | None = None
     ) -> dict[str, Any]:
         self.services.capabilities.require_sandbox_execute(agent_id, sandbox_id)
         if self.services.sandbox_backend is None:
             raise RuntimeUnavailableError(
                 "sandbox execution is not configured on this host"
             )
-        result = await self.services.execute_sandbox(
-            sandbox_id, argv, agent_id=agent_id, environment_id=environment_id, target_id=target_id, timeout_seconds=timeout_seconds
-        )
-        return asdict(result)
+        return await self.services.sandbox_operations.submit(agent_id, sandbox_id, "command",
+            lambda operation_id: self.services.execute_sandbox(sandbox_id, argv,
+                agent_id=agent_id, environment_id=environment_id, target_id=target_id,
+                timeout_seconds=timeout_seconds, _operation_id=operation_id), wait_seconds=wait_seconds)
 
     async def run_skill_script(self, agent_id: str, sandbox_id: str, arguments: dict[str, Any]) -> dict[str, Any]:
         from backend.skill_runtime import RunSkillScript
         request = _validate_tool_request(RunSkillScript, arguments)
-        result = await self.services.execute_sandbox(sandbox_id,
-            [*request.interpreter, request.script_path, *request.argv],
-            agent_id=agent_id, _skill_request=request, environment_id=request.environment_id, target_id=request.target_id, timeout_seconds=request.timeout_seconds)
-        return asdict(result)
+        return await self.services.sandbox_operations.submit(agent_id, sandbox_id, "skill_script",
+            lambda operation_id: self.services.execute_sandbox(sandbox_id,
+                [*request.interpreter, request.script_path, *request.argv],
+                agent_id=agent_id, _skill_request=request, environment_id=request.environment_id,
+                target_id=request.target_id, timeout_seconds=request.timeout_seconds, _operation_id=operation_id),
+            wait_seconds=request.wait_seconds)
 
     async def copy_skill_resource(self, agent_id, sandbox_id, arguments):
         from backend.sandbox_workspace import copy_skill
         return await copy_skill(self.services, sandbox_id, agent_id=agent_id, **arguments)
 
-    async def install_python_packages(self, agent_id, sandbox_id, requirements):
-        return await self.services.install_python_packages(sandbox_id, requirements, agent_id=agent_id)
+    async def install_python_packages(self, agent_id, sandbox_id, requirements, wait_seconds=None):
+        return await self.services.sandbox_operations.submit(agent_id, sandbox_id, "python_install",
+            lambda operation_id: self.services.install_python_packages(sandbox_id, requirements, agent_id=agent_id, _operation_id=operation_id),
+            wait_seconds=wait_seconds)
+
+    async def wait_sandbox_operation(self, agent_id, sandbox_id, operation_id=None, wait_seconds=30):
+        return await self.services.sandbox_operations.wait(agent_id, sandbox_id, operation_id, wait_seconds)
 
     async def cancel_sandbox_command(self, agent_id: str, sandbox_id: str, command_id: str) -> dict[str, Any]:
         from backend.sandbox.history import stop
@@ -232,6 +239,9 @@ class _CapabilityContext:
     async def inspect_sandbox(self, agent_id: str, sandbox_id: str) -> dict[str, Any]:
         self.services.capabilities.require_sandbox_execute(agent_id, sandbox_id)
         info = await self.services.get_sandbox(sandbox_id)
+        from backend.sandbox.manager import SandboxManager
+        backend = self.services.sandbox_backend
+        python_status = await backend.python_status(sandbox_id) if isinstance(backend, SandboxManager) else None
         self.services.capabilities.require_sandbox_execute(agent_id, sandbox_id)
         from backend.execution_config import configuration_summary
         active = [dict(r) for r in self.services._sandbox_commands.values() if r["sandbox_id"] == sandbox_id]
@@ -248,10 +258,11 @@ class _CapabilityContext:
             "supported_network_modes": list(info.supported_network_modes),
             "network_reason": info.network_reason,
             "configuration": configuration_summary(self.services, sandbox_id),
-            "active_commands": [{key: item.get(key) for key in ("id", "caller", "run_id", "argv", "started_at")} for item in active],
+            "active_commands": [{key: item.get(key) for key in ("id", "operation_kind", "requirements", "caller", "run_id", "argv", "started_at")} for item in active],
             "current_caller": current["caller"] if current else None,
             "current_command_id": current["id"] if current else None,
             "recent_commands": recent_summaries(self.services, sandbox_id),
+            "shared_python": python_status,
             "console_mode": "non-interactive; each command starts in the configured workspace; cd/export/activation do not persist",
             "command_timeout": self.services.world.get_card(sandbox_id).config.get("command_timeout", 600),
             "installation": "Use install_python_packages for the shared read-only Python environment. On Linux/WSL, HOME=/sandbox/home persists; use $HOME/.local/bin or $HOME/bin for local CLI tools, or create a private venv in HOME/workspace and invoke its interpreter explicitly. npm -g defaults to $HOME/.local, with bins on PATH. /tmp is ephemeral.",
@@ -316,9 +327,11 @@ class WorldAgentCapabilityProvider:
                 from backend.capabilities.projection import authorize_invocation
                 capability = authorize_invocation(self.services, agent_id, capability_id, arguments)
         handler = self.services.plugins.capability_handler(capability.kind)
-        from backend.sandbox.models import SandboxValidationError, SandboxStateError
+        from backend.sandbox.models import SandboxValidationError, SandboxStateError, SandboxOperationError
         try:
             return await handler(_CapabilityContext(self.services), capability, dict(arguments))
+        except SandboxOperationError as exc:
+            return exc.feedback()
         except SandboxValidationError as exc:
             # All Agent runtimes already return domain errors as tool feedback.
             # Validation can also fail during bundle construction/materialization,

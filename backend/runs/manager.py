@@ -98,6 +98,7 @@ class RunManager:
     execution_deadline_seconds: float = 3600.0
     _cleanup_tasks: dict[str, asyncio.Task] = field(default_factory=dict)
     admission_check: Any = None
+    cleanup_execution: Callable[[str], Awaitable[None]] | None = None
     persist_provider_event: Callable[[AgentEvent, RunRecord, str, str], Awaitable[str | None]] | None = None
 
     def __post_init__(self):
@@ -430,6 +431,8 @@ class RunManager:
             # finished unwinding. Agent deletion must join that tail before it
             # removes provider state.
             await self._join_runtime_task(run_id)
+            if self.cleanup_execution is not None:
+                await self.cleanup_execution(run_id)
             if propagate:
                 for child in self.list_child_runs(run_id):
                     if child.lifecycle.get('cancellation_policy', 'dependent') == 'dependent':
@@ -463,6 +466,8 @@ class RunManager:
                 for child in self.list_child_runs(run_id):
                     if child.lifecycle.get('cancellation_policy', 'dependent') == 'dependent':
                         await self.cancel_run(child.run_id, propagate=True)
+            if self.cleanup_execution is not None:
+                await self.cleanup_execution(run_id)
             if provider is not None:
                 await provider.stop(run_id)
             if task_to_wait is not None:

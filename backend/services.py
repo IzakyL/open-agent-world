@@ -553,6 +553,7 @@ class ApplicationServices:
         default_factory=lambda: ContextVar("execution_secrets", default=()), init=False, repr=False)
     run_manager: RunManager | None = None
     node_execution: NodeExecutionService | None = None
+    sandbox_operations: Any = None
     summoning: SummoningService | None = None
     sandbox_backend: SandboxBackend | None = None
     plugin_bootstrap: Any = None
@@ -689,6 +690,7 @@ class ApplicationServices:
         if self.plugin_bootstrap is not None:
             await self.plugin_bootstrap.shutdown()
         await self.node_execution.shutdown()
+        await self.sandbox_operations.shutdown()
         context = self._node_lifecycle_context()
         for card in self.world.list_cards():
             lifecycle = self.plugins.node_type(card.type).lifecycle
@@ -2898,6 +2900,7 @@ class ApplicationServices:
         agent_id: str | None = None,
         _skill_request: RunSkillScript | None = None,
         _keep_on_disconnect: bool = False,
+        _operation_id: str | None = None,
         environment_id: str | None = None,
         target_id: str | None = None,
     ) -> CommandResult:
@@ -2927,7 +2930,7 @@ class ApplicationServices:
                 secret_token = None
                 receipt = None
                 from backend.sandbox.models import execution_command_id
-                command_id = uuid4().hex
+                command_id = _operation_id or uuid4().hex
                 command_token = execution_command_id.set(command_id)
                 try:
                     execution_argv = argv
@@ -2970,14 +2973,15 @@ class ApplicationServices:
                         self._require_card_type(sandbox_id, CardType.SANDBOX)
                         from backend.sandbox.history import save, key as command_history_key
                         from backend.security.redaction import redact
-                        receipt = {"id": command_id, "caller": agent_id or "user", "state": "running",
+                        receipt = self._sandbox_commands.get(command_id, {}) if _operation_id else {}
+                        receipt.update({"id": command_id, "caller": agent_id or "user", "state": "running",
                             "sandbox_id": sandbox_id,
                             "history_key": command_history_key(self, sandbox_id),
                             "run_id": self.run_manager.current_context.run_id if self.run_manager.current_context else None,
                             "started_at": datetime.now(UTC).isoformat(), "argv": redact(list(execution_argv), secrets),
-                            "skill_id": _skill_request.skill_id if _skill_request else None}
+                            "skill_id": _skill_request.skill_id if _skill_request else None})
                         peers = tuple({key: item.get(key) for key in ("id", "caller", "run_id", "argv", "started_at")}
-                            for item in self._sandbox_commands.values() if item["sandbox_id"] == sandbox_id)
+                            for item in self._sandbox_commands.values() if item["sandbox_id"] == sandbox_id and item["id"] != command_id)
                         self._sandbox_commands[command_id] = receipt
                         self._sandbox_tasks[command_id] = asyncio.current_task()
                         save(self, sandbox_id, receipt)
@@ -3032,7 +3036,7 @@ class ApplicationServices:
                                 receipt.update(state="interrupted", error="Command interrupted")
                             save(self, sandbox_id, receipt)
                     finally:
-                        if receipt is not None:
+                        if receipt is not None and _operation_id is None:
                             self._sandbox_commands.pop(command_id, None)
                             self._sandbox_tasks.pop(command_id, None)
                         try:
@@ -3092,7 +3096,11 @@ class ApplicationServices:
             return await self.sandbox_backend.registry.describe(self.sandbox_backend.preferred, refresh=refresh)
         return {"runtimes": [], "default_runtime": None}
 
-    async def install_python_packages(self, sandbox_id, requirements, *, agent_id=None):
+    async def install_python_packages(self, sandbox_id, requirements, *, agent_id=None, _operation_id=None):
+        if _operation_id is None:
+            return await self.sandbox_operations.submit(agent_id, sandbox_id, "python_install",
+                lambda operation_id: self.install_python_packages(sandbox_id, requirements,
+                    agent_id=agent_id, _operation_id=operation_id), wait_seconds=None)
         from backend.sandbox.python_runtime import validate_requirements
         from backend.sandbox.models import SandboxValidationError
         self._require_card_type(sandbox_id, CardType.SANDBOX)
@@ -3104,13 +3112,12 @@ class ApplicationServices:
                 raise ValueError("At least one package is required")
         except ValueError as exc:
             raise SandboxValidationError(str(exc)) from exc
+        if _operation_id is not None:
+            self._sandbox_commands[_operation_id]["requirements"] = requirements
         backend = self._require_sandbox_backend()
         if not isinstance(backend, SandboxManager):
             raise SandboxValidationError("Managed Python installation is unavailable on this backend")
-        try:
-            return await backend.install_python_packages(sandbox_id, requirements)
-        except RuntimeError as exc:
-            raise SandboxValidationError(str(exc)) from exc
+        return await backend.install_python_packages(sandbox_id, requirements)
 
     async def publish_sandbox_event(self, event: SandboxEvent) -> None:
         # Service receipts own admission/completion; native events may arrive
@@ -3732,6 +3739,8 @@ def create_services(
 
     provider = WorldAgentCapabilityProvider(services)
     services.node_execution = NodeExecutionService(services)
+    from backend.sandbox.operations import SandboxOperations
+    services.sandbox_operations = SandboxOperations(services)
     services.summoning = SummoningService(services)
     from backend.security.model_connections import ModelConnectionStore
     services.run_manager = RunManager(
@@ -3742,6 +3751,7 @@ def create_services(
         capability_provider=provider,
         state=state,
         persist_provider_event=services._persist_conversation_provider_event,
+        cleanup_execution=services.sandbox_operations.cancel_run,
         default_runtime_provider_id=(
             default_runtime_provider_id
             if default_runtime_provider_id is not None

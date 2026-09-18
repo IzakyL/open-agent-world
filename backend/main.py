@@ -146,6 +146,9 @@ def create_app(
         del request
         status_code = 500
         code = "sandbox_error"
+        from backend.sandbox.models import SandboxOperationError
+        if isinstance(exc, SandboxOperationError):
+            return JSONResponse(status_code=409 if exc.retryable else 503, content=exc.feedback())
         if isinstance(exc, SandboxNotFoundError):
             status_code, code = 404, "sandbox_not_found"
         elif isinstance(exc, SandboxStateError):

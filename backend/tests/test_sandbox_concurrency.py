@@ -136,7 +136,6 @@ def test_linux_bundle_revisions_keep_previous_files(tmp_path):
 
 
 def test_windows_shared_policy_conflicts_are_retryable(runtime_client, monkeypatch):
-    from backend.errors import ResourceValidationError
     client, backend, native = runtime_client
     agent, sandbox, skill, _, _ = setup_skill(client)
     services = client.app.state.services
@@ -152,9 +151,11 @@ def test_windows_shared_policy_conflicts_are_retryable(runtime_client, monkeypat
         try:
             assert await asyncio.to_thread(entered.wait, 3)
             provider = WorldAgentCapabilityProvider(services)
-            with pytest.raises(ResourceValidationError, match='retry after active commands'):
-                await provider.invoke_tool(agent['id'], f"sandbox.run_skill_script:{sandbox['id']}",
-                    {'skill_id': skill['id'], 'script_path': 'scripts/check.py', 'interpreter': ['python']})
+            result = await provider.invoke_tool(agent['id'], f"sandbox.run_skill_script:{sandbox['id']}",
+                {'skill_id': skill['id'], 'script_path': 'scripts/check.py', 'interpreter': ['python']})
+            assert result['error']['code'] == 'resource_busy'
+            assert result['error']['retryable'] is True
+            assert 'retry after active commands' in result['error']['message']
             assert not task.done()
         finally:
             release.set()

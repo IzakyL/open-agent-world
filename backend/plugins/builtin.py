@@ -691,7 +691,8 @@ async def _copy_skill_resource(context, capability, arguments):
 
 
 async def _run_skill_script(context, capability, arguments):
-    return await context.run_skill_script(capability.agent_id, capability.target_id, arguments)
+    return await context.run_skill_script(capability.agent_id, capability.target_id,
+        {"wait_seconds": 1, **arguments})
 
 
 async def _legion_state(context, capability, arguments):
@@ -723,7 +724,7 @@ async def _execute_sandbox(
 ) -> Any:
     argv = values.get("argv")
     if (
-        set(values) - {"argv", "environment_id", "target_id", "timeout_seconds"}
+        set(values) - {"argv", "environment_id", "target_id", "timeout_seconds", "wait_seconds"}
         or not isinstance(argv, list)
         or not argv
         or not all(isinstance(item, str) and item for item in argv)
@@ -733,6 +734,7 @@ async def _execute_sandbox(
         )
     return await context.execute_sandbox(
         capability.agent_id, capability.target_id, argv,
+        wait_seconds=values.get("wait_seconds", 1),
         **{key: values[key] for key in ("environment_id", "target_id", "timeout_seconds") if key in values}
     )
 
@@ -745,7 +747,16 @@ async def _cancel_sandbox_command(context, capability, values):
 
 
 async def _install_python_packages(context, capability, values):
-    return await context.install_python_packages(capability.agent_id, capability.target_id, values.get("requirements"))
+    return await context.install_python_packages(capability.agent_id, capability.target_id, values.get("requirements"),
+        wait_seconds=values.get("wait_seconds", 1))
+
+
+async def _wait_sandbox_operation(context, capability, values):
+    operation_id = values.get("operation_id")
+    if set(values) - {"operation_id", "wait_seconds"} or (operation_id is not None and (not isinstance(operation_id, str) or not operation_id)):
+        raise ResourceValidationError("operation_id is required; use the ID returned by execution or inspect_sandbox")
+    return await context.wait_sandbox_operation(capability.agent_id, capability.target_id,
+        operation_id, values.get("wait_seconds", 30))
 
 
 def _register_builtin(registry: PluginRegistration) -> None:
@@ -907,16 +918,21 @@ def _register_builtin(registry: PluginRegistration) -> None:
     registry.register_capability(CapabilityDefinition(
         kind='sandbox.execute', tool_name='execute_command', target_parameter='sandbox',
         selectors=EXECUTION_SELECTORS,
-        description='Execute an argv command in the selected sandbox. Commands run concurrently in the shared workspace and HOME. Inspect active_commands to coordinate with other Agents; avoid overwriting their edits. Cancellation and timeout affect only the selected command. First inspect its runtime shell, cwd and resource paths. The configured working folder is live; edits there change real files. Attached resources are available through SANDBOX_RESOURCES. Calls use fresh non-interactive processes: cd/export/venv activation do not carry over. For installations set timeout_seconds explicitly and keep progress visible; do not pipe installers to tail. Shell pipelines report the final command status: use bash -o pipefail or download with curl -f to a file and only execute it after success. Use install_python_packages for shared Python dependencies.',
-        input_schema={"type": "object", "properties": {"argv": {"type": "array", "items": {"type": "string"}, "minItems": 1, "description": "Executable and arguments as a non-empty string array; argv[0] cannot be a shell built-in."}, "timeout_seconds": {"type": "number", "exclusiveMinimum": 0, "maximum": 36000, "description": "Command wall-clock budget in seconds. Omit to use Sandbox settings; set explicitly for slow installs."}}, "required": ["argv"], "additionalProperties": False}), _execute_sandbox)
+        description='Execute an argv command in the selected sandbox. Long operations return status=running and an operation_id after wait_seconds (default 1). Use wait_sandbox_operation to collect the result or do independent work; never resubmit running work. Commands run concurrently in the shared workspace and HOME. Inspect active_commands to coordinate with other Agents; avoid overwriting their edits. Cancellation and timeout affect only the selected command. First inspect its runtime shell, cwd and resource paths. The configured working folder is live; edits there change real files. Attached resources are available through SANDBOX_RESOURCES. Calls use fresh non-interactive processes: cd/export/venv activation do not carry over. For installations set timeout_seconds explicitly and keep progress visible; do not pipe installers to tail. Shell pipelines report the final command status: use bash -o pipefail or download with curl -f to a file and only execute it after success. Use install_python_packages for shared Python dependencies.',
+        input_schema={"type": "object", "properties": {"argv": {"type": "array", "items": {"type": "string"}, "minItems": 1, "description": "Executable and arguments as a non-empty string array; argv[0] cannot be a shell built-in."}, "wait_seconds": {"type": "number", "minimum": 0, "maximum": 60, "default": 1, "description": "Host observation budget; returns operation_id if still running. Use wait_sandbox_operation later, not a duplicate submission."}, "timeout_seconds": {"type": "number", "exclusiveMinimum": 0, "maximum": 3600, "description": "Command wall-clock budget in seconds. Omit to use Sandbox settings; set explicitly for slow installs."}}, "required": ["argv"], "additionalProperties": False}), _execute_sandbox)
     registry.register_capability(CapabilityDefinition(
         kind='sandbox.cancel_command', tool_name='cancel_command', target_parameter='sandbox',
         description='Cancel one command and wait for its process cleanup. Inspect active_commands and supply its id as command_id. Agents may cancel their own commands; cancelling another Agent requires sandbox.stop authority. A stale ID cannot cancel a newer command.',
         input_schema={"type": "object", "properties": {"command_id": {"type": "string", "minLength": 1}}, "required": ["command_id"], "additionalProperties": False}), _cancel_sandbox_command)
     registry.register_capability(CapabilityDefinition(
+        kind='sandbox.wait', tool_name='wait_sandbox_operation', target_parameter='sandbox',
+        target_capabilities=frozenset({'sandbox.execute'}),
+        description='Wait for an existing command, Skill script, or Python installation without launching any process. Use operation_id from a running result or id from inspect_sandbox. wait_seconds=0 inspects immediately; 1-60 waits on the host. A wait timeout returns running and never cancels or resubmits work. Omit operation_id for a cancellable host timer when waiting for an external resource; elapsed time does not prove readiness. Check the final result before claiming success; do independent work between waits.',
+        input_schema={"type": "object", "properties": {"operation_id": {"type": "string", "minLength": 1}, "wait_seconds": {"type": "number", "minimum": 0, "maximum": 60, "default": 30}}, "additionalProperties": False}), _wait_sandbox_operation)
+    registry.register_capability(CapabilityDefinition(
         kind='sandbox.install_python_packages', tool_name='install_python_packages', target_parameter='sandbox',
-        description='Install missing Python packages into the persistent shared sandbox Python environment, then retry execution. Packages become available to all sandboxes on this execution platform. Supply index package names with optional extras/version constraints. Installation is serialized by the environment manager; source builds, paths and URLs are unsupported.',
-        input_schema={"type": "object", "properties": {"requirements": {"type": "array", "items": {"type": "string"}, "minItems": 1, "maxItems": 100}}, "required": ["requirements"], "additionalProperties": False}), _install_python_packages)
+        description='Install missing Python packages into the persistent shared sandbox Python environment, then retry execution. Packages become available to all sandboxes on this execution platform. Supply index package names with optional extras/version constraints. Returns status=running and an operation_id after wait_seconds (default 1) if unfinished; use wait_sandbox_operation or do independent work. Confirm the final installation result before using its packages. Installation is serialized by the environment manager; source builds, paths and URLs are unsupported.',
+        input_schema={"type": "object", "properties": {"wait_seconds": {"type": "number", "minimum": 0, "maximum": 60, "default": 1}, "requirements": {"type": "array", "items": {"type": "string"}, "minItems": 1, "maxItems": 100}}, "required": ["requirements"], "additionalProperties": False}), _install_python_packages)
     registry.register_capability(CapabilityDefinition(
         kind='sandbox.run_skill_script', tool_name='run_skill_script', target_parameter='sandbox',
         description='Run a file from the selected Skill in the selected sandbox. Both resources require independent live authorization. The current bundle is mounted read-only outside the workspace; cwd and generated outputs use the sandbox workspace.',
@@ -1061,14 +1077,14 @@ def _register_builtin(registry: PluginRegistration) -> None:
         description="The agent can run commands in this isolated workplace. Starting and stopping require manual control.",
         source_traits=frozenset({"core.agent"}), target_traits=frozenset({"core.sandbox"}),
         templateable=True,
-        capabilities=(CapabilityGrantDefinition(kind='sandbox.execute'), CapabilityGrantDefinition(kind='sandbox.cancel_command'), CapabilityGrantDefinition(kind='sandbox.install_python_packages'), CapabilityGrantDefinition(kind='sandbox.run_skill_script'), CapabilityGrantDefinition(kind='sandbox.inspect'), CapabilityGrantDefinition(kind='sandbox.copy_skill_resource')),
+        capabilities=(CapabilityGrantDefinition(kind='sandbox.execute'), CapabilityGrantDefinition(kind='sandbox.cancel_command'), CapabilityGrantDefinition(kind='sandbox.install_python_packages'), CapabilityGrantDefinition(kind='sandbox.run_skill_script'), CapabilityGrantDefinition(kind='sandbox.inspect'), CapabilityGrantDefinition(kind='sandbox.wait'), CapabilityGrantDefinition(kind='sandbox.copy_skill_resource')),
     ))
     registry.register_relationship(RelationshipDefinition(
         canvas_requires_confirmation=True, id="execute_manage", label="Execute + Start/Stop", short_label="execute + manage",
         description="The agent can run commands, start this Sandbox and stop it, including active commands.",
         source_traits=frozenset({"core.agent"}), target_traits=frozenset({"core.sandbox"}),
         templateable=True,
-        capabilities=(CapabilityGrantDefinition(kind='sandbox.start'), CapabilityGrantDefinition(kind='sandbox.stop'), CapabilityGrantDefinition(kind='sandbox.execute'), CapabilityGrantDefinition(kind='sandbox.cancel_command'), CapabilityGrantDefinition(kind='sandbox.install_python_packages'), CapabilityGrantDefinition(kind='sandbox.run_skill_script'), CapabilityGrantDefinition(kind='sandbox.inspect'), CapabilityGrantDefinition(kind='sandbox.copy_skill_resource')),
+        capabilities=(CapabilityGrantDefinition(kind='sandbox.start'), CapabilityGrantDefinition(kind='sandbox.stop'), CapabilityGrantDefinition(kind='sandbox.execute'), CapabilityGrantDefinition(kind='sandbox.cancel_command'), CapabilityGrantDefinition(kind='sandbox.install_python_packages'), CapabilityGrantDefinition(kind='sandbox.run_skill_script'), CapabilityGrantDefinition(kind='sandbox.inspect'), CapabilityGrantDefinition(kind='sandbox.wait'), CapabilityGrantDefinition(kind='sandbox.copy_skill_resource')),
     ))
     registry.register_relationship(RelationshipDefinition(
         id="mount_read_only", label="Mount read-only", short_label="read-only",

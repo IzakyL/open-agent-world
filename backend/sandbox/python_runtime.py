@@ -17,6 +17,7 @@ import sys
 import time
 
 from .python_launchers import repair_python_launchers
+from .models import SandboxBusyError, SandboxOperationError, SandboxPreparationError, SandboxValidationError
 
 
 # Scientific wheels can exceed the old ten-minute wall-clock limit on a slow
@@ -59,7 +60,7 @@ def mutation_lock(root):
                 if exc.errno not in {errno.EACCES, errno.EAGAIN, errno.EDEADLK}:
                     raise
                 if time.monotonic() >= deadline:
-                    raise TimeoutError("Shared Python is busy installing packages; retry shortly") from exc
+                    raise SandboxBusyError("Shared Python is busy installing packages. Inspect Sandbox operations and wait for the installation before retrying; this command has not started.") from exc
                 time.sleep(.1)
         try:
             yield
@@ -96,6 +97,34 @@ class SharedPythonRuntime:
         managed = self.root / "tools" / "bin" / ("uv.exe" if os.name == "nt" else "uv")
         return str(managed) if managed.is_file() else shutil.which("uv")
 
+    def snapshot(self):
+        """Read bounded progress without acquiring a mutation lock or running code.
+
+        Logs are observations, never evidence that an old worker is still alive.
+        Operation receipts own liveness and restart recovery.
+        """
+        def tail(name, limit):
+            try:
+                with (self.root / name).open("rb") as stream:
+                    stream.seek(max(0, stream.seek(0, 2) - limit))
+                    return stream.read().decode("utf-8", "replace")
+            except OSError:
+                return ""
+        latest = {}
+        for line in reversed(tail("install.log", 65536).splitlines()):
+            try:
+                value = json.loads(line)
+                if isinstance(value, dict):
+                    latest = value
+                    break
+            except ValueError:
+                continue
+        return {"last_install_state": latest.get("state"),
+            "last_install_started_at": latest.get("time"),
+            "last_install_elapsed_seconds": latest.get("elapsed_seconds"),
+            "output_tail": tail("install-output.log", 8192),
+            "note": "Progress observation only; use operation receipts for current execution status."}
+
     def _run(self, argv):
         environment = {k: v for k, v in os.environ.items() if not k.upper().startswith(("PYTHON", "PIP_", "UV_")) and k.upper() not in {"VIRTUAL_ENV", "CONDA_PREFIX"}}
         output_path = self.root / "install-output.log"
@@ -124,14 +153,14 @@ class SharedPythonRuntime:
             with (self.root / "install.log").open("a", encoding="utf-8") as log:
                 log.write(json.dumps({**record, "state": "failed", "elapsed_seconds": time.monotonic() - started,
                     "error": str(exc), "output": tail}) + "\n")
-            raise RuntimeError(f"Shared Python preparation failed: {exc}. {tail[-2000:]} See {self.root / 'install.log'}") from exc
+            raise SandboxPreparationError(f"Shared Python preparation failed: {exc}. {tail[-2000:]} See {self.root / 'install.log'}") from exc
         tail = output_tail()
         with (self.root / "install.log").open("a", encoding="utf-8") as log:
             log.write(json.dumps({**record, "elapsed_seconds": time.monotonic() - started,
                 "state": "ready" if result.returncode == 0 else "failed",
                 "exit_code": result.returncode, "output": tail}) + "\n")
         if result.returncode:
-            raise RuntimeError(f"Shared Python preparation failed: {tail[-2000:]} (see {self.root / 'install.log'})")
+            raise SandboxPreparationError(f"Shared Python preparation failed: {tail[-2000:]} (see {self.root / 'install.log'})")
 
     def _ensure(self):
         ready = self.root / "ready.json"
@@ -190,7 +219,7 @@ class SharedPythonRuntime:
                         # A failed install may still have written some launchers.
                         self._repair_launchers()
                 else:
-                    raise RuntimeError("Install uv on the execution platform to manage shared Python packages safely")
+                    raise SandboxPreparationError("Install uv on the execution platform to manage shared Python packages safely")
                 if bootstrap_key is not None:
                     receipts[bootstrap_key] = requirements
                     temporary = receipts_path.with_suffix(".tmp")
@@ -210,11 +239,14 @@ class SharedPythonRuntime:
         temporary.replace(ready)
 
     async def prepare(self, requirements=(), bootstrap_key=None):
-        from .models import SandboxSecurityError
         try:
             return await finish_thread(self.prepare_sync, requirements, bootstrap_key)
-        except (OSError, RuntimeError, ValueError) as exc:
-            raise SandboxSecurityError(str(exc)) from exc
+        except SandboxOperationError:
+            raise
+        except ValueError as exc:
+            raise SandboxValidationError(str(exc)) from exc
+        except OSError as exc:
+            raise SandboxPreparationError(str(exc)) from exc
 
     def environment(self, environment):
         environment.update(PATH=str(self.bin) + os.pathsep + environment["PATH"],

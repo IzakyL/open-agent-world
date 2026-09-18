@@ -295,6 +295,16 @@ class SandboxManager(SandboxBackend):
             raise SandboxStateError("Start the Sandbox before installing packages")
         return await self.prepare_python(binding.resolved_runtime, requirements)
 
+    async def python_status(self, sandbox_id):
+        binding = self._binding(sandbox_id)
+        if not binding.provisioned:
+            return None
+        backend = self._backend(binding.resolved_runtime)
+        if hasattr(backend, "python_status"):
+            return await backend.python_status()
+        runtime = getattr(backend, "python_runtime", None)
+        return await asyncio.to_thread(runtime.snapshot) if runtime is not None else None
+
     async def reset_cache(self, sandbox_id):
         binding = self._binding(sandbox_id)
         if binding.provisioned:
