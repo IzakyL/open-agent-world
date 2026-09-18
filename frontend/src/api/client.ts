@@ -297,7 +297,7 @@ export const worldApi = {
 
   saveSandboxSettings(settings: SandboxSettings): Promise<SandboxSettings> {
     return request<SandboxSettings>("/settings/sandbox", {
-      method: "PUT", body: JSON.stringify(settings),
+      method: "PUT", body: JSON.stringify({ workspace_root: settings.workspace_root, runtime: settings.runtime }),
     });
   },
   async getSummoning(id: string): Promise<SummoningSnapshot> {
@@ -811,6 +811,7 @@ export const worldApi = {
 export interface SandboxSettings {
   workspace_root: string | null;
   runtime: string;
+  backup_paths?: string[];
 }
 
 export function runtimeWebSocketUrl(): string {

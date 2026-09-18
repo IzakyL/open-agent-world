@@ -5,6 +5,7 @@ import json
 import logging
 from collections.abc import Awaitable, Callable, Mapping
 from contextvars import ContextVar
+from contextlib import AsyncExitStack, asynccontextmanager
 from dataclasses import dataclass, field, replace
 from typing import Any
 
@@ -205,6 +206,17 @@ class RunManager:
 
     def list_child_runs(self, parent_run_id: str) -> list[RunRecord]:
         return self.store.list_children(parent_run_id)
+
+    @asynccontextmanager
+    async def workspace_maintenance(self, agent_ids: list[str]):
+        """Hold admission while workspace files move. Caller holds graph mutation."""
+        async with AsyncExitStack() as stack:
+            for agent_id in sorted(agent_ids):
+                await stack.enter_async_context(self._start_locks.setdefault(agent_id, asyncio.Lock()))
+            if self._occupied_runs or any(not task.done() for task in self._runtime_tasks.values()):
+                from backend.errors import ConflictError
+                raise ConflictError("Stop running Agents before migrating workspace locations")
+            yield
 
     async def start_run(
         self,

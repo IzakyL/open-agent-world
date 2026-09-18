@@ -12,7 +12,7 @@ from pydantic import BaseModel, ConfigDict, Field, ValidationError, model_valida
 from backend.api.dependencies import get_services
 from backend.services import ApplicationServices
 from backend.runs import RunRecord
-from backend.sandbox.settings import SandboxSettings, SandboxSettingsStore
+from backend.sandbox.settings import SandboxSettings, SandboxSettingsStatus, SandboxSettingsStore
 from backend.sandbox.manager import SandboxManager
 from backend.sandbox.models import SandboxValidationError
 
@@ -271,25 +271,27 @@ async def sandbox_runtimes(
     return await services.sandbox_runtimes(refresh=refresh)
 
 
-@router.get("/settings/sandbox", response_model=SandboxSettings)
+@router.get("/settings/sandbox", response_model=SandboxSettingsStatus)
 async def get_sandbox_settings(
     services: ApplicationServices = Depends(get_services),
-) -> SandboxSettings:
-    return SandboxSettingsStore(services.database, services.settings.data_root).read()
+) -> SandboxSettingsStatus:
+    return SandboxSettingsStore(services.database, services.settings.data_root).public()
 
 
-@router.put("/settings/sandbox", response_model=SandboxSettings)
+@router.put("/settings/sandbox", response_model=SandboxSettingsStatus)
 async def save_sandbox_settings(
     request: SandboxSettings,
     services: ApplicationServices = Depends(get_services),
-) -> SandboxSettings:
+) -> SandboxSettingsStatus:
     if request.runtime != "auto":
         backend = services.sandbox_backend
         if not isinstance(backend, SandboxManager) or request.runtime not in {
             runtime.id for runtime in await backend.registry.catalog()
         }:
             raise SandboxValidationError("Choose a runtime installed on this backend host")
-    return SandboxSettingsStore(services.database, services.settings.data_root).save(request)
+    from backend.sandbox.relocation import save_settings
+    await services._complete_committed(save_settings(services, request))
+    return SandboxSettingsStore(services.database, services.settings.data_root).public()
 
 
 @router.get("/sandboxes/{sandbox_id}")

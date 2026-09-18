@@ -416,6 +416,9 @@ class LinuxSandboxBackend(SandboxBackend):
         await self._emit_state(record)
         return self._info(record)
 
+    async def managed_workspace(self, sandbox_id: str) -> Path:
+        return (await self._record(sandbox_id)).root / "workspace"
+
     async def configure(
         self, sandbox_id: str, *, workspace_path: str | None,
         workspace_access: ResourceAccess,

@@ -294,6 +294,11 @@ class WslSandboxBackend(SandboxBackend):
             raw = await self._request(self._payload("create", sandbox_id))
             return self._info(raw)
 
+    async def managed_workspace(self, sandbox_id: str) -> Path:
+        import hashlib
+        await self.get(sandbox_id)
+        return self._managed_root / "sandbox-runtimes" / hashlib.sha256(self._runtime_id.encode()).hexdigest()[:16] / "sandboxes" / sandbox_id / "workspace"
+
     async def configure(self, sandbox_id: str, *, workspace_path: str | None,
         workspace_access: ResourceAccess) -> SandboxInfo:
         if workspace_path is not None and (not PureWindowsPath(workspace_path).is_absolute() or "\0" in workspace_path):

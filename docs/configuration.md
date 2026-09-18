@@ -38,9 +38,13 @@ A small startup pointer stays outside the data directory, next to the platform's
 
 ## Sandbox defaults and execution credentials
 
-In **Settings > Sandbox**, choose a default runtime and an existing absolute Workspace location on the backend host. New Sandboxes get separate subfolders there; existing cards retain their saved configuration. Clear the location to restore managed workspaces for new cards. Custom-location folders survive card deletion.
+In **Settings > Sandbox**, choose a default runtime and an existing absolute Workspace location on the backend host. Saving the location copies and verifies every existing Sandbox workspace into a separate subfolder, including cards with custom working folders, then switches their bindings and the saved setting together. Existing runtimes and access modes stay unchanged. Stop Sandboxes and Agents first. New Sandboxes also get separate subfolders there. Saving an already selected location migrates older cards still outside it.
+
+The shared default `codex-workspace` migrates when the default location changes; explicitly configured Codex project folders stay where they are. Original folders remain as backups, and conflicting destination files are never overwritten. A failed copy leaves the original configuration active; partial staging copies may remain for recovery. Clear the location to restore internal managed workspaces (read-only workspaces require an external location). This setting relocates workspace files, not runtime HOME directories, shared Python installations, or attached resources; use **Settings > Storage** to relocate application-owned runtime data. Custom-location folders survive card deletion.
 
 A Sandbox's own Working folder and access mode are configured before starting it. **Browse** opens a folder picker on the backend computer and fills the draft; save to apply it. Remote/headless deployments can enter paths manually. Windows uses its native dialog; Linux/macOS desktop browsing requires Python Tk support.
+
+After migration, Settings stays open and lists the exact old workspace folders retained as backups. The list is saved with the migration and remains visible when Settings is reopened. Verify the new files and ensure the old folders are no longer used before deleting them manually; the app does not clean them up automatically.
 
 See [Sandbox workspace](sandbox-workspace.md) for runtime and folder behavior, and [Execution configuration](execution-configuration.md) for command variables, private credentials, Environment Profiles, and Compute Targets.
 

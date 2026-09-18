@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 from pathlib import Path
+import json
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
@@ -24,6 +25,10 @@ class SandboxSettings(BaseModel):
         return value
 
 
+class SandboxSettingsStatus(SandboxSettings):
+    backup_paths: list[str] = Field(default_factory=list)
+
+
 class SandboxSettingsStore:
     def __init__(self, database: Database, data_root: Path) -> None:
         self.database = database
@@ -42,6 +47,22 @@ class SandboxSettingsStore:
         if root is None:
             return self.validator.root
         return Path(self.validator.validate_workspace(root))
+
+    def public(self) -> SandboxSettingsStatus:
+        with self.database.locked() as connection:
+            row = connection.execute(
+                "SELECT value_json FROM application_settings WHERE key = 'sandbox_workspace_backups'"
+            ).fetchone()
+            return SandboxSettingsStatus(**self.read().model_dump(), backup_paths=json.loads(row["value_json"]) if row else [])
+
+    def record_backups(self, paths: list[str]) -> None:
+        """Called in the same transaction as the workspace/settings switch."""
+        with self.database.transaction(immediate=True) as connection:
+            connection.execute(
+                "INSERT INTO application_settings (key, value_json) VALUES ('sandbox_workspace_backups', ?) "
+                "ON CONFLICT(key) DO UPDATE SET value_json = excluded.value_json",
+                (json.dumps(list(dict.fromkeys(paths)), ensure_ascii=False),),
+            )
 
     def save(self, settings: SandboxSettings) -> SandboxSettings:
         root = self.validator.validate_workspace(settings.workspace_root)

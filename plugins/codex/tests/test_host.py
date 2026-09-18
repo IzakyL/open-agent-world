@@ -156,6 +156,7 @@ def test_blank_project_runs_in_shared_default_and_follows_setting_changes(tmp_pa
             assert client.put('/api/settings/sandbox', json={'workspace_root': str(other)}).status_code == 200
             run(agents[0])
             assert (other / 'codex-workspace').is_dir()
+            assert (other / 'codex-workspace' / 'keep.txt').read_text() == 'keep'
             assert marker.read_text() == 'keep'
             # Explicit overrides take precedence; clearing restores default behavior.
             assert client.patch(f'/api/nodes/{agents[0]}', json={'config': {'workspace_path': str(tmp_path)}}).status_code == 200

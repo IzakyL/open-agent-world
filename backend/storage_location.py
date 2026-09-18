@@ -182,7 +182,7 @@ def _hash(path: Path) -> str:
     return result.hexdigest()
 
 
-def _entries(root: Path):
+def _entries(root: Path, *, exclude_metadata: bool = True):
     def fail(error):
         raise error
     for parent, directories, files in os.walk(root, followlinks=False, onerror=fail):
@@ -191,16 +191,16 @@ def _entries(root: Path):
         directories[:] = [name for name in directories if not _reparse(Path(parent) / name)]
         for name in names:
             path = Path(parent) / name
-            if path.parent == root and name in (LOCK, RECEIPT):
+            if exclude_metadata and path.parent == root and name in (LOCK, RECEIPT):
                 continue
             if _reparse(path) and not path.is_symlink() and not _lx_link(path):
                 raise ResourceValidationError(f"Cannot relocate a junction or special reparse point: {path}")
             yield path
 
 
-def _fingerprint(root: Path) -> str:
+def _fingerprint(root: Path, *, exclude_metadata: bool = True) -> str:
     digest = hashlib.sha256()
-    for path in sorted(_entries(root)):
+    for path in sorted(_entries(root, exclude_metadata=exclude_metadata)):
         info = path.lstat()
         if _lx_link(path):
             content = "wsl-link:" + _lx_data(path).hex()
@@ -243,10 +243,10 @@ def _copy_security(source: Path, target: Path):
         raise ctypes.WinError(ctypes.get_last_error())
 
 
-def _copy(source: Path, stage: Path):
+def _copy(source: Path, stage: Path, *, exclude_metadata: bool = True):
     links = {}
     directories = []
-    for path in _entries(source):
+    for path in _entries(source, exclude_metadata=exclude_metadata):
         _progress(f"copying {path.relative_to(source)}")
         target = stage / path.relative_to(source)
         info = path.lstat()

@@ -79,6 +79,28 @@ describe("Application settings", () => {
     expect(saveModel).not.toHaveBeenCalled();
   });
 
+  it("keeps migrated backup paths visible with manual cleanup instructions and reloads them", async () => {
+    const saved = { workspace_root: "E:\\Projects", runtime: "auto", backup_paths: ["D:\\Old\\sandbox-A", "D:\\Old\\codex-workspace"] };
+    vi.spyOn(worldApi, "saveSandboxSettings").mockResolvedValue(saved);
+    const rendered = render(<SettingsPanel />);
+    fireEvent.click(screen.getByRole("button", { name: "Sandbox" }));
+    const folder = screen.getByLabelText("Default Workspace location") as HTMLInputElement;
+    await waitFor(() => expect(folder.value).toBe("D:\\Workspaces"));
+    fireEvent.change(folder, { target: { value: saved.workspace_root } });
+    fireEvent.click(screen.getByRole("button", { name: "Save settings" }));
+    await screen.findByText("Workspace settings saved.");
+    expect(useWorldStore.getState().settingsOpen).toBe(true);
+    for (const path of saved.backup_paths) expect(screen.getByText(path)).toBeTruthy();
+    expect(screen.getByText(/please delete them manually/)).toBeTruthy();
+    expect(screen.getByRole("button", { name: /^Close$/ })).toBeTruthy();
+    rendered.unmount();
+    vi.mocked(worldApi.getSandboxSettings).mockResolvedValue(saved);
+    render(<SettingsPanel />);
+    fireEvent.click(screen.getByRole("button", { name: "Sandbox" }));
+    await screen.findByText(saved.backup_paths[0]);
+    expect(screen.getByText(/will not clean them up automatically/)).toBeTruthy();
+  });
+
   it("keeps the dialog and draft after a rejected path, and supports clearing the default", async () => {
     const save = vi.spyOn(worldApi, "saveSandboxSettings").mockRejectedValue(new Error("Folder is not accessible"));
     render(<SettingsPanel />);
