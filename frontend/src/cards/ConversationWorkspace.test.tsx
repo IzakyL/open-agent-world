@@ -118,6 +118,32 @@ describe("ConversationWorkspace snapshots", () => {
     expect(screen.queryByLabelText("Atlas is responding")).toBeNull();
   });
 
+  it("sends unmatched @ text to the default participant after a cancelled run", async () => {
+    vi.mocked(worldApi.getConversation).mockResolvedValue({
+      conversation_id: card.id, sessions: [{ ...session, participant_ids: ["atlas"] }],
+      agents: [{ id: "atlas", name: "Atlas", status: "idle", model: "mock", connected: true }],
+    });
+    const send = vi.spyOn(worldApi, "postConversationMessage").mockImplementation(async (_id, _session, request) => ({
+      message: { ...historicalMessage, id: request.message_id!, content: request.content, mention_agent_ids: request.mention_agent_ids ?? [] },
+      accepted_agent_ids: ["atlas"],
+    }));
+    render(<ConversationWorkspace card={card} />);
+    await screen.findByText(historicalMessage.content);
+    const started = { id: "start", type: "run_started", agent_id: "atlas", conversation_id: card.id,
+      session_id: session.id, timestamp: historicalMessage.created_at, payload: {} };
+    act(() => useWorldStore.setState({ events: [started] }));
+    expect(screen.getByLabelText("Atlas is responding")).toBeTruthy();
+    act(() => useWorldStore.setState({ events: [{ ...started, id: "cancel", type: "run_cancelled" }, started] }));
+    expect(screen.queryByLabelText("Atlas is responding")).toBeNull();
+
+    const content = "npm install -g @dptech-corp/bohr-cli@latest";
+    fireEvent.change(screen.getByLabelText("Conversation message"), { target: { value: content } });
+    fireEvent.click(screen.getByRole("button", { name: "Send message" }));
+    await waitFor(() => expect(send).toHaveBeenCalledWith(card.id, session.id,
+      expect.objectContaining({ content, mention_agent_ids: ["atlas"] })));
+    await waitFor(() => expect(screen.queryByText("Sending...")).toBeNull());
+  });
+
   it("uploads and sends an attachment without text, then previews its image", async () => {
     const attachment = { version_id: 'version-1', path: 'plot.png', name: 'plot.png', size_bytes: 12, media_type: 'image/png' };
     vi.spyOn(worldApi, 'uploadConversationAttachment').mockResolvedValue(attachment);

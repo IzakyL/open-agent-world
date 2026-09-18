@@ -168,6 +168,8 @@ export function normalizeLegionSummary(input: unknown): LegionSummary {
   const source = asRecord(input);
   const bounds = asRecord(source.bounds);
   return {
+    preset: source.preset === true,
+    starter: source.starter === true,
     id: String(source.id),
     name: String(source.name ?? "Untitled Legion"),
     description: typeof source.description === "string" && source.description.trim()

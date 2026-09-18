@@ -10,7 +10,7 @@ import contextvars
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize('cancel', [False, True])
+@pytest.mark.parametrize('cancel', [None, 'agent', 'run'])
 async def test_provider_stream_keeps_one_context_through_stop_and_next_turn(tmp_path, cancel):
     span = contextvars.ContextVar('provider_span', default=None)
 
@@ -43,14 +43,17 @@ async def test_provider_stream_keeps_one_context_through_stop_and_next_turn(tmp_
         first = manager.list_runs(agent_id=agent.id)[0]
         if cancel:
             await asyncio.wait_for(provider.started.wait(), 1)
-            await services.stop_agent(agent.id)
+            if cancel == 'agent':
+                await services.stop_agent(agent.id)
+            else:
+                await manager.cancel_run(first.run_id)
         await asyncio.wait_for(manager.wait_execution(first.run_id), 1)
         record = manager.get_run(first.run_id)
         assert record.status == (RunStatus.CANCELLED if cancel else RunStatus.SUCCEEDED)
         assert record.lifecycle.get('cleanup') not in {'pending', 'failed'}
         provider.mode = 'success'
         sent = await services.post_conversation_message(conversation.id, session.id,
-            ConversationPost(content='next turn', mention_agent_ids=[agent.id]))
+            ConversationPost(content='npm install -g @dptech-corp/bohr-cli@latest', mention_agent_ids=[agent.id]))
         assert sent.accepted_agent_ids == [agent.id]
         second = next(run for run in manager.list_runs(agent_id=agent.id) if run.run_id != first.run_id)
         await asyncio.wait_for(manager.wait_execution(second.run_id), 1)

@@ -35,7 +35,9 @@ function WorkspaceWindow({ card }: { card: WorldCard }) {
   const updateCard = useWorldStore(s => s.updateCard);
   const close = useLegionWorkspace(s => s.close);
   const members = useMemo(() => cards.filter(item => item.parent_id === card.id
-    && !catalog.node_types.find(type => type.id === item.type)?.container), [cards, card.id, catalog]);
+    && item.type !== 'legion'
+    && (!catalog.node_types.find(type => type.id === item.type)?.container
+      || nodeSurfaceSupport(item.type, catalog).workspace)), [cards, card.id, catalog]);
   const memberIds = useMemo(() => new Set(members.map(item => item.id)), [members]);
   const sourceKey = JSON.stringify(card.config.workspace_layout ?? null);
   const [baseKey, setBaseKey] = useState(sourceKey);

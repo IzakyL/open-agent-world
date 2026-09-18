@@ -1,0 +1,36 @@
+.mc-task-board { height: 100%; min-height: 0; overflow: auto; box-sizing: border-box; padding: 14px; background: var(--surface-solid); color: var(--ink); font-size: 12px; container-type: inline-size; }
+.mc-task-board button, .mc-task-board input, .mc-task-board textarea, .mc-task-board select { font: inherit; color: inherit; }
+.mc-task-board button { border: 1px solid var(--line); border-radius: 6px; background: var(--surface-raised, var(--surface-solid)); padding: 7px 10px; cursor: pointer; }
+.mc-task-board button:hover { border-color: #72958a; }
+.mc-task-board button:disabled { opacity: .5; cursor: default; }
+.mc-task-board input, .mc-task-board textarea, .mc-task-board select { box-sizing: border-box; min-width: 0; width: 100%; border: 1px solid var(--line); border-radius: 5px; padding: 8px; background: var(--surface-solid); }
+.mc-task-board textarea { min-height: 64px; resize: vertical; }
+.mc-task-toolbar { display: flex; align-items: end; gap: 7px; flex-wrap: wrap; padding-bottom: 12px; border-bottom: 1px solid var(--line); }
+.mc-task-toolbar label { flex: 1; min-width: 120px; display: grid; gap: 5px; }
+.mc-task-toolbar label > span { font-size: 10px; text-transform: uppercase; letter-spacing: .1em; opacity: .7; }
+.mc-task-goal { display: flex; align-items: start; justify-content: space-between; gap: 10px; padding: 14px 0 9px; overflow-wrap: anywhere; }
+.mc-task-goal h3 { margin: 0 0 5px; font-size: 15px; }
+.mc-task-goal p { margin: 0 0 6px; opacity: .75; white-space: pre-wrap; }
+.mc-task-goal > span { white-space: nowrap; font-variant-numeric: tabular-nums; opacity: .65; }
+.mc-task-board progress { width: 100%; height: 5px; accent-color: #72958a; display: block; margin-bottom: 12px; }
+.mc-task-add { width: 100%; text-align: left; margin-bottom: 12px; }
+.mc-task-columns { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
+.mc-task-column { min-width: 0; border: 1px solid var(--line); border-radius: 7px; padding: 9px; background: color-mix(in srgb, currentColor 3%, transparent); }
+.mc-task-column h4 { display: flex; align-items: center; gap: 6px; margin: 0 0 10px; font-size: 11px; font-weight: 500; }
+.mc-task-column h4 > span:last-child { margin-left: auto; opacity: .55; }
+.mc-task-dot { width: 6px; height: 6px; border-radius: 100%; background: #929a9e; }
+.is-running .mc-task-dot { background: #709cad; }.is-blocked .mc-task-dot { background: #c39762; }.is-done .mc-task-dot { background: #72958a; }
+.mc-task-board .mc-task-item { display: block; width: 100%; text-align: left; margin: 0 0 7px; padding: 10px; overflow-wrap: anywhere; }
+.mc-task-item strong { font-weight: 550; }.mc-task-item p { margin: 7px 0; white-space: pre-wrap; opacity: .7; max-height: 90px; overflow: hidden; }
+.mc-task-item small { display: block; opacity: .6; }.mc-task-item .mc-task-result { border-top: 1px solid var(--line); padding-top: 7px; }
+.mc-task-empty-column { opacity: .35; margin: 18px 0; text-align: center; }
+.mc-task-editor { display: grid; gap: 11px; margin: 12px 0; }.mc-task-editor h3 { margin: 0; }
+.mc-task-editor label { display: grid; gap: 5px; }.mc-task-editor fieldset { border: 1px solid var(--line); border-radius: 5px; max-height: 150px; overflow: auto; }
+.mc-task-editor .mc-task-dependency { display: flex; align-items: center; gap: 6px; margin: 7px 0; }.mc-task-dependency input { width: auto; }
+.mc-task-actions { display: flex; flex-wrap: wrap; gap: 8px; }
+.mc-task-error, .mc-task-conflict { border-left: 3px solid #b6815b; padding: 9px; background: #b6815b12; overflow-wrap: anywhere; }
+.mc-task-empty { text-align: center; padding: 38px 10px; }.mc-task-empty > span { color: #72958a; letter-spacing: .15em; }.mc-task-empty p { max-width: 330px; margin: 12px auto 20px; line-height: 1.7; opacity: .65; }
+.mc-task-board footer { padding-top: 18px; font-size: 10px; line-height: 1.6; opacity: .5; }
+.mc-task-preview { padding: 12px; }.mc-task-preview strong, .mc-task-preview small { display: block; }.mc-task-preview strong { margin-top: 8px; font-size: 22px; }
+@container (min-width: 820px) { .mc-task-columns { grid-template-columns: repeat(4, minmax(0, 1fr)); } }
+@container (max-width: 320px) { .mc-task-columns { grid-template-columns: minmax(0, 1fr); } }

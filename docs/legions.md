@@ -87,8 +87,10 @@ usable as whole-card panes. See [plugin section API](plugins.md#composable-works
 The window is a presentation of existing members: canvas positions, Glue, team
 settings, connections and runtime ownership stay independent. Cards omitted from
 the window continue working. Missing or detached members disappear from the
-window and adjacent regions expand. Nested containers are not dockable in this
-first version. The window supports splits and tab groups; floating subwindows
+window and adjacent regions expand. Containers without a workspace surface are
+not dockable. Plugin containers with a workspace surface (such as scientific
+Toolsets and knowledge graphs) can be docked; nested Legions remain excluded.
+The window supports splits and tab groups; floating subwindows
 are not implemented.
 
 Layouts live in `config.workspace_layout`, with `version: 2`, a nullable `root`,
@@ -117,6 +119,13 @@ selects its first remaining view; empty regions disappear and single-tab groups
 can collapse to a pane. Templates without a layout open with an empty workspace.
 The bundled Coding workspace preset supplies a Conversation/Sandbox split when
 deployed with a Legion wrapper; unwrapped deployment has no Legion window.
+
+Plugins can contribute their own presets through Plugin API 1.18. They appear in
+the bottom **Legions** deck alongside saved formations and deploy with their
+workspace layout. The MatCreator research preset combines Sessions, Files,
+Conversation, research tasks, preview, terminal and knowledge tabs. Presets are
+owned by the plugin; edit a deployed copy and **Save to library** to keep a custom
+version. See [MatCreator usage](../plugins/matcreator/README.md).
 
 ## Runtime settings and state
 

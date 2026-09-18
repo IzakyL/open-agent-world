@@ -260,7 +260,8 @@ type LegionLibraryResult =
 
 async function loadLegionLibrary(): Promise<LegionLibraryResult> {
   try {
-    return { ok: true, legions: await worldApi.getLegions() };
+    const [saved, presets] = await Promise.all([worldApi.getLegions(), worldApi.getBlueprintPresets()]);
+    return { ok: true, legions: [...presets.filter(item => !item.starter), ...saved] };
   } catch (error) {
     return { ok: false, error };
   }
@@ -268,6 +269,11 @@ async function loadLegionLibrary(): Promise<LegionLibraryResult> {
 
 function samePosition(first: WorldPosition, second: WorldPosition): boolean {
   return first.x === second.x && first.y === second.y;
+}
+
+function deployedLegionSelection(cards: WorldCard[], groupedPreset?: boolean): string[] {
+  const groups = groupedPreset ? cards.filter(card => card.type === 'legion' && !card.parent_id) : [];
+  return (groups.length ? groups : cards).map(card => card.id);
 }
 
 function chunkKeysFromSnapshot(snapshot: WorldSnapshot): string[] {
@@ -991,7 +997,7 @@ export const useWorldStore = create<WorldState>()(persist((set, get) => ({
 
   deleteLegion: (id) => withHistoryTransaction(() => withLegionOperation(id, async () => {
     const legion = get().legions.find((item) => item.id === id);
-    if (!legion) return false;
+    if (!legion || legion.preset) return false;
     try {
       const deleted = await worldApi.deleteLegion(id);
       const keepOtherLegions = (operation: WorldHistoryOperation) => (
@@ -1037,7 +1043,7 @@ export const useWorldStore = create<WorldState>()(persist((set, get) => ({
     };
     set({ syncState: "syncing" });
     try {
-      const deployment = { unwrap: options.unwrap, preset: options.preset };
+      const deployment = { unwrap: options.unwrap, preset: options.preset ?? legion.preset };
       const instance = await worldApi.instantiateLegion(id, origin, deployment);
       useNodeSurfaceStore.getState().restorePresentation(instance.nodes, get().catalog, instance.presentation);
       const cards = instance.nodes.map(copyCard);
@@ -1046,7 +1052,7 @@ export const useWorldStore = create<WorldState>()(persist((set, get) => ({
       set((state) => ({
         cards: mergeCards(state.cards, instance.nodes, state.cardTombstones),
         edges: mergeEdges(state.edges, instance.edges, state.edgeTombstones),
-        selectedCardIds: instance.nodes.map((card) => card.id),
+        selectedCardIds: deployedLegionSelection(cards, deployment.preset && !deployment.unwrap),
         selectionRevision: state.selectionRevision + 1,
         selectedEdgeId: undefined,
         syncState: "online",
@@ -2131,7 +2137,7 @@ export const useWorldStore = create<WorldState>()(persist((set, get) => ({
           set((state) => ({
             cards: mergeCards(state.cards, instance.nodes, state.cardTombstones),
             edges: mergeEdges(state.edges, instance.edges, state.edgeTombstones),
-            selectedCardIds: instance.nodes.map((card) => card.id),
+            selectedCardIds: deployedLegionSelection(cards, operation.options?.preset && !operation.options.unwrap),
             selectionRevision: state.selectionRevision + 1,
             selectedEdgeId: undefined,
           }));

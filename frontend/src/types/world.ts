@@ -233,6 +233,8 @@ export interface LegionBounds {
  * and relationship state intentionally stays behind the API boundary.
  */
 export interface LegionSummary {
+  preset?: boolean;
+  starter?: boolean;
   id: string;
   name: string;
   description?: string;

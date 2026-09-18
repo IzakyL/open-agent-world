@@ -3,7 +3,8 @@
 A shared work board for human and Agent task planning. This checkout bundles the
 plugin in **Fields > Task Board**; it can also be built and installed as the
 independent `oaw-task-board` Python distribution. An installed entry-point version
-takes precedence over the bundled source. Version 0.2 requires host Plugin API 1.3.
+takes precedence over the bundled source. Version 0.2.1 requires host Plugin API 1.18
+and shares the host's `open_agent_world.task_graph` validation with research boards.
 
 ## Use
 

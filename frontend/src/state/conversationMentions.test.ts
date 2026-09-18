@@ -30,9 +30,22 @@ describe("conversation mention routing", () => {
     expect(resolveConversationTargets("@Riverboat", [river, atlas])).toEqual([]);
   });
 
-  it("does not fall back to the selected Agent when an unmatched @ is present", () => {
-    expect(resolveConversationTargets("@Nobody review this", [river, atlas], "atlas"))
-      .toEqual([]);
+  it.each([
+    "@Nobody review this",
+    "@Riverboat review this",
+    "npm install -g @dptech-corp/bohr-cli@latest",
+    "Contact user@example.com",
+    "An unfinished @",
+  ])("sends unmatched @ text to the default Agent: %s", (content) => {
+    expect(resolveConversationTargets(content, [river, atlas], "atlas")).toEqual(["atlas"]);
+    expect(resolveConversationTargets(content, [atlas])).toEqual(["atlas"]);
+    expect(resolveConversationTargets(content, [river, atlas])).toEqual([]);
+    expect(resolveConversationTargets(content, [river, atlas], "removed")).toEqual([]);
+  });
+
+  it("routes matched members even when ordinary @ text appears in the same message", () => {
+    expect(resolveConversationTargets("@Nobody ask @River Stone to check @dptech-corp/bohr-cli@latest", [river, atlas], "atlas"))
+      .toEqual(["river"]);
   });
 
   it("offers matching participants while a mention is being typed", () => {

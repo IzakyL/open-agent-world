@@ -177,6 +177,8 @@ class LegionRecord(BaseModel):
 class LegionSummary(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
+    preset: bool = False
+    starter: bool = False
     id: str
     name: str
     description: str

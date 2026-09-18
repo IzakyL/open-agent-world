@@ -27,7 +27,7 @@ export function resolveConversationTargets(
     return mention.test(content);
   }).map((agent) => agent.id);
   if (targets.length > 0) return [...new Set(targets)];
-  if (content.includes("@")) return [];
+  // Unmatched @ text is ordinary content and keeps the default recipient.
   if (fallbackAgentId && participants.some((agent) => agent.id === fallbackAgentId)) {
     return [fallbackAgentId];
   }

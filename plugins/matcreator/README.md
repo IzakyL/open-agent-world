@@ -1,6 +1,67 @@
 # MatCreator on OAW
 
-This plugin publishes four portable Toolsets and an evolving Know-Do Graph.
+This plugin publishes a **MatCreator research** Legion preset, a research task
+board, four portable Toolsets and an evolving Know-Do Graph.
+
+## Research workspace preset
+
+Restart the OAW backend and rebuild/reload the frontend after updating. Open the
+bottom **Legions** deck and place **MatCreator research**. Open **Workspace mode**
+in its header. The preset is available without running a demo script or adding
+cards to the current world beforehand.
+
+The layout provides Sessions and Files on the left, Conversation in the middle,
+and Research tasks / File preview / Research knowledge / Participants
+as tabs on the right. Below those tabs, Sandbox controls, settings and the terminal
+stay directly accessible. Scientific Toolsets and the MatCreator Agent stay available
+in the workspace's bottom bar. Edit layout with the standard Legion controls;
+saving to the library preserves its arrangement and remaps owners on deployment.
+
+The preset connects one native OAW Agent to a Conversation, a stopped Sandbox,
+the task board, all four scientific Toolsets, and the Know-Do Graph with **Use and
+learn**. It uses the user's default model. Configure that model and the Sandbox
+runtime/environment before a real computation. No host path, credentials, package
+installation or automatic Sandbox startup is embedded in the preset. Files use
+the ordinary Sandbox workspace; the Agent is instructed to use a separate output
+directory for each plan/session.
+
+The research loop follows [AI4MS/MatCreator devel's planning/execution
+orchestrator](https://github.com/AI4MS/MatCreator/blob/75c705c3c2bae7f2392c2d4bc9e90ca618a37f4a/src/matcreator/agents/orchestrator/agent.py)
+(inspected commit `75c705c3c2bae7f2392c2d4bc9e90ca618a37f4a`): clarify the goal,
+plan dependent steps, execute, verify results, revise blocked work and record
+experience. OAW owns model calls, tools, Runs, cancellation, conversations and
+files. This preset uses a scientific system instruction on the existing Agent;
+it does not launch the upstream ADK server or implement its DAG scheduler,
+parallel step executors or remote-job reconciliation.
+
+### Research tasks
+
+The board supports multiple named plans with optional session references, task
+dependencies, **To do / In progress / Blocked / Done**, result notes and output
+paths. A session reference is a label; switching conversation sessions does not
+automatically switch the selected plan or Sandbox folder. Choose the matching
+plan from **Research plans**. Output paths are recorded references; inspect the
+files in the Files and File preview sections.
+
+Both human edits and `task_board_*` Agent tools use the same revision-checked
+document. Live updates are polled every three seconds. A concurrent edit retains
+the local draft and offers an explicit reload. Unknown/cyclic dependencies and
+starting a task before its prerequisites finish are rejected. **Done** requires
+a result note; the Agent/user remains responsible for verifying that evidence.
+Changing a status never starts or cancels a Run. **Read tasks** grants inspection
+only; **Manage tasks** grants editing, and removing the connection revokes access
+immediately. Saving a reusable Legion keeps task structure and descriptions, but
+clears session references, results and output references and resets all tasks in
+the copy. The new Sandbox does not contain the source project's computed files.
+Ordinary reloads and backend restarts preserve the live board's progress.
+
+Example request: “Plan a copper supercell study. Inspect the available scientific
+environment, record the steps in the task board, generate the structure when
+ready, verify its atom count and publish the output paths.” Actual scientific
+execution requires the relevant Sandbox dependencies and an available model.
+
+## Skill package provenance
+
 MatCreator source: `theAfish/MatCreator`, `devel` commit
 `a1a57688cdb7fc476498476cc388f932b6e83d6a`.
 

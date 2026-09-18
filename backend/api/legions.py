@@ -18,7 +18,9 @@ router = APIRouter(prefix="/legions", tags=["legions"])
 @router.get("/presets", response_model=list[LegionSummary])
 async def list_presets(services: ApplicationServices = Depends(get_services)):
     from backend.legions.presets import PRESETS, preset_record
-    return [services._legion_summary(preset_record(key, services.plugins)) for key in PRESETS]
+    keys = [*PRESETS, *(preset.id for preset in services.plugins.legion_presets())]
+    return [services._legion_summary(preset_record(key, services.plugins)).model_copy(
+        update={"preset": True, "starter": key in PRESETS}) for key in keys]
 
 
 @router.post("/presets/{preset_id}/instances", response_model=LegionInstance, status_code=status.HTTP_201_CREATED)

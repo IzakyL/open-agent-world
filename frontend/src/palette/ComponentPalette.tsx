@@ -68,6 +68,7 @@ export function ComponentPalette() {
     const entry = dragged.current;
     endDrag();
     if (!entry || !deck || removing || library.busy || !deck.entries.some(item => item.kind === entry.kind && item.id === entry.id)) return;
+    if (showLegions && legions.find(item => item.id === entry.id)?.preset) return;
     const label = legions.find(item => item.id === entry.id)?.name ?? entry.id;
     if (showLegions && !window.confirm(t("Delete saved Legion \"{v0}\"? Existing formations in the world will remain.", { v0: String(label) }))) return;
     setRemoving(true);
@@ -81,7 +82,8 @@ export function ComponentPalette() {
     accepts: (item, point) => {
       const id = point.target.closest<HTMLElement>("[data-deck-destination]")?.dataset.deckDestination;
       if (point.target.closest('.deck-edit-button')) return false;
-      if (point.target.closest('.deck-trash')) return !library.busy && !removing && Boolean(dragged.current);
+      if (point.target.closest('.deck-trash')) return !library.busy && !removing && Boolean(dragged.current)
+        && !(showLegions && legions.find(legion => legion.id === item.entry.id)?.preset);
       return !library.busy && !removing && Boolean(id && id !== item.entry.sourceDeckId);
     },
     over: (_item, point) => {
@@ -161,7 +163,8 @@ export function ComponentPalette() {
                     });
                   },
                   end: endDrag,
-                  discardTarget: () => !useCardLibrary.getState().busy && !removing ? root.current?.querySelector<HTMLElement>('.deck-trash') ?? null : null,
+                  discardTarget: () => !useCardLibrary.getState().busy && !removing && !(showLegions && legion?.preset)
+                    ? root.current?.querySelector<HTMLElement>('.deck-trash') ?? null : null,
                 });
             }}
             onClick={event => {
@@ -172,7 +175,7 @@ export function ComponentPalette() {
             aria-label={available ? t("Place {v0}", { v0: String(label) }) : t("{v0} unavailable", { v0: String(label) })} title={available ? (definition ? t(definition.description) : undefined) ?? t("Deploy saved formation") : t("Content unavailable. Inspect it in the Library.")}>
             <CardStock style={{ "--collection-color": definition?.color ?? "#78967b" } as CSSProperties} className={`palette-item palette-item--${entry.kind === "node" ? entry.id : "legion"}`} data-deck-visual>
               <CardFace icon={available ? definition ? <CatalogIcon definition={definition} /> : <Layers3 /> : <AlertTriangle />} label={label}
-                description={available ? (definition ? t(definition.description) : undefined) ?? t("Saved formation") : t("Unavailable")} />
+                description={available ? (definition ? t(definition.description) : undefined) ?? t(legion?.preset ? "Preset formation" : "Saved formation") : t("Unavailable")} />
             </CardStock>
           </button>;
         })}

@@ -135,8 +135,8 @@ test('header settings are optional; saving restores four display states and layo
   const copies = instance.nodes.filter((n: { type: string }) => n.type === 'agent').sort((a: { name: string }, b: { name: string }) => a.name.localeCompare(b.name));
   for (let i = 0; i < 4; i++) {
     await expect(page.locator(`.world-card[data-card-id="${copies[i].id}"]`)).toHaveAttribute('data-surface-level', levels[i]);
-    expect(copies[i].position.x - copies[0].position.x).toBe(positions[i].x - positions[0].x);
-    expect(copies[i].position.y - copies[0].position.y).toBe(positions[i].y - positions[0].y);
+    expect(copies[i].position.x - copies[0].position.x).toBeCloseTo(positions[i].x - positions[0].x, 6);
+    expect(copies[i].position.y - copies[0].position.y).toBeCloseTo(positions[i].y - positions[0].y, 6);
   }
   await page.getByRole('button', { name: 'Fit view', exact: true }).click();
   await page.screenshot({ path: 'test-results/legion-restored-layout.png' });

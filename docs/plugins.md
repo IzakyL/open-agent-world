@@ -161,6 +161,20 @@ canonical compact example.
 
 ## Native file resources
 
+Plugin API 1.18 adds `registration.register_legion_preset(LegionPresetDefinition(...))`.
+Import `LegionPresetDefinition`, `PresetNode` and `PresetEdge` from
+`open_agent_world.plugin_api`. Preset IDs must use the plugin namespace. Declare
+portable node keys, types, configuration, positions, presentation levels,
+optional initial documents/template payloads and internal relationships. Include
+a `legion` node with `parent_key=None`; member references and workspace section
+owners use template keys. The host resolves contribution owners, validates the
+formation before registration commits, and deploys through the existing Legion
+transaction. A disabled owner or referenced node/relationship plugin hides its
+presets. The bottom Legions deck displays plugin presets, supports click/drag
+deployment and copying references into custom decks. Presets cannot be deleted
+from the Legions deck; deployed copies can be edited and saved as ordinary
+Legions. See `plugins/matcreator/oaw_matcreator/preset.py` for an example.
+
 Plugin API 1.17 adds `NodeResourceAction` for native files that cannot be
 represented as JSON node documents. Register a `resource_actions` mapping on
 `NodeTypeDefinition`; each synchronous handler receives a `NodeResourceContext`

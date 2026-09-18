@@ -12,6 +12,7 @@ from backend.errors import GraphValidationError, PluginCompatibilityError, Plugi
 from backend.plugins.lifecycle import NodeLifecycleHandler
 from backend.plugins.resources import NodeResourceAction
 from backend.plugins.template import NodeTemplateHandler
+from backend.plugins.presets import LegionPresetDefinition
 
 if TYPE_CHECKING:
     from backend.plugins.summoning import NodeSummoningDefinition
@@ -25,7 +26,7 @@ from backend.plugins.documents import NodeDocumentDefinition
 from backend.plugins.containers import NodeContainerDefinition
 from backend.plugins.execution import NodeExecutionDefinition
 
-PLUGIN_API_VERSION = "1.17"
+PLUGIN_API_VERSION = "1.18"
 _IDENTIFIER = re.compile(r"^[a-z][a-z0-9]*(?:[._:/-][a-z0-9]+)*$")
 _API_VERSION = re.compile(r"^(0|[1-9]\d*)\.(0|[1-9]\d*)$")
 
@@ -370,6 +371,14 @@ class PluginRegistration:
         self.state_schemas: dict[str, StateSchema] = {}
         self.assets: dict[str, PluginAsset] = {}
         self.packs: dict[str, PackDefinition] = {}
+        self.legion_presets: dict[str, LegionPresetDefinition] = {}
+
+    def register_legion_preset(self, definition: LegionPresetDefinition) -> None:
+        if not isinstance(definition, LegionPresetDefinition):
+            raise TypeError("Legion preset must be a LegionPresetDefinition")
+        if not definition.id.startswith(self.descriptor.id + "."):
+            raise ValueError("Legion preset IDs must use their plugin namespace")
+        self._add(self.legion_presets, definition.id, definition, "Legion preset")
 
     def register_pack(self, definition: PackDefinition) -> None:
         if not isinstance(definition, PackDefinition):
@@ -430,6 +439,7 @@ class PluginRegistry:
         self._owners: dict[tuple[str, str], str] = {}
         self._assets: dict[tuple[str, str], PluginAsset] = {}
         self._packs: dict[str, PackCatalogItem] = {}
+        self._legion_presets: dict[str, LegionPresetDefinition] = {}
         self._disabled: set[str] = set()
 
     def install(self, plugin: Plugin) -> None:
@@ -459,6 +469,7 @@ class PluginRegistry:
         self._validate_registration(staged)
 
         self._plugins[descriptor.id] = descriptor
+        self._commit_owned("legion_preset", descriptor.id, self._legion_presets, staged.legion_presets)
         self._commit_owned("pack", descriptor.id, self._packs, {
             key: PackCatalogItem(**pack.model_dump(), plugin_id=descriptor.id,
                 artwork_url=f"/api/plugins/{descriptor.id}/assets/{pack.artwork_asset}" if pack.artwork_asset else None)
@@ -512,6 +523,7 @@ class PluginRegistry:
                 raise ValueError("unsupported public asset media type")
 
         contribution_sets = (
+            ("legion_preset", "Legion preset", self._legion_presets, staged.legion_presets),
             ("pack", "pack", self._packs, staged.packs),
             ("capability", "capability", self._capabilities, staged.capabilities),
             ("node_type", "node type", self._nodes, staged.nodes),
@@ -547,6 +559,26 @@ class PluginRegistry:
                 raise ValueError(
                     f"{label} {duplicate!r} is already owned by plugin {owner!r}"
                 )
+
+        for preset in staged.legion_presets.values():
+            from backend.legions.presets import plugin_preset_record
+            # Validate against a temporary registry, before publishing any contribution.
+            candidate = PluginRegistry()
+            candidate._nodes = {**self._nodes, **staged.nodes}
+            candidate._relationships = {**self._relationships, **staged.relationships}
+            candidate._owners = {**self._owners,
+                **{("node_type", key): staged.descriptor.id for key in staged.nodes},
+                **{("relationship", key): staged.descriptor.id for key in staged.relationships},
+                **{("runtime_provider", key): staged.descriptor.id for key in staged.runtime_provider_factories},
+                **{("capability_handler", key): staged.descriptor.id for key in staged.capability_handlers},
+                **{("state_schema", key): staged.descriptor.id for key in staged.state_schemas}}
+            record = plugin_preset_record(preset, candidate)
+            nodes = {node.key: node for node in record.blueprint.nodes}
+            for edge in record.blueprint.edges:
+                if edge.source not in nodes or edge.target not in nodes:
+                    raise ValueError("Preset edges must reference preset nodes")
+                candidate.validate_relationship_order(nodes[edge.source].type, nodes[edge.target].type, edge.relationship)
+                candidate.validate_direction(edge.relationship, edge.direction)
 
         covered = set()
         for pack in staged.packs.values():
@@ -770,6 +802,12 @@ class PluginRegistry:
 
     def has_trait(self, type_id: str, trait: str) -> bool:
         return trait in self.node_type(type_id).traits
+
+    def legion_presets(self) -> tuple[LegionPresetDefinition, ...]:
+        return tuple(value.model_copy(deep=True) for key, value in self._legion_presets.items()
+                     if self.is_enabled(self.owner_id("legion_preset", key))
+                     and all(self.is_enabled(self.node_type_owner_id(node.type)) for node in value.nodes)
+                     and all(self.is_enabled(self.relationship_owner_id(edge.relationship)) for edge in value.edges))
 
     def owner_id(self, kind: str, contribution_id: str) -> str:
         try:

@@ -43,6 +43,7 @@ describe("authoritative world synchronization", () => {
     vi.spyOn(worldApi, "getModelConnections").mockResolvedValue({ revision: 0, connections: [], default_model: null });
     vi.spyOn(worldApi, "getCatalog").mockResolvedValue(TEST_CATALOG);
     vi.spyOn(worldApi, "getLegions").mockResolvedValue([]);
+    vi.spyOn(worldApi, "getBlueprintPresets").mockResolvedValue([]);
     useWorldStore.setState({
       cards: [],
       catalog: TEST_CATALOG,
@@ -804,6 +805,26 @@ describe("authoritative world synchronization", () => {
     expect(deleteNodes).toHaveBeenCalledWith([first.id, second.id]);
     expect(useWorldStore.getState().cards).toEqual([existing]);
     expect(useWorldStore.getState().edges).toEqual([]);
+  });
+
+  it("deploys and redoes a plugin preset through its preset route with only the group selected", async () => {
+    const preset = { ...legion('example.research'), preset: true };
+    const group = card('preset-group', 'legion');
+    const member = { ...card('preset-agent', 'agent'), parent_id: group.id };
+    useWorldStore.setState({ legions: [preset] });
+    const deploy = vi.spyOn(worldApi, 'instantiateLegion').mockResolvedValue({ legion_id: preset.id, nodes: [group, member], edges: [] });
+    vi.spyOn(worldApi, 'deleteNodes').mockResolvedValue([group, member]);
+    const remove = vi.spyOn(worldApi, 'deleteLegion');
+    await useWorldStore.getState().instantiateLegion(preset.id);
+    expect(deploy.mock.calls[0][2]?.preset).toBe(true);
+    expect(useWorldStore.getState().selectedCardIds).toEqual([group.id]);
+    expect(await useWorldStore.getState().deleteLegion(preset.id)).toBe(false);
+    expect(remove).not.toHaveBeenCalled();
+    await useWorldStore.getState().undo();
+    await useWorldStore.getState().redo();
+    expect(deploy).toHaveBeenCalledTimes(2);
+    expect(deploy.mock.calls[1][2]?.preset).toBe(true);
+    expect(useWorldStore.getState().selectedCardIds).toEqual([group.id]);
   });
 
   it("removes stale Legion deployment operations from both history stacks when deleting its card", async () => {
