@@ -58,7 +58,7 @@ export function tutorialAllows(target: Element, scope: InteractionScope, kind = 
   const roles = step.participants ?? (step.role ? [step.role] : [step.target]);
   const ownsNode = node && roles.some(role => refs[role] === node.getAttribute('data-id'));
   if (ownsNode) {
-    if (within('.react-flow__resize-control, .glue-resize, .minister-radius-handle')) return false;
+    if (within('.surface-resize-arc, .minister-radius-handle')) return false;
     if (within('.card-name-input')) return false;
     if (step.expects === 'configure' && within('button') && !within('.model-select')) return false;
     if (within('.semantic-handle')) return step.expects === 'connect';

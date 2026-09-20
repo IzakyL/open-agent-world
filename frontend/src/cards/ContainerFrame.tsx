@@ -1,5 +1,5 @@
 import { t, useLocale } from "../i18n";
-import { Handle, NodeResizeControl, Position } from "@xyflow/react";
+import { Handle, Position } from "@xyflow/react";
 import { Plus, Trash2, Ungroup } from "lucide-react";
 import { type ReactNode, useEffect, useRef } from "react";
 import { ConnectionHoverHint, clearConnectionHoverHint, updateConnectionHoverHint } from "./ConnectionHoverHint";
@@ -17,7 +17,6 @@ export function ContainerFrame({ card, selected, className, label, header, child
 }) {
   useLocale();
   const catalog = useWorldStore((state) => state.catalog);
-  const resize = useWorldStore((state) => state.resizeContainer);
   const spec = containerDefinition(card, catalog)!;
   const activity = useNodeActivity(card, true);
   const generation = useNodeGeneration(card.id);
@@ -35,8 +34,6 @@ export function ContainerFrame({ card, selected, className, label, header, child
     onPointerMoveCapture={(event) => { if (spec.connectable && connectingNodeId !== card.id) updateConnectionHoverHint(event, frameRef.current); }}
     onPointerLeave={() => clearConnectionHoverHint(frameRef.current)}>
     <ActivityGlow phase={activity.phase} />
-    {selected && <NodeResizeControl className="container-resize-arc" position="bottom-right" minWidth={spec.min_size[0]} minHeight={spec.min_size[1]} maxWidth={4096} maxHeight={4096}
-      onResizeEnd={(_event, size) => void resize(card.id, { width: size.width, height: size.height })} />}
     {spec.connectable && ([[Position.Top, "top"], [Position.Right, "right"], [Position.Bottom, "bottom"], [Position.Left, "left"]] as const).map(([position, side]) =>
       <Handle key={side} type="source" id={`boundary-${side}`} position={position} className={`semantic-handle semantic-handle--${side}`} data-connection-side={side} aria-label={t("Connect {v0} {v1}", { v0: String(card.name), v1: String(side) })} />)}
     {spec.connectable && <ConnectionHoverHint />}

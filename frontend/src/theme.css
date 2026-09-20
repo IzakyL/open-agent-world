@@ -1237,30 +1237,6 @@ button:disabled { cursor: not-allowed; opacity: 0.48; }
 
 /* Membership preview only; no overlay can intercept the existing drag gesture. */
 .container-frame[data-member-drop] { --drop-color:#7edbc1; outline:1px solid color-mix(in srgb,var(--drop-color) 65%,transparent); outline-offset:2px; box-shadow:0 0 12px color-mix(in srgb,var(--drop-color) 28%,transparent),0 0 36px color-mix(in srgb,var(--drop-color) 15%,transparent),inset 0 0 20px color-mix(in srgb,var(--drop-color) 8%,transparent); }
-/* Port the legacy Library corner grip without changing native resize behavior. */
-.react-flow__resize-control.container-resize-arc {
-  z-index:33;
-  width:22px;
-  height:22px;
-  border:0;
-  border-radius:0;
-  background:transparent;
-  box-shadow:none;
-  cursor:nwse-resize;
-}
-.react-flow__resize-control.container-resize-arc::after {
-  content:"";
-  position:absolute;
-  inset:5px;
-  border-right:2px solid #4f957d;
-  border-bottom:2px solid #4f957d;
-  border-radius:0 0 7px;
-  opacity:0;
-  transition:opacity 130ms ease;
-  pointer-events:none;
-}
-.react-flow__resize-control.container-resize-arc:hover::after,
-.react-flow__resize-control.container-resize-arc:active::after { opacity:1; }
 .container-frame[data-member-drop="enter"] { --drop-color:#79baff; }
 .container-frame[data-member-drop="leave"] { --drop-color:#efb17f; }
 .container-frame[data-member-drop]::after { content:"";position:absolute;inset:-2px;border:3px solid transparent;border-radius:inherit;pointer-events:none;z-index:2;filter:drop-shadow(0 0 5px var(--drop-color)) drop-shadow(0 0 12px color-mix(in srgb,var(--drop-color) 45%,transparent)); }
@@ -1964,8 +1940,7 @@ body:has(.tutorial-bubble[data-step="place-demo"]) .component-palette .deck-stag
 /* Empty team space belongs to the canvas; only its controls intercept gestures. */
 .legion-container { pointer-events: none; }
 .legion-container > .container-header,
-.legion-container > .legion-controls,
-.legion-container > .container-resize-arc { pointer-events: auto; }
+.legion-container > .legion-controls { pointer-events: auto; }
 /* Labels sit above container backgrounds (0), below member card surfaces (12+). */
 .world-canvas > .react-flow .react-flow__edgelabel-renderer { z-index: 1; }
 .legion-container.is-selected { outline: 2px solid #698b7d; outline-offset: 4px; }

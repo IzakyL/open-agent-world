@@ -201,7 +201,7 @@ GET /api/legion-groups/{legion_id}/state
 PUT /api/legion-groups/{legion_id}/state      {value, expected_revision}
 GET /api/legions/presets
 POST /api/legions/presets/{id}/instances     {position, unwrap: true}
-POST /api/legions                           {name, node_ids, presentation: {node_id: {level, base_level, workspace_size}}}
+POST /api/legions                           {name, node_ids, presentation: {node_id: {level, base_level, surface_sizes}}}
 POST /api/legions/{id}/instances            {position, as_group | unwrap}
 ```
 

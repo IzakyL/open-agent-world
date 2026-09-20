@@ -807,6 +807,32 @@ describe("authoritative world synchronization", () => {
     expect(useWorldStore.getState().edges).toEqual([]);
   });
 
+  it('explicitly holds descendants when resizing a container from its top-left corner', async () => {
+    const group = { ...card('group', 'legion'), position: { x: 100, y: 100 }, size: { width: 1400, height: 900 } };
+    const nested = { ...card('nested', 'legion'), parent_id: group.id, position: { x: 400, y: 300 } };
+    const member = { ...card('member', 'text'), parent_id: nested.id, position: { x: 650, y: 500 } };
+    useWorldStore.setState({ cards: [group, nested, member] });
+    const update = vi.spyOn(worldApi, 'batchUpdateNodes').mockImplementation(async patches => patches.map(p => ({ ...useWorldStore.getState().cards.find(c => c.id === p.node_id)!, ...p.patch })));
+    await useWorldStore.getState().resizeContainer(group.id, { width: 1500, height: 1000 }, { x: 0, y: 0 });
+    expect(update.mock.calls[0][0].map(p => [p.node_id, p.patch.position])).toEqual([
+      [group.id, { x: 0, y: 0 }], [nested.id, nested.position], [member.id, member.position],
+    ]);
+    await useWorldStore.getState().undo();
+    expect(useWorldStore.getState().cards).toEqual([group, nested, member]);
+  });
+
+  it('keeps glued peers explicit when saving a resized surface anchor', async () => {
+    const first = card('first', 'text'), peer = card('peer', 'text');
+    useWorldStore.setState({ cards: [first, peer] });
+    const update = vi.spyOn(worldApi, 'batchUpdateNodes').mockImplementation(async patches => patches.map(p => ({ ...useWorldStore.getState().cards.find(c => c.id === p.node_id)!, ...p.patch })));
+    await useWorldStore.getState().updateCardPositions([{ id: first.id, position: { x: -50, y: -30 } }], [peer.id]);
+    expect(update.mock.calls[0][0]).toEqual([
+      { node_id: first.id, patch: { position: { x: -50, y: -30 } } },
+      { node_id: peer.id, patch: { position: peer.position } },
+    ]);
+    expect(useWorldStore.getState().cards[1].position).toEqual(peer.position);
+  });
+
   it("deploys and redoes a plugin preset through its preset route with only the group selected", async () => {
     const preset = { ...legion('example.research'), preset: true };
     const group = card('preset-group', 'legion');

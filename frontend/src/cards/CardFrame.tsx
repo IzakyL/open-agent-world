@@ -6,13 +6,13 @@ import { useEquipmentDrag } from '../state/equipment';
 import { EquipmentToggle } from "./Equipment";
 import { ExecutionConfigurationBody } from "./ExecutionConfiguration";
 import { BarracksBody } from "./Barracks";
-import { Handle, NodeResizeControl, Position, type NodeProps } from "@xyflow/react";
+import { Handle, Position, type NodeProps } from "@xyflow/react";
 import { BookOpen, Maximize2, Minus, ExternalLink, Trash2, X } from "lucide-react";
 import { memo, type ComponentType, type CSSProperties, type PointerEvent as ReactPointerEvent, useEffect, useRef, useState } from "react";
 import { ConnectionHoverHint, clearConnectionHoverHint, updateConnectionHoverHint } from "./ConnectionHoverHint";
 import { CardName } from "./CardName";
 import { IconButton } from "../components/IconButton";
-import { NODE_SURFACE_RADIUS, WORKSPACE_MIN_SIZE, collapsedSurface, nodePresentation, nodeSurfaceSupport, surfaceLevelForNode, useNodeSurfaceStore, type NodeSurfaceLevel } from "../state/nodeSurfaces";
+import { NODE_SURFACE_RADIUS, collapsedSurface, nodePresentation, nodeSurfaceSupport, surfaceLevelForNode, useNodeSurfaceStore, type NodeSurfaceLevel } from "../state/nodeSurfaces";
 import { useWorldStore } from "../state/worldStore";
 import { type CardType, type WorldCard } from "../types/world";
 import { TaskBoardBody } from "./TaskBoard";
@@ -115,7 +115,6 @@ const WorldCardNodeComponent = memo(function WorldCardNodeComponent({ data, sele
   const closeInspector = useNodeSurfaceStore((state) => state.closeInspector);
   const dismissSurface = useNodeSurfaceStore((state) => state.dismiss);
   const openWorkspace = useNodeSurfaceStore((state) => state.openWorkspace);
-  const resizeWorkspace = useNodeSurfaceStore((state) => state.resizeWorkspace);
   const deleteCard = useWorldStore((state) => state.deleteCard);
   const connectingNodeId = useNodeSurfaceStore((state) => state.connectingNodeId);
   const cardRef = useRef<HTMLElement>(null);
@@ -210,11 +209,6 @@ const WorldCardNodeComponent = memo(function WorldCardNodeComponent({ data, sele
         if (visualLevel === "node" || visualLevel === "preview") openPrimary(card.id);
       }}
     >
-      {visualLevel === "workspace" && selected && <NodeResizeControl
-        className="container-resize-arc" position="bottom-right"
-        minWidth={WORKSPACE_MIN_SIZE.width} minHeight={WORKSPACE_MIN_SIZE.height}
-        maxWidth={4096} maxHeight={4096}
-        onResizeEnd={(_event, size) => resizeWorkspace(card.id, size)} />}
       <ActivityGlow phase={activity.phase} />
       {promotion && <div className="minister-promotion-sweep" aria-hidden="true" />}
       {!card.ephemeral ? (

@@ -346,8 +346,8 @@ interface WorldState {
     patch: Partial<Omit<WorldCard, "id" | "type">>,
     options?: { expectedRevision: number },
   ) => Promise<void>;
-  updateCardPositions: (updates: Array<{ id: string; position: WorldPosition; parent_id?: string | null }>) => Promise<void>;
-  resizeContainer: (id: string, size: WorldCard['size']) => Promise<void>;
+  updateCardPositions: (updates: Array<{ id: string; position: WorldPosition; parent_id?: string | null }>, stationaryIds?: string[]) => Promise<void>;
+  resizeContainer: (id: string, size: WorldCard['size'], position?: WorldPosition) => Promise<void>;
   waitForPositionCommits: () => Promise<void>;
   createLegion: (input: {
     name: string;
@@ -629,7 +629,7 @@ export const useWorldStore = create<WorldState>()(persist((set, get) => ({
     const before = get().cards.filter((c) => nodeIds.includes(c.id)).map(copyCard);
     const surfaces = useNodeSurfaceStore.getState();
     const levels = new Map(before.map(card => [card.id, surfaceLevelForNode(card.id, surfaces.surfaceLevels)]));
-    const bounds = containerContentBounds(before, get().catalog, levels, surfaces.workspaceSizes);
+    const bounds = containerContentBounds(before, get().catalog, levels, surfaces.surfaceSizes);
     try {
       const result = await worldApi.formLegionGroup("New Legion", nodeIds, bounds);
       const group = result.find((c) => c.type === "legion")!;
@@ -778,15 +778,19 @@ export const useWorldStore = create<WorldState>()(persist((set, get) => ({
     }
   }),
 
-  resizeContainer: (id, size) => withHistoryTransaction(async () => {
+  resizeContainer: (id, size, position) => withHistoryTransaction(async () => {
     const { cards, catalog } = get();
     const parent = cards.find(card => card.id === id);
     if (!parent || !isContainer(parent, catalog)) return;
     const surfaces = useNodeSurfaceStore.getState().surfaceLevels;
     const levels = new Map(cards.map(card => [card.id, surfaceLevelForNode(card.id, surfaces)]));
-    const layout = resizeContainerLayout(cards, catalog, levels, id, size, useNodeSurfaceStore.getState().workspaceSizes);
-    const before = cards.filter(card => card.id === id || layout.positions.has(card.id)).map(copyCard);
-    const after = before.map(card => ({ ...card, size: card.id === id ? layout.size : card.size, position: layout.positions.get(card.id) ?? card.position }));
+    const layout = resizeContainerLayout(cards, catalog, levels, id, size, useNodeSurfaceStore.getState().surfaceSizes, position);
+    // A changed frame origin is a resize, while the shared batch API normally
+    // translates descendants with a moved parent. Explicit stationary positions
+    // keep every descendant in place in the same transaction, including undo.
+    const held = new Set(position && !samePosition(position, parent.position) ? ownedDescendants(cards, id).map(card => card.id) : []);
+    const before = cards.filter(card => card.id === id || held.has(card.id) || layout.positions.has(card.id)).map(copyCard);
+    const after = before.map(card => ({ ...card, size: card.id === id ? layout.size : card.size, position: card.id === id ? position ?? card.position : layout.positions.get(card.id) ?? card.position }));
     const optimistic = new Map(after.map(card => [card.id, card]));
     markWorldMutation();
     set(state => ({ cards: state.cards.map(card => optimistic.get(card.id) ?? card), syncState: 'syncing' }));
@@ -804,7 +808,7 @@ export const useWorldStore = create<WorldState>()(persist((set, get) => ({
     }
   }),
 
-  updateCardPositions: (updates) => {
+  updateCardPositions: (updates, stationaryIds = []) => {
     const parents = new Map(updates.filter((update) => update.parent_id !== undefined).map((update) => [update.id, update.parent_id!]));
     const requested = new Map<string, WorldPosition>();
     for (const update of updates) {
@@ -830,6 +834,14 @@ export const useWorldStore = create<WorldState>()(persist((set, get) => ({
         return position !== undefined && (!samePosition(card.position, position) || (parents.has(card.id) && card.parent_id !== parents.get(card.id)));
       });
       if (before.length === 0) return;
+
+      // Resizing a glued surface changes its anchor without moving its peers.
+      // Keep stationary peers explicit so the backend does not expand this into
+      // a group translation. Record them for the same semantics on undo/redo.
+      for (const card of available) if (stationaryIds.includes(card.id) && !requested.has(card.id)) {
+        requested.set(card.id, { ...card.position });
+        before.push(card);
+      }
 
       const beforeById = new Map(before.map((card) => [card.id, copyCard(card)]));
       const requestedById = new Map(before.map((card) => [card.id, requested.get(card.id)!]));

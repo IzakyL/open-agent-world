@@ -261,6 +261,7 @@ export interface LegionNodePresentation {
   level: NodeSurfaceLevel;
   base_level?: "node" | "preview" | null;
   workspace_size?: WorldSize | null;
+  surface_sizes?: Partial<Record<NodeSurfaceLevel, WorldSize>>;
 }
 
 export interface LegionDeployOptions {
