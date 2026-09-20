@@ -1,3 +1,4 @@
+import { ConnectionDropSurface } from "./ConnectionDropSurface";
 import { t, useLocale } from "../i18n";
 import { Handle, Position } from "@xyflow/react";
 import { Plus, Trash2, Ungroup } from "lucide-react";
@@ -37,7 +38,7 @@ export function ContainerFrame({ card, selected, className, label, header, child
     {spec.connectable && ([[Position.Top, "top"], [Position.Right, "right"], [Position.Bottom, "bottom"], [Position.Left, "left"]] as const).map(([position, side]) =>
       <Handle key={side} type="source" id={`boundary-${side}`} position={position} className={`semantic-handle semantic-handle--${side}`} data-connection-side={side} aria-label={t("Connect {v0} {v1}", { v0: String(card.name), v1: String(side) })} />)}
     {spec.connectable && <ConnectionHoverHint />}
-    <header className="container-drag-region container-header">{header}</header>
+    <header className="container-drag-region container-header">{header}{spec.connectable && <ConnectionDropSurface nodeId={card.id} />}</header>
     {(spec.virtual || activity.phase !== "idle") && <span className="container-activity" role="status" data-phase={activity.phase}><i />{activityLabel}</span>}
     {children}
   </section>;

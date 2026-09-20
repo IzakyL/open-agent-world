@@ -2376,3 +2376,22 @@ body:has(.tutorial-bubble[data-step="place-demo"]) .component-palette .deck-stag
 .deck-edit-button:hover { color: var(--accent-strong); border-color: var(--line-strong); background: var(--surface-raised); }
 .deck-edit-button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 .deck-edit-button:disabled { opacity: .45; cursor: default; }
+
+/* Body drop targets only intercept input during a connection gesture. Containers
+   restrict this surface to their header so members retain their own hit areas. */
+.container-header { position: relative; }
+.react-flow__handle.connection-drop-surface {
+  inset: 0 !important;
+  width: 100% !important;
+  height: 100% !important;
+  transform: none !important;
+  border: 0 !important;
+  border-radius: inherit;
+  background: transparent !important;
+  pointer-events: none !important;
+  z-index: 30;
+}
+.react-flow__handle.connection-drop-surface[data-active] { pointer-events: all !important; }
+.react-flow__handle.connection-drop-surface.valid {
+  box-shadow: inset 0 0 0 2px var(--accent, #69aa96);
+}

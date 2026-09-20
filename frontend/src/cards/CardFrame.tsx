@@ -1,3 +1,4 @@
+import { ConnectionDropSurface } from "./ConnectionDropSurface";
 import { t, useLocale } from "../i18n";
 import { MinisterRoleSettings } from './MinisterRoleCard';
 import { MinisterAgent } from './Minister';
@@ -209,6 +210,7 @@ const WorldCardNodeComponent = memo(function WorldCardNodeComponent({ data, sele
         if (visualLevel === "node" || visualLevel === "preview") openPrimary(card.id);
       }}
     >
+      {!card.ephemeral && <ConnectionDropSurface nodeId={card.id} />}
       <ActivityGlow phase={activity.phase} />
       {promotion && <div className="minister-promotion-sweep" aria-hidden="true" />}
       {!card.ephemeral ? (
