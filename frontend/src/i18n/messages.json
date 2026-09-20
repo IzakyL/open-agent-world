@@ -1,4 +1,11 @@
 {
+  "Context & output limits": ["Context & output limits", "上下文与输出限制"],
+  "Context window (tokens)": ["Context window (tokens)", "上下文窗口上限（tokens）"],
+  "Maximum output (tokens)": ["Maximum output (tokens)", "最大输出（tokens）"],
+  "Model {v0} context window": ["Model {v0} context window", "模型 {v0} 上下文窗口"],
+  "Model {v0} maximum output": ["Model {v0} maximum output", "模型 {v0} 最大输出"],
+  "Defaults: 128,000 context / 8,192 output. Adjust to your service's limits. Output must be smaller than the context window.": ["Defaults: 128,000 context / 8,192 output. Adjust to your service's limits. Output must be smaller than the context window.", "默认上下文 128,000 / 输出 8,192。请按服务商限制调整，最大输出必须小于上下文窗口。"],
+  "Context {v0}% · compacted {v1} times": ["Context {v0}% · compacted {v1} times", "上下文压力 {v0}% · 已压缩 {v1} 次"],
   "Plugin presets": ["Plugin presets", "插件预设"],
   "A plugin preset. Deploy it, customize its members and workspace, then save your own copy.": ["A plugin preset. Deploy it, customize its members and workspace, then save your own copy.", "插件提供的预设。部署后可调整成员和工作区，再保存为你自己的副本。"],
   "Preset formation": ["Preset formation", "预设军团"],

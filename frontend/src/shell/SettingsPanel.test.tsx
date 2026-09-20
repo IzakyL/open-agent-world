@@ -24,6 +24,36 @@ describe("Application settings", () => {
   });
   afterEach(cleanup);
 
+  it("shows numeric model defaults and saves edited limits", async () => {
+    const save = vi.spyOn(worldApi, "saveModelConnections").mockResolvedValue(savedCatalog());
+    render(<SettingsPanel />);
+    const windowInput = await screen.findByLabelText("Model 1 context window") as HTMLInputElement;
+    const outputInput = screen.getByLabelText("Model 1 maximum output") as HTMLInputElement;
+    expect(windowInput.value).toBe("128000");
+    expect(outputInput.value).toBe("8192");
+    fireEvent.click(screen.getByText("Context & output limits"));
+    fireEvent.change(windowInput, { target: { value: "1000000" } });
+    fireEvent.change(outputInput, { target: { value: "16384" } });
+    fireEvent.click(screen.getByRole("button", { name: "Save settings" }));
+    await waitFor(() => expect(save).toHaveBeenCalled());
+    expect(save.mock.calls[0][0].connections[0].models[0]).toMatchObject({ context_window: 1000000, max_output_tokens: 16384 });
+  });
+
+  it("allows clearing numeric drafts and reveals invalid limits", async () => {
+    render(<SettingsPanel />);
+    const windowInput = await screen.findByLabelText("Model 1 context window") as HTMLInputElement;
+    const outputInput = screen.getByLabelText("Model 1 maximum output") as HTMLInputElement;
+    fireEvent.change(windowInput, { target: { value: "" } });
+    expect(windowInput.value).toBe("");
+    expect(windowInput.checkValidity()).toBe(false);
+    expect(windowInput.closest("details")!.open).toBe(true);
+    fireEvent.change(windowInput, { target: { value: "4096" } });
+    expect(outputInput.checkValidity()).toBe(false);
+    fireEvent.change(outputInput, { target: { value: "1024" } });
+    expect(windowInput.checkValidity()).toBe(true);
+    expect(outputInput.checkValidity()).toBe(true);
+  });
+
   it("schedules storage without moving the current location and can cancel", async () => {
     const initial = { current_path: "D:/Data", pending_path: null, previous_path: null, last_error: null, revision: 0, editable: true, managed_by: "settings" };
     vi.spyOn(worldApi, "getStorageSettings").mockResolvedValue(initial);

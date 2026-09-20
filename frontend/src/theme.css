@@ -954,6 +954,10 @@ button:disabled { cursor: not-allowed; opacity: 0.48; }
 .connection-model-heading { margin-top: 10px; padding-top: 14px; border-top: 1px solid var(--line); }
 .connection-model-row { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) 72px; gap: 8px; align-items: end; }
 .connection-model-actions { display: flex; align-items: center; justify-content: space-between; gap: 4px; min-height: 34px; }
+.connection-model-limits { grid-column: 1 / -1; min-width: 0; margin-bottom: 10px; }
+.connection-model-limits > summary { width: fit-content; color: var(--ink-soft); cursor: pointer; font-size: 12px; padding: 4px 0; }
+.connection-model-limits[open] > summary { margin-bottom: 8px; }
+.connection-model-limits .settings-description { margin: 8px 0 0; }
 .model-default-icon { flex-shrink: 0; color: var(--accent); fill: var(--accent-soft); }
 .settings-form .settings-check { display: flex; align-items: center; gap: 5px; font-size: 11px; white-space: nowrap; min-height: 34px; }
 .settings-form .settings-check input { width: 14px; height: 14px; box-shadow: none; accent-color: var(--accent); }

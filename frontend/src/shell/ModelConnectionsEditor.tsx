@@ -2,7 +2,7 @@ import { reportInteraction } from "../state/interactions";
 import { t, useLocale } from "../i18n";
 import { Plus, Server, Star, Trash2 } from "lucide-react";
 import { useState } from "react";
-import { availableModels, modelRef, type ModelCatalog, type ModelConnection } from "../state/modelConnections";
+import { availableModels, DEFAULT_CONTEXT_WINDOW, DEFAULT_MAX_OUTPUT_TOKENS, modelRef, type ModelCatalog, type ModelConnection } from "../state/modelConnections";
 
 const presets = {
   openai: { name: "OpenAI", base_url: "https://api.openai.com/v1", auth_mode: "api_key" as const },
@@ -113,7 +113,7 @@ export function ModelConnectionsEditor({ value, onChange, saved, busy }: {
           </div>}
         </div>
         <div data-tutorial="model-list">
-        <div className="connection-model-heading"><h4>{t("Models")}</h4><button type="button" className="secondary-button" disabled={connection.models.length >= 100} onClick={() => update({ models: [...connection.models, { id: crypto.randomUUID(), name: "", model_id: "", enabled: true }] })}><Plus size={13} /> {t("Add model")}</button></div>
+        <div className="connection-model-heading"><h4>{t("Models")}</h4><button type="button" className="secondary-button" disabled={connection.models.length >= 100} onClick={() => update({ models: [...connection.models, { id: crypto.randomUUID(), name: "", model_id: "", enabled: true, context_window: DEFAULT_CONTEXT_WINDOW, max_output_tokens: DEFAULT_MAX_OUTPUT_TOKENS }] })}><Plus size={13} /> {t("Add model")}</button></div>
         {!connection.models.length && <p className="settings-description">{t("Add a model using the model ID supplied by your service.")}</p>}
         {connection.models.map((model, index) => <div className="connection-model-row" key={model.id}>
           <label className="field-label"><span>{t("Display name")}{value.default_model === modelRef(model.id) && <Star className="model-default-icon" size={12} role="img" aria-label={t("Default for new agents")}><title>{t("Default for new agents")}</title></Star>}</span><input aria-label={t("Model {v0} display name", { v0: String(index + 1) })} required maxLength={120} value={model.name}
@@ -124,6 +124,21 @@ export function ModelConnectionsEditor({ value, onChange, saved, busy }: {
             onChange={e => update({ models: connection.models.map(m => m.id === model.id ? { ...m, enabled: e.target.checked } : m) })} />{t("On")}</label>
           {!saved.connections.some(c => c.models.some(m => m.id === model.id)) && <button type="button" className="icon-button" aria-label={t("Remove model {v0}", { v0: String(index + 1) })} onClick={() => update({ models: connection.models.filter(m => m.id !== model.id) })}><Trash2 size={13} /></button>}
           </div>
+          <details className="connection-model-limits" onInvalid={event => { event.currentTarget.open = true; }}>
+            <summary>{t("Context & output limits")}</summary>
+            <div className="connection-fields">
+              <label className="field-label"><span>{t("Context window (tokens)")}</span><input type="number" required min={1024} max={2147483647} step={1}
+                aria-label={t("Model {v0} context window", { v0: String(index + 1) })}
+                value={Number.isNaN(model.context_window) ? "" : model.context_window ?? DEFAULT_CONTEXT_WINDOW}
+                onChange={e => update({ models: connection.models.map(m => m.id === model.id ? { ...m, context_window: e.target.valueAsNumber } : m) })} /></label>
+              <label className="field-label"><span>{t("Maximum output (tokens)")}</span><input type="number" required min={1} step={1}
+                max={Number.isNaN(model.context_window) ? 2147483646 : (model.context_window ?? DEFAULT_CONTEXT_WINDOW) - 1}
+                aria-label={t("Model {v0} maximum output", { v0: String(index + 1) })}
+                value={Number.isNaN(model.max_output_tokens) ? "" : model.max_output_tokens ?? DEFAULT_MAX_OUTPUT_TOKENS}
+                onChange={e => update({ models: connection.models.map(m => m.id === model.id ? { ...m, max_output_tokens: e.target.valueAsNumber } : m) })} /></label>
+            </div>
+            <p className="settings-description">{t("Defaults: 128,000 context / 8,192 output. Adjust to your service's limits. Output must be smaller than the context window.")}</p>
+          </details>
         </div>)}
         </div>
         <p className="settings-description">{t("Changes apply to new runs. Disable saved models or connections to preserve existing agent references.")}</p>

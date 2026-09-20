@@ -352,6 +352,15 @@ export interface ConversationSummary {
   conversation_id: string;
   sessions: ConversationSession[];
   agents: ConversationAgent[];
+  context_statuses?: Record<string, Record<string, ContextStatus>>;
+}
+
+export interface ContextStatus {
+  pressure: number;
+  state: "normal" | "high" | "compacting";
+  estimated_tokens?: number;
+  context_limit?: number;
+  compaction_count: number;
 }
 
 export interface ContainerDefinition {

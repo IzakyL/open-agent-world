@@ -26,6 +26,7 @@ from backend.agents import (
     GoogleAdkAgentRuntime,
     RuntimeProvider,
 )
+from backend.agents.context import ContextStore
 from backend.capabilities.broker import CapabilityBroker
 from backend.card_library import CardLibraryStore
 from backend.visual_observation import VisualObservers
@@ -539,6 +540,7 @@ class ApplicationServices:
     plugins: PluginRegistry
     conversations: ConversationStore
     state: StateStore
+    contexts: ContextStore
     legions: LegionStore
     llm_settings: LlmSettingsStore
     card_library: CardLibraryStore
@@ -2523,6 +2525,11 @@ class ApplicationServices:
             conversation_id=conversation_id,
             sessions=sessions,
             agents=agents,
+            context_statuses={
+                session_id: {agent_id: status for agent_id, status in statuses.items()
+                             if self._require_run_manager().uses_oaw_context(self.world.get_card(agent_id))}
+                for session_id, statuses in self.contexts.statuses(conversation_id).items()
+            },
         )
 
     def list_agent_conversation_sessions(
@@ -3386,9 +3393,11 @@ class ApplicationServices:
             for agent_id in session.participant_ids
             if self.world.maybe_get_card(agent_id) is not None
         ]
-        transcript = self.conversations.list_messages(
-            conversation_id, session.id, limit=40
-        )
+        managed = self._require_run_manager().uses_oaw_context(self.world.get_card(target_agent_id))
+        # The OAW runtime ingests canonical messages by cursor, including messages
+        # older than 40 and peer turns. Plugin continuation remains provider-owned.
+        transcript = [] if managed else self.conversations.list_messages(
+            conversation_id, session.id, limit=40)
         lines = "\n".join(
             f"{item.sender_name}: {item.content}" + ''.join(
                 f"\n[Attachment: {file.name}; version_id={file.version_id}; path={file.path}; {file.size_bytes} bytes]"
@@ -3644,6 +3653,8 @@ class ApplicationServices:
         if isinstance(provider, GoogleAdkAgentRuntime):
             from backend.security.model_connections import ModelConnectionStore
             provider.model_connections = ModelConnectionStore(self.llm_settings)
+            if provider_id == "google.adk" and type(provider) is GoogleAdkAgentRuntime:
+                provider.context_store = self.contexts
         manager.install_provider(provider_id, provider)
         if default:
             manager.default_runtime_provider_id = provider_id
@@ -3718,6 +3729,7 @@ def create_services(
         events.publish_event_nowait(event)
 
     state = StateStore(database, plugin_registry, event_sink=publish_state_mutation)
+    contexts = ContextStore(database, events)
     state.ensure_scope("world", "default", schema_id="core.world")
     legions = LegionStore(database)
     services = ApplicationServices(
@@ -3730,6 +3742,7 @@ def create_services(
         plugins=plugin_registry,
         conversations=conversations,
         state=state,
+        contexts=contexts,
         legions=legions,
         llm_settings=LlmSettingsStore(database, settings.data_root),
         card_library=card_library,
@@ -3758,7 +3771,8 @@ def create_services(
             else settings.agent_runtime
         ),
         provider_options={
-            "google.adk": {"app_name": "open-agent-world", "model_connections": ModelConnectionStore(services.llm_settings)},
+            "google.adk": {"app_name": "open-agent-world", "model_connections": ModelConnectionStore(services.llm_settings),
+                           "context_store": contexts},
             "openai.codex": {
                 "workspace_root": SandboxSettingsStore(database, settings.data_root).resolve_workspace_root,
             },

@@ -7,6 +7,7 @@ import { useWorldStore } from "../state/worldStore";
 import type {
   ConversationMessage,
   ConversationSession,
+  ConversationSummary,
   WorldCard,
 } from "../types/world";
 import { ConversationWorkspace } from "./ConversationWorkspace";
@@ -61,6 +62,44 @@ describe("ConversationWorkspace snapshots", () => {
   });
 
   afterEach(() => cleanup());
+
+  it("scopes quiet participant rings to the selected session and refreshes on context events", async () => {
+    const participants = ["atlas", "boreal", "plugin"];
+    const first = { ...session, participant_ids: participants, group_id: "group" };
+    const second = { ...first, id: "session-2", title: "Second topic" };
+    const summary: ConversationSummary = {
+      conversation_id: card.id, sessions: [first, second],
+      agents: participants.map((id) => ({ id, name: id, model: "test", status: "idle", connected: true })),
+      context_statuses: {
+        [first.id]: {
+          atlas: { pressure: .92, state: "high" as const, compaction_count: 1 },
+          boreal: { pressure: .3, state: "normal" as const, compaction_count: 0 },
+        },
+        [second.id]: { atlas: { pressure: .1, state: "normal" as const, compaction_count: 0 } },
+      },
+    };
+    vi.mocked(worldApi.getConversation).mockResolvedValue(summary);
+    const view = render(<ConversationWorkspace card={card} />);
+    await screen.findByTitle("Context 92% · compacted 1 times");
+    expect(view.container.querySelectorAll(".context-pressure-ring")).toHaveLength(2);
+    expect(view.container.querySelectorAll(".workspace-message .context-pressure-ring")).toHaveLength(0);
+    fireEvent.click(screen.getByTitle("Second topic"));
+    expect(screen.getByTitle("Context 10% · compacted 0 times")).toBeTruthy();
+    expect(screen.queryByTitle("Context 92% · compacted 1 times")).toBeNull();
+    fireEvent.click(screen.getByTitle("General"));
+    expect(screen.getByTitle("Context 30% · compacted 0 times")).toBeTruthy();
+    vi.mocked(worldApi.getConversation).mockResolvedValue({ ...summary, context_statuses: {
+      ...summary.context_statuses, [first.id]: { ...summary.context_statuses![first.id],
+        atlas: { pressure: .2, state: "normal", compaction_count: 2 } },
+    } });
+    const historyCalls = vi.mocked(worldApi.getConversationTimeline).mock.calls.length;
+    act(() => useWorldStore.getState().ingestEvent({ id: "context-update", type: "context_status", timestamp: "now",
+      conversation_id: card.id, session_id: first.id, agent_id: "atlas", payload: {} }));
+    await screen.findByTitle("Context 20% · compacted 2 times");
+    expect(screen.getByTitle("Context 30% · compacted 0 times")).toBeTruthy();
+    expect(worldApi.getConversationTimeline).toHaveBeenCalledTimes(historyCalls);
+    expect(useWorldStore.getState().toasts).toHaveLength(0);
+  });
 
   it("keeps the active conversation and composer alive when detached and returned", async () => {
     const hosts = new Map<string, HTMLDivElement>();

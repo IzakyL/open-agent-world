@@ -8,3 +8,14 @@
 .conversation-participant-panel > .conversation-participant-details { flex: 1; }
 .conversation-sessions-section.has-neighbor { border-right: 1px solid var(--line); }
 .conversation-participants-section.has-neighbor { border-left: 1px solid var(--line); }
+.workspace-context-item > .context-avatar { position: relative; border-radius: 50%; }
+.context-pressure-ring { position: absolute; inset: -3px; width: calc(100% + 6px); height: calc(100% + 6px); overflow: visible; fill: none; stroke-width: 1.4; pointer-events: none; transform: rotate(-90deg); }
+.context-pressure-track { stroke: var(--ink-faint); opacity: .16; }
+.context-pressure-fill { stroke: var(--accent); opacity: .65; stroke-linecap: round; transition: stroke-dashoffset 600ms ease, opacity 300ms ease; }
+.context-avatar.is-high .context-pressure-fill { opacity: .9; }
+.context-avatar.is-compacting .context-pressure-fill { animation: context-pressure-pulse 1.4s ease-in-out infinite; }
+@keyframes context-pressure-pulse { 50% { opacity: .3; } }
+@media (prefers-reduced-motion: reduce) {
+  .context-pressure-fill { transition: none; }
+  .context-avatar.is-compacting .context-pressure-fill { animation: none; }
+}

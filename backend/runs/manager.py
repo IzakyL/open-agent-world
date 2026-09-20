@@ -850,6 +850,18 @@ class RunManager:
             )
         return provider_id
 
+    def uses_oaw_context(self, card: Card) -> bool:
+        """Ownership, not core.agent membership, selects host compaction."""
+        from backend.agents.google_adk import GoogleAdkAgentRuntime
+        provider_id = card.config.get("runtime_provider_id") or self.default_runtime_provider_id
+        if provider_id != "google.adk":
+            return False
+        installed = self._providers.get(provider_id)
+        if installed is not None:
+            return type(installed) is GoogleAdkAgentRuntime and installed.context_store is not None
+        return (self.plugins.has_runtime_provider(provider_id)
+                and self.plugins.runtime_provider_owner_id(provider_id) == "open-agent-world.core")
+
     def _optional_provider_id(self, card: Card) -> str | None:
         configured = card.config.get("runtime_provider_id")
         provider_id = configured if isinstance(configured, str) and configured else None

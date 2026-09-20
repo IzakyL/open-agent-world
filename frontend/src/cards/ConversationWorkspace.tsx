@@ -2,6 +2,7 @@ import { t, useLocale } from "../i18n";
 import { useConversationTimeline } from "../state/useConversationTimeline";
 import { MarkdownMessage } from "./MarkdownMessage";
 import { ConversationAttachments } from "./ConversationAttachments";
+import { ContextAvatar } from "./ContextAvatar";
 import { ArrowDown, Bot, Info, LoaderCircle, MessageSquare, MoreHorizontal, Paperclip, Pencil, Plus, Send, Trash2, UserMinus, UserRound, Users, X } from "lucide-react";
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { apiErrorMessage, worldApi } from "../api/client";
@@ -13,7 +14,7 @@ import {
 } from "../state/conversationMentions";
 import { useWorldStore } from "../state/worldStore";
 import { useOpenFiles } from "../state/openFiles";
-import type { ConversationAgent, ConversationAttachment, ConversationMessage, ConversationSession, WorldCard } from "../types/world";
+import type { ContextStatus, ConversationAgent, ConversationAttachment, ConversationMessage, ConversationSession, WorldCard } from "../types/world";
 import { reportInteraction } from '../state/interactions';
 import { WorkspaceSection, useWorkspaceSections } from '../workspace/WorkspaceSection';
 import './conversationWorkspace.css';
@@ -58,6 +59,10 @@ export function ConversationWorkspace({ card }: { card: WorldCard }) {
   const socketLive = useWorldStore((state) => state.socketState === "live");
   const [sessions, setSessions] = useState<ConversationSession[]>([]);
   const [agents, setAgents] = useState<ConversationAgent[]>([]);
+  const [contextStatuses, setContextStatuses] = useState<Record<string, Record<string, ContextStatus>>>({});
+  const contextEvent = useWorldStore((state) => state.events.find((event) => (
+    event.type === "context_status" && event.conversation_id === card.id
+  ))?.id);
   const [activeSessionId, setActiveSessionId] = useState<string>();
   useEffect(() => () => useOpenFiles.getState().clear(card.id), [card.id, activeSessionId]);
 
@@ -124,6 +129,7 @@ export function ConversationWorkspace({ card }: { card: WorldCard }) {
       if (!current) return;
       setSessions(summary.sessions);
       setAgents(summary.agents);
+      setContextStatuses(summary.context_statuses ?? {});
       setActiveSessionId((selected) => (
         selected && summary.sessions.some((session) => session.id === selected)
           ? selected
@@ -132,7 +138,7 @@ export function ConversationWorkspace({ card }: { card: WorldCard }) {
       setError(undefined);
     }).catch((reason) => current && setError(apiErrorMessage(reason)));
     return () => { current = false; };
-  }, [accessEvent, card.id, refreshEvent, socketLive]);
+  }, [accessEvent, card.id, refreshEvent, socketLive, contextEvent]);
 
   useEffect(() => {
     const eligible = activeSession?.participant_ids.filter((id) => agents.some((agent) => agent.id === id && agent.connected)) ?? [];
@@ -524,7 +530,7 @@ export function ConversationWorkspace({ card }: { card: WorldCard }) {
                 setSelectedAgentId(agent.id);
                 setDraft((value) => appendMention(value, agent.name));
               }}>
-                <span><Bot size={12} /></span><div><strong>{agent.name}</strong><small>{agent.status} {t("· insert mention")}</small></div>
+                <ContextAvatar key={`${activeSessionId}/${agent.id}`} status={activeSessionId ? contextStatuses[activeSessionId]?.[agent.id] : undefined} /><div><strong>{agent.name}</strong><small>{agent.status} {t("· insert mention")}</small></div>
               </button>
               <button type="button" className="conversation-kick-agent" aria-label={t("Remove {v0} from session", { v0: String(agent.name) })} disabled={busy} onClick={() => void removeParticipant(agent)} title={t("Remove {v0}", { v0: String(agent.name) })}><UserMinus size={12} /></button>
             </div>

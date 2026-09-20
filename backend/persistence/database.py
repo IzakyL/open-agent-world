@@ -125,6 +125,16 @@ CREATE TABLE IF NOT EXISTS conversation_messages (
 CREATE INDEX IF NOT EXISTS conversation_messages_session_idx
     ON conversation_messages (session_id, created_at, id);
 
+-- OAW execution continuation, separate from canonical conversation history.
+CREATE TABLE IF NOT EXISTS agent_contexts (
+    agent_id TEXT NOT NULL REFERENCES cards(id) ON DELETE CASCADE,
+    context_id TEXT NOT NULL,
+    session_id TEXT REFERENCES conversation_sessions(id) ON DELETE CASCADE,
+    checkpoint_json TEXT NOT NULL,
+    status_json TEXT NOT NULL,
+    PRIMARY KEY (agent_id, context_id)
+);
+
 CREATE TABLE IF NOT EXISTS runs (
     run_id TEXT PRIMARY KEY,
     agent_id TEXT NOT NULL,
