@@ -2603,6 +2603,24 @@ class ApplicationServices:
         )
         return updated
 
+    async def rename_conversation_group(self, conversation_id: str, group_id: str, title: str) -> list[ConversationSession]:
+        self._require_card_type(conversation_id, CardType.CONVERSATION)
+        sessions = self.conversations.rename_group(conversation_id, group_id, title)
+        for session in sessions:
+            await self.events.publish(EventType.CONVERSATION_SESSION_UPDATED, conversation_id=conversation_id,
+                                      session_id=session.id, payload={"session": session.model_dump(mode="json")})
+        return sessions
+
+    async def delete_conversation_group(self, conversation_id: str, group_id: str) -> None:
+        self._require_card_type(conversation_id, CardType.CONVERSATION)
+        session_ids = self.conversations.delete_group(conversation_id, group_id)
+        for session_id in session_ids:
+            self.state.delete_scope("session", session_id)
+        for session_id in session_ids:
+            await self.events.publish(EventType.CONVERSATION_SESSION_DELETED, node_id=conversation_id,
+                                      conversation_id=conversation_id, session_id=session_id,
+                                      payload={"session_id": session_id, "group_id": group_id})
+
     async def delete_conversation_session(
         self, conversation_id: str, session_id: str
     ) -> None:

@@ -327,7 +327,7 @@ describe("ConversationWorkspace snapshots", () => {
     await waitFor(() => expect(worldApi.createConversationSession).toHaveBeenCalledWith(card.id,
       expect.objectContaining({ group_id: "group-1", title: "New session" })));
     fireEvent.click(screen.getByLabelText("Session actions for New session"));
-    fireEvent.click(within(screen.getByLabelText("Session actions for New session").closest("details")!).getByRole("button", { name: "Rename session" }));
+    fireEvent.click(screen.getByRole("button", { name: "Rename session" }));
     fireEvent.change(screen.getByLabelText("Session title"), { target: { value: "Design review" } });
     fireEvent.click(screen.getByRole("button", { name: "Save name" }));
     await waitFor(() => expect(worldApi.renameConversationSession).toHaveBeenCalledWith(card.id, "session-2", "Design review"));

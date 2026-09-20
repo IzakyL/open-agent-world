@@ -1,5 +1,54 @@
 import { expect, test } from '@playwright/test';
 
+test('group menus rename durably and delete all sessions with confirmation', async ({ page, request }) => {
+  await page.setViewportSize({ width: 1800, height: 1100 });
+  const room = await (await request.post('/api/nodes', { data: { type: 'conversation', name: 'Group actions QA', position: { x: 800, y: 450 } } })).json();
+  const base = `/api/conversations/${room.id}`;
+  try {
+    const first = await (await request.post(`${base}/sessions`, { data: { group_title: 'Research', title: 'First topic' } })).json();
+    await request.post(`${base}/sessions`, { data: { group_id: first.group_id, title: 'Second topic' } });
+    await page.goto('/');
+    const workspace = page.locator(`[data-workspace-node-id="${room.id}"]`);
+    await workspace.getByLabel('Group actions for Research').click();
+    await workspace.getByRole('button', { name: 'Rename group', exact: true }).click();
+    await workspace.getByRole('textbox', { name: 'Group name' }).fill('Renamed research');
+    await workspace.getByRole('button', { name: 'Save name', exact: true }).click();
+    await expect(workspace.getByRole('button', { name: 'Renamed research', exact: true })).toBeVisible();
+    await page.reload();
+    await expect(workspace.getByRole('button', { name: 'Renamed research', exact: true })).toBeVisible();
+    await workspace.getByRole('button', { name: 'Renamed research', exact: true }).click();
+    await expect(workspace.locator('.conversation-session-list .conversation-session-row')).toHaveCount(2);
+    const positions = () => workspace.locator('.conversation-session-row').evaluateAll(rows => rows.map(row => {
+      const rect = row.getBoundingClientRect(); return { x: rect.x, y: rect.y, height: rect.height };
+    }));
+    const beforeMenus = await positions();
+    const sessionAction = workspace.getByLabel('Session actions for Second topic');
+    await sessionAction.click();
+    await expect(workspace.getByRole('button', { name: 'Rename session', exact: true })).toBeVisible();
+    expect(await positions()).toEqual(beforeMenus);
+    await sessionAction.press('Tab');
+    await expect(workspace.getByRole('button', { name: 'Rename session', exact: true })).toBeFocused();
+    await page.keyboard.press('Escape');
+    await expect(sessionAction).toBeFocused();
+    await expect(workspace.getByRole('button', { name: 'Rename session', exact: true })).toHaveCount(0);
+    await workspace.getByLabel('Group actions for Renamed research').click();
+    expect(await positions()).toEqual(beforeMenus);
+    await page.screenshot({ path: '../.outputs/conversation-group-actions.png' });
+    page.once('dialog', dialog => dialog.dismiss());
+    await workspace.getByRole('button', { name: 'Delete group', exact: true }).click();
+    await expect(workspace.getByRole('button', { name: 'Renamed research', exact: true })).toBeVisible();
+    await workspace.getByLabel('Group actions for Renamed research').click();
+    page.once('dialog', dialog => dialog.accept());
+    await workspace.getByRole('button', { name: 'Delete group', exact: true }).click();
+    await expect(workspace.getByRole('button', { name: 'Renamed research', exact: true })).toHaveCount(0);
+    await expect(workspace.locator('.conversation-session-list .workspace-session.is-active')).toContainText('General');
+    const summary = await (await request.get(base)).json();
+    expect(summary.sessions).toHaveLength(1);
+    await workspace.getByLabel('Group actions for General').click();
+    await expect(workspace.getByRole('button', { name: 'Delete group', exact: true })).toBeDisabled();
+  } finally { await request.delete(`/api/nodes/${room.id}`); }
+});
+
 test('creates groups inline with an adjacent agent picker and a single-agent default', async ({ page, request }) => {
   await page.setViewportSize({ width: 1800, height: 1100 });
   const room = await (await request.post('/api/nodes', { data: { type: 'conversation', name: 'Group creation QA', position: { x: 800, y: 450 } } })).json();

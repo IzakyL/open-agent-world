@@ -1,4 +1,11 @@
 {
+  "Group actions": ["Group actions", "分组操作"],
+  "Group actions for {v0}": ["Group actions for {v0}", "分组 {v0} 的操作"],
+  "Rename group": ["Rename group", "重命名分组"],
+  "Delete group": ["Delete group", "删除分组"],
+  "Group was not renamed": ["Group was not renamed", "分组重命名失败"],
+  "Group was not deleted": ["Group was not deleted", "分组删除失败"],
+  "Delete group {v0}? All its sessions and conversation history will be deleted.": ["Delete group {v0}? All its sessions and conversation history will be deleted.", "删除分组 {v0}？组内所有会话及聊天记录都会被删除。"],
   "Context & output limits": ["Context & output limits", "上下文与输出限制"],
   "Context window (tokens)": ["Context window (tokens)", "上下文窗口上限（tokens）"],
   "Maximum output (tokens)": ["Maximum output (tokens)", "最大输出（tokens）"],

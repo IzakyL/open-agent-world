@@ -693,6 +693,16 @@ export const worldApi = {
     );
   },
 
+  renameConversationGroup(conversationId: string, groupId: string, title: string): Promise<ConversationSession[]> {
+    return request(`/conversations/${encodeURIComponent(conversationId)}/groups/${encodeURIComponent(groupId)}`, {
+      method: "PATCH", body: JSON.stringify({ title }),
+    });
+  },
+
+  deleteConversationGroup(conversationId: string, groupId: string): Promise<void> {
+    return request(`/conversations/${encodeURIComponent(conversationId)}/groups/${encodeURIComponent(groupId)}`, { method: "DELETE" });
+  },
+
   deleteConversationSession(conversationId: string, sessionId: string): Promise<void> {
     return request<void>(
       `/conversations/${encodeURIComponent(conversationId)}/sessions/${encodeURIComponent(sessionId)}`,

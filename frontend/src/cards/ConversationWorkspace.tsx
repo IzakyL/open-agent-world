@@ -2,8 +2,9 @@ import { t, useLocale } from "../i18n";
 import { useConversationTimeline } from "../state/useConversationTimeline";
 import { MarkdownMessage } from "./MarkdownMessage";
 import { ConversationAttachments } from "./ConversationAttachments";
+import { ConversationActions } from "./ConversationActions";
 import { ContextAvatar } from "./ContextAvatar";
-import { ArrowDown, Bot, Check, Info, LoaderCircle, MessageSquare, MoreHorizontal, Paperclip, Pencil, Plus, Send, Trash2, UserMinus, UserRound, Users, X } from "lucide-react";
+import { ArrowDown, Bot, Check, Info, LoaderCircle, MessageSquare, Paperclip, Pencil, Plus, Send, Trash2, UserMinus, UserRound, Users, X } from "lucide-react";
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { apiErrorMessage, worldApi } from "../api/client";
@@ -154,6 +155,8 @@ export function ConversationWorkspace({ card }: { card: WorldCard }) {
   const groupSessions = sessions.filter((session) => (session.group_id ?? session.id) === activeGroupId);
   const [renaming, setRenaming] = useState<string>();
   const [sessionTitle, setSessionTitle] = useState("");
+  const [renamingGroup, setRenamingGroup] = useState<string>();
+  const [renamedGroupTitle, setRenamedGroupTitle] = useState("");
   const availableAgents = connectedAgents.filter((agent) => (
     !activeSession?.participant_ids.includes(agent.id)
   ));
@@ -273,6 +276,23 @@ export function ConversationWorkspace({ card }: { card: WorldCard }) {
     }
   };
 
+  const deleteGroup = async (target: ConversationSession) => {
+    const groupId = target.group_id ?? target.id;
+    const members = sessions.filter((session) => (session.group_id ?? session.id) === groupId);
+    if (busy || members.some((session) => session.is_default)) return;
+    if (!window.confirm(t("Delete group {v0}? All its sessions and conversation history will be deleted.", { v0: target.group_title ?? target.title }))) return;
+    setBusy(true);
+    try {
+      await worldApi.deleteConversationGroup(card.id, groupId);
+      setSessions((current) => current.filter((session) => (session.group_id ?? session.id) !== groupId));
+      setActiveSessionId((current) => members.some((session) => session.id === current)
+        ? sessions.find((session) => (session.group_id ?? session.id) !== groupId)?.id : current);
+      setRenamingGroup(undefined);
+    } catch (reason) {
+      pushToast({ tone: "error", title: t("Group was not deleted"), detail: apiErrorMessage(reason) });
+    } finally { setBusy(false); }
+  };
+
   const deleteSession = async (target: ConversationSession) => {
     if (target.is_default || busy) return;
     if (!window.confirm(t("Delete session {v0}? Its conversation history will be deleted.", { v0: String(target.title) }))) return;
@@ -380,9 +400,35 @@ export function ConversationWorkspace({ card }: { card: WorldCard }) {
         ) : null}
         <div className="conversation-sidebar-scroll">
           {groups.map((group) => (
-            <button type="button" className={`workspace-session ${(group.group_id ?? group.id) === activeGroupId ? "is-active" : ""}`} key={group.group_id ?? group.id} onClick={() => setActiveSessionId(sessions.find((item) => (item.group_id ?? item.id) === (group.group_id ?? group.id))?.id)}>
+            <div className="conversation-session-row conversation-group-row" key={group.group_id ?? group.id}>
+            <button type="button" className={`workspace-session ${(group.group_id ?? group.id) === activeGroupId ? "is-active" : ""}`} onClick={() => setActiveSessionId(sessions.find((item) => (item.group_id ?? item.id) === (group.group_id ?? group.id))?.id)}>
               <Users size={13} /><span><strong>{group.group_title ?? group.title}</strong></span>
             </button>
+            <ConversationActions host={sessionRegion} label={t("Group actions for {v0}", { v0: group.group_title ?? group.title })} title={t("Group actions")}>
+                <button type="button" disabled={busy} onClick={(event) => {
+                  event.currentTarget.closest("details")?.removeAttribute("open");
+                  setRenamedGroupTitle(group.group_title ?? group.title); setRenamingGroup(group.group_id ?? group.id);
+                }}><Pencil size={12} /> {t("Rename group")}</button>
+                <button type="button" className="is-danger" disabled={busy || sessions.some((session) => (session.group_id ?? session.id) === (group.group_id ?? group.id) && session.is_default)} onClick={(event) => {
+                  event.currentTarget.closest("details")?.removeAttribute("open"); void deleteGroup(group);
+                }}><Trash2 size={12} /> {t("Delete group")}</button>
+            </ConversationActions>
+            {renamingGroup === (group.group_id ?? group.id) ? <form className="conversation-session-rename" onSubmit={(event) => {
+              event.preventDefault();
+              if (busy || !renamedGroupTitle.trim()) return;
+              setBusy(true);
+              void worldApi.renameConversationGroup(card.id, group.group_id ?? group.id, renamedGroupTitle.trim()).then((updated) => {
+                setSessions((current) => current.map((session) => updated.find((item) => item.id === session.id) ?? session));
+                setRenamingGroup(undefined);
+              }).catch((reason) => pushToast({ tone: "error", title: t("Group was not renamed"), detail: apiErrorMessage(reason) })).finally(() => setBusy(false));
+            }}>
+              <input autoFocus aria-label={t("Group name")} maxLength={200} value={renamedGroupTitle} disabled={busy} onChange={(event) => setRenamedGroupTitle(event.target.value)} onKeyDown={(event) => {
+                if (event.key === "Escape" && !busy) { event.stopPropagation(); setRenamingGroup(undefined); }
+                if (event.key === "Enter" && event.nativeEvent.isComposing) event.preventDefault();
+              }} />
+              <button type="submit" disabled={busy || !renamedGroupTitle.trim()}>{t("Save name")}</button><button type="button" disabled={busy} onClick={() => setRenamingGroup(undefined)}>{t("Cancel")}</button>
+            </form> : null}
+            </div>
           ))}
         </div>
         <div className="conversation-session-list">
@@ -396,13 +442,10 @@ export function ConversationWorkspace({ card }: { card: WorldCard }) {
                 <button type="button" className={`workspace-session ${session.id === activeSessionId ? "is-active" : ""}`} title={session.title} aria-current={session.id === activeSessionId ? "true" : undefined} onClick={() => setActiveSessionId(session.id)}>
                   <MessageSquare size={13} /><span><strong>{session.title}</strong><small>{new Date(session.created_at).toLocaleString(useLocale.getState().locale)}</small></span>
                 </button>
-                <details className="conversation-session-actions" onBlur={(event) => { if (!event.currentTarget.contains(event.relatedTarget)) event.currentTarget.open = false; }} onKeyDown={(event) => { if (event.key === "Escape") { event.currentTarget.open = false; event.currentTarget.querySelector("summary")?.focus(); } }}>
-                  <summary aria-label={t("Session actions for {v0}", { v0: String(session.title) })} title={t("Session actions")}><MoreHorizontal size={15} /></summary>
-                  <div className="conversation-session-menu">
+                <ConversationActions host={sessionRegion} label={t("Session actions for {v0}", { v0: String(session.title) })} title={t("Session actions")}>
                     <button type="button" disabled={busy} onClick={(event) => { event.currentTarget.closest("details")?.removeAttribute("open"); setSessionTitle(session.title); setRenaming(session.id); }}><Pencil size={12} /> {t("Rename session")}</button>
                     <button type="button" className="is-danger" disabled={busy || session.is_default} onClick={(event) => { event.currentTarget.closest("details")?.removeAttribute("open"); void deleteSession(session); }}><Trash2 size={12} /> {t("Delete session")}</button>
-                  </div>
-                </details>
+                </ConversationActions>
                 {renaming === session.id ? <form className="conversation-session-rename" onSubmit={(event) => {
                   event.preventDefault();
                   if (!sessionTitle.trim() || busy) return;

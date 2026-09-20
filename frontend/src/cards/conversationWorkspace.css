@@ -1,5 +1,7 @@
 .conversation-workspace-grid { height: 100%; min-width: 0; min-height: 0; display: grid; overflow: hidden; }
 .conversation-session-region { position: relative; display: flex; flex: 1; min-width: 0; min-height: 0; }
+.conversation-group-row > .conversation-session-actions { top: 3px; }
+.conversation-session-menu.conversation-floating-actions { position: absolute; z-index: 6; margin: 0; box-sizing: border-box; overflow: auto; }
 .workspace-session-sidebar.conversation-session-navigation { flex: 1; min-width: 0; display: flex; overflow: auto; border-right: 0; }
 .conversation-session-navigation > .workspace-nav-label, .conversation-session-navigation > .conversation-group-draft { flex-shrink: 0; }
 .conversation-group-draft { display: flex; align-items: center; gap: 3px; min-width: 0; padding: 5px; border: 1px solid var(--line); border-radius: 8px; background: var(--surface-raised); color: var(--ink-soft); }
