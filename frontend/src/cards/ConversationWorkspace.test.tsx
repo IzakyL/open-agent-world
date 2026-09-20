@@ -63,6 +63,63 @@ describe("ConversationWorkspace snapshots", () => {
 
   afterEach(() => cleanup());
 
+  it("creates an inline named group with the only connected agent selected by default", async () => {
+    vi.mocked(worldApi.getConversation).mockResolvedValue({
+      conversation_id: card.id, sessions: [session],
+      agents: [
+        { id: "atlas", name: "Atlas", status: "idle", model: "mock", connected: true },
+        { id: "offline", name: "Offline", status: "idle", model: "mock", connected: false },
+      ],
+    });
+    const create = vi.spyOn(worldApi, "createConversationSession").mockResolvedValue({
+      ...session, id: "new-session", group_id: "new-group", group_title: "Research", participant_ids: ["atlas"],
+    });
+    render(<ConversationWorkspace card={card} />);
+    await screen.findByText(historicalMessage.content);
+    fireEvent.click(screen.getByRole("button", { name: "New group" }));
+    const input = screen.getByRole("textbox", { name: "Group name" }) as HTMLInputElement;
+    expect(input.value).toBe("New group");
+    expect(document.activeElement).toBe(input);
+    expect(input.selectionEnd).toBe(input.value.length);
+    expect((screen.getByRole("checkbox", { name: "Atlas" }) as HTMLInputElement).checked).toBe(true);
+    expect(screen.queryByRole("checkbox", { name: "Offline" })).toBeNull();
+    expect(screen.queryByText("Create session")).toBeNull();
+    fireEvent.change(input, { target: { value: "Research" } });
+    fireEvent.submit(input.closest("form")!);
+    await waitFor(() => expect(create).toHaveBeenCalledWith(card.id, expect.objectContaining({
+      group_title: "Research", participant_ids: ["atlas"],
+    })));
+    await waitFor(() => expect(screen.queryByRole("textbox", { name: "Group name" })).toBeNull());
+  });
+
+  it("requires a group name and agent selection, retaining the draft on failure and allowing cancellation", async () => {
+    vi.mocked(worldApi.getConversation).mockResolvedValue({
+      conversation_id: card.id, sessions: [session],
+      agents: ["Atlas", "Boreal"].map((name) => ({ id: name, name, status: "idle", model: "mock", connected: true })),
+    });
+    const create = vi.spyOn(worldApi, "createConversationSession").mockRejectedValue(new Error("Unavailable"));
+    render(<ConversationWorkspace card={card} />);
+    await screen.findByText(historicalMessage.content);
+    fireEvent.click(screen.getByRole("button", { name: "New group" }));
+    const input = screen.getByRole("textbox", { name: "Group name" }) as HTMLInputElement;
+    const confirm = screen.getByRole("button", { name: "Create group" }) as HTMLButtonElement;
+    expect(confirm.disabled).toBe(true);
+    fireEvent.click(screen.getByRole("checkbox", { name: "Boreal" }));
+    fireEvent.change(input, { target: { value: " " } });
+    expect(confirm.disabled).toBe(true);
+    fireEvent.change(input, { target: { value: "My group" } });
+    fireEvent.click(confirm);
+    await waitFor(() => expect(confirm.disabled).toBe(false));
+    expect(create).toHaveBeenCalledWith(card.id, expect.objectContaining({ group_title: "My group", participant_ids: ["Boreal"] }));
+    expect(input.value).toBe("My group");
+    fireEvent.keyDown(input, { key: "Escape" });
+    expect(screen.queryByRole("textbox", { name: "Group name" })).toBeNull();
+    expect(document.activeElement).toBe(screen.getByRole("button", { name: "New group" }));
+    fireEvent.click(screen.getByRole("button", { name: "New group" }));
+    expect((screen.getByRole("textbox", { name: "Group name" }) as HTMLInputElement).value).toBe("New group");
+    expect((screen.getByRole("checkbox", { name: "Boreal" }) as HTMLInputElement).checked).toBe(false);
+  });
+
   it("scopes quiet participant rings to the selected session and refreshes on context events", async () => {
     const participants = ["atlas", "boreal", "plugin"];
     const first = { ...session, participant_ids: participants, group_id: "group" };
