@@ -6,6 +6,7 @@ import { useOpenFiles } from "../state/openFiles";
 import type { WorldCard } from "../types/world";
 import { pluginView } from "./registry";
 import type { PluginSlot, PluginViewProps } from "./sdk";
+import { useWorkspaceAccess } from "../workspace/WorkspaceAccess";
 
 class PluginBoundary extends Component<{ children: ReactNode }, { error: string | null }> {
   state: { error: string | null } = { error: null };
@@ -19,14 +20,16 @@ export function PluginSurface({ card, slot, level, children }: {
   card: WorldCard; slot: PluginSlot; level: PluginViewProps["level"]; children?: ReactNode;
 }) {
   useLocale();
+  const access = useWorkspaceAccess();
   const definition = useWorldStore((s) => s.catalog.node_types.find((d) => d.id === card.type));
   const updateCard = useWorldStore((s) => s.updateCard);
   const host = useMemo<PluginViewProps["host"]>(() => ({
+    deployment: access.plugin_access?.[card.id],
     updateConfig: async (config) => { await updateCard(card.id, { config }); },
     getAgentInfo: () => worldApi.getAgentInfo(card.id),
     documentAction: (action, arguments_, expectedRevision) => worldApi.nodeDocumentAction(card.id, action, arguments_, expectedRevision),
     resourceAction: (action, arguments_, confirm) => worldApi.nodeResourceAction(card.id, action, arguments_, confirm),
-    listCards: async (traits = []) => (await worldApi.getWorld()).nodes.filter(node => {
+    listCards: async (traits = []) => (access.deployed ? useWorldStore.getState().cards.filter(node => node.id in access.permissions) : (await worldApi.getWorld()).nodes).filter(node => {
       const type = useWorldStore.getState().catalog.node_types.find(item => item.id === node.type);
       return traits.every(trait => type?.traits.includes(trait));
     }),
@@ -36,7 +39,7 @@ export function PluginSurface({ card, slot, level, children }: {
     readFile: (reference, signal) => worldApi.readFilePreview(card.id, reference, signal),
     openFile: (reference, name) => useOpenFiles.getState().open({ ...reference, source_id: card.id }, name),
     clearOpenedFile: () => useOpenFiles.getState().clear(card.id),
-  }), [card.id, updateCard]);
+  }), [card.id, updateCard, access]);
   const reference = definition?.frontend?.[slot];
   if (!reference || !definition) return <>{children}</>;
   const View = pluginView(definition.plugin_id, reference);

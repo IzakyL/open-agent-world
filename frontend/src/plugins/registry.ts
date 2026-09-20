@@ -2,8 +2,8 @@ import { lazy, type ComponentType, type LazyExoticComponent } from "react";
 import type { FrontendPlugin, PluginViewProps } from "./sdk";
 
 interface Manifest { pluginId: string; apiVersion: number }
-const manifests = import.meta.glob<Manifest>("../../../plugins/*/frontend/plugin.json", { eager: true, import: "default" });
-const modules = import.meta.glob<{ default: FrontendPlugin }>("../../../plugins/*/frontend/index.tsx");
+const manifests = import.meta.glob<Manifest>(["../../../plugins/*/frontend/plugin.json", "../../../examples/deployed-workspace/plugins/*/frontend/plugin.json"], { eager: true, import: "default" });
+const modules = import.meta.glob<{ default: FrontendPlugin }>(["../../../plugins/*/frontend/index.tsx", "../../../examples/deployed-workspace/plugins/*/frontend/index.tsx"]);
 const loaders = new Map<string, () => Promise<{ default: FrontendPlugin }>>();
 for (const [path, manifest] of Object.entries(manifests)) {
   if (manifest.apiVersion !== 1 || !/^[a-z][a-z0-9._-]*$/.test(manifest.pluginId)) throw new Error(`Invalid frontend plugin manifest: ${path}`);

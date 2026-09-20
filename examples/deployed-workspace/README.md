@@ -1,6 +1,6 @@
 # 可直接体验的部署示例
 
-一个无需 API Key、Docker 或 Sandbox 的本地应用：左侧对话，右侧使用指南和交付清单。后台使用预设回复助手，运行真实的发布、复制、密码登录和结构锁定流程。
+一个无需 API Key、Docker 或 Sandbox 的本地应用：左侧对话，右侧使用指南、交付清单和插件笔记。后台使用预设回复助手，运行真实的发布、复制、密码登录和结构锁定流程。
 
 页面直接使用原 Legion Workspace 的分栏、标签、对话与文本组件。工程编辑和设置入口被关闭，文档以原文本组件的只读形式呈现。
 
@@ -17,6 +17,10 @@ python examples/deployed-workspace/run.py
 首次使用项目需先运行 Windows 的 `./scripts/setup.ps1` 或 Linux/macOS 的 `bash scripts/setup.sh`。如果尚无前端构建，执行 `npm --prefix frontend run build`。
 
 登录后新建对话并发送任意消息，即可收到预设回复。切换文档标签、刷新页面或重新登录，体验已锁定的布局和保留的聊天记录。该助手不调用模型、不执行工具，每次回复相同。
+
+打开“插件笔记”可编辑、保存并下载文本。这是通过通用插件部署契约接入的自定义节点，工程端和部署端使用同一 React 组件；内部连接字段和私有文档字段不向用户公开。插件作者可参考[接入文档](../../docs/plugin-deployment.md)。
+
+如果已生成旧版示例，使用新的 `--data-root` 体验新插件，例如 `python examples/deployed-workspace/run.py --data-root .open-agent-world/examples/plugins-demo --port 38476`。插件已升级到 0.2.0，旧副本应配合原版本代码运行，脚本不会覆盖旧数据。
 
 ## 停止与再次体验
 
@@ -44,7 +48,7 @@ python examples/deployed-workspace/run.py --prepare-only
 
 - `run.py`：配置示例、发布、生成部署副本并启动。
 - `guide.md`、`checklist.md`：发布进应用的文档内容。
-- `plugins/demo/`：仅本示例加载的本地预设回复运行时，不影响普通项目的模型配置。
+- `plugins/demo/`：仅本示例加载的预设回复运行时、插件笔记声明与共用前端组件。
 
 文件内容在首次生成时写入工程数据；修改模板后使用新的 `--data-root` 体验新版。示例依赖当前项目和这里的插件源码，请保留它们，不要只搬走运行时数据库。
 

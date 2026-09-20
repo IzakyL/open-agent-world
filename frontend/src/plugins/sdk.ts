@@ -15,6 +15,8 @@ export interface PluginViewProps {
   definition: NodeTypeCatalogItem;
   level: NodeSurfaceLevel;
   host: {
+    /** Present only in a deployed Workspace. Reuse the view and hide engineering controls. */
+    deployment?: import('../workspace/WorkspaceAccess').PluginDeploymentAccess;
     updateConfig(patch: Record<string, unknown>): Promise<void>;
     getAgentInfo(): Promise<{ session_id: string; details?: Record<string, unknown> }>;
     documentAction(action: string, arguments_: Record<string, unknown>, expectedRevision?: number): Promise<{ value: unknown; revision: number }>;

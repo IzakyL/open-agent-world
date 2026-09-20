@@ -23,10 +23,11 @@ if TYPE_CHECKING:
 
 
 from backend.plugins.documents import NodeDocumentDefinition
+from backend.plugins.deployment import NodeDeploymentDefinition
 from backend.plugins.containers import NodeContainerDefinition
 from backend.plugins.execution import NodeExecutionDefinition
 
-PLUGIN_API_VERSION = "1.20"
+PLUGIN_API_VERSION = "1.21"
 _IDENTIFIER = re.compile(r"^[a-z][a-z0-9]*(?:[._:/-][a-z0-9]+)*$")
 _API_VERSION = re.compile(r"^(0|[1-9]\d*)\.(0|[1-9]\d*)$")
 
@@ -150,6 +151,7 @@ class NodeTypeCatalogItem(BaseModel):
     user_creatable: bool
     templateable: bool
     deletion_warning: str | None = None
+    deployment: dict[str, Any] | None = None
 
 
 class RelationshipCatalogItem(BaseModel):
@@ -272,6 +274,7 @@ class NodeTypeDefinition:
     summoning: NodeSummoningDefinition | None = None
     # Ordinary creation is autonomous; plugins explicitly mark sensitive initialization.
     canvas_create_requires_confirmation: bool = False
+    deployment: NodeDeploymentDefinition | None = None
 
     def resolved_presentation(self) -> NodePresentation:
         if self.presentation is not None:
@@ -315,6 +318,7 @@ class NodeTypeDefinition:
             user_creatable=self.user_creatable,
             templateable=self.templateable,
             deletion_warning=self.deletion_warning,
+            deployment=self.deployment.model_dump(mode="json") if self.deployment else None,
         )
 
 
@@ -661,6 +665,10 @@ class PluginRegistry:
                     raise ValueError("resource actions require a valid name and handler")
                 if action.capability_kind and action.capability_kind not in staged.capability_handlers:
                     raise ValueError("resource action capabilities must be owned by the same plugin")
+            if definition.deployment is not None:
+                if not isinstance(definition.deployment, NodeDeploymentDefinition):
+                    raise TypeError("deployment must be a NodeDeploymentDefinition")
+                definition.deployment.validate_node(definition)
             if definition.document is not None:
                 document = definition.document
                 document.model()

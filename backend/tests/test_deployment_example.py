@@ -23,7 +23,26 @@ def test_deployment_example(tmp_path):
     with TestClient(create_app(settings), client=("127.0.0.1", 50000)) as client:
         assert client.post("/api/deployment/session", json={"password": module.PASSWORD}).status_code == 200
         app = client.get("/api/runtime-app").json()
-        assert len(app["panels"]) == 3
+        assert len(app["panels"]) == 4
+        assert "PRIVATE-DEMO" not in json.dumps(app)
+        notes = next(card for card in app["cards"] if card["type"] == "example.deployment-notes")
+        definition = next(node for node in app["catalog"]["node_types"] if node["id"] == notes["type"])
+        assert definition["frontend"] == {"body": "notes", "workspace": "notes"}
+        assert notes["config"] == {"heading": "Workspace notes"}
+        note_base = f"/api/runtime-app/workspace/nodes/{notes['id']}"
+        snapshot = client.get(note_base + "/document").json()
+        assert set(snapshot["value"]) == {"text"}
+        updated = client.post(note_base + "/actions/save", json={"arguments": {"text": "Published plugin works"}, "expected_revision": snapshot["revision"]})
+        assert updated.status_code == 200, updated.text
+        assert updated.json()["value"] == {"text": "Published plugin works"}
+        assert "PRIVATE-DEMO" not in updated.text
+        assert client.post(note_base + "/actions/save", json={"arguments": {"text": "Conflict"}, "expected_revision": snapshot["revision"]}).status_code == 409
+        assert client.get(note_base + "/document/downloads/text").text == "Published plugin works"
+        for path in ("/document/downloads/private", "/execution"):
+            assert client.get(note_base + path).status_code == 404
+        for path in ("/actions/replace", "/resource/delete", "/execution/start", "/transformations/replace"):
+            assert client.post(note_base + path, json={"arguments": {}}).status_code == 404
+        assert client.patch(note_base, json={"config": {"internal_connection": "bad"}}).status_code == 404
         assert client.get("/api/world").status_code == 404
         assert client.get("/api/settings/models").status_code == 404
         chat = next(panel["card_id"] for panel in app["panels"] if panel["kind"] == "conversation")
@@ -48,4 +67,5 @@ def test_deployment_example(tmp_path):
     with TestClient(create_app(settings), client=("127.0.0.1", 50000)) as client:
         client.post("/api/deployment/session", json={"password": module.PASSWORD})
         assert "Hello demo" in client.get(messages).text
+        assert client.get(note_base + "/document").json()["value"]["text"] == "Published plugin works"
         assert json.loads(manifest)["name"] == app["name"]

@@ -25,6 +25,8 @@ Plugin-specific documentation can remain in its own package or repository. These
 
 ## Developing a plugin
 
+Plugin API 1.21 adds opt-in deployment of existing plugin Workspace views and sections through `NodeDeploymentDefinition` and `DeploymentSurface`. See [plugin deployment](plugin-deployment.md) for scoped fields/actions, frontend integration and a runnable example.
+
 Start with the installable [Greeter example](../examples/plugins/greeter/README.md), then consult [package discovery](#package-structure-and-discovery), [the public API](#public-plugin-api), and the contracts below.
 
 Plugin API 1.16 adds `NodePresentation` for supported surfaces, initial appearance,

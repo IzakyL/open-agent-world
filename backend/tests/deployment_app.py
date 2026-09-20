@@ -1,5 +1,6 @@
 """Isolated real runtime server for the deployment browser acceptance suite."""
 from pathlib import Path
+from dataclasses import replace
 import tempfile
 
 import uvicorn
@@ -15,9 +16,10 @@ def main():
     temporary.mkdir(exist_ok=True)
     directory = Path(tempfile.mkdtemp(prefix="deployment-browser-", dir=temporary))
     source, runtime = directory / "source", directory / "runtime"
-    records = prepare_source(source)
+    plugin_directories = (repository / "examples/deployed-workspace/plugins",)
+    records = prepare_source(source, plugin_directories=plugin_directories)
     create_deployment(source, runtime, records["release"]["id"], password=PASSWORD)
-    app = create_app(settings(runtime), frontend_directory=repository / "frontend/dist")
+    app = create_app(replace(settings(runtime), plugin_directories=plugin_directories), frontend_directory=repository / "frontend/dist")
     uvicorn.run(app, host="127.0.0.1", port=5183, proxy_headers=False)
 
 

@@ -3,7 +3,7 @@ import { LockKeyhole, LogOut } from 'lucide-react';
 import { t, useLocale } from '../i18n';
 import { configureWorkspaceApi, normalizeCard } from '../api/client';
 import { WorkspaceWindow } from '../legions/LegionWorkspace';
-import { WorkspaceAccess } from '../workspace/WorkspaceAccess';
+import { WorkspaceAccess, type PluginDeploymentAccess } from '../workspace/WorkspaceAccess';
 import { useWorldStore } from '../state/worldStore';
 import { ToastStack } from '../shell/ToastStack';
 import type { PluginCatalog, WorldCard } from '../types/world';
@@ -13,6 +13,7 @@ import './deployment.css';
 type PublishedWorkspace = {
   id: string; name: string; cards: WorldCard[]; legion: WorldCard;
   catalog: PluginCatalog; permissions: Record<string, string[]>;
+  plugin_access?: Record<string, PluginDeploymentAccess>;
 };
 
 /** Authentication and scoped data bootstrap; all workspace rendering stays shared. */
@@ -75,7 +76,7 @@ export function RuntimeApp({ name }: { name: string }) {
     {error && <p className="deployment-error" role="alert">{error}</p>}
     <button className="primary-button" disabled={busy}>{busy ? t('Signing in…') : t('Open application')}</button>
   </form></main>;
-  return <WorkspaceAccess.Provider value={{ deployed: true, permissions: app.permissions }}>
+  return <WorkspaceAccess.Provider value={{ deployed: true, permissions: app.permissions, plugin_access: app.plugin_access }}>
     <WorkspaceWindow key={app.id} card={app.legion} locked actions={<button className="secondary-button" onClick={() => {
       void deploymentRequest('/runtime-app/session', { method: 'DELETE' }).then(clear)
         .catch(reason => useWorldStore.getState().pushToast({ tone: 'error', title: reason.message }));

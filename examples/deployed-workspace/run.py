@@ -40,16 +40,17 @@ def prepare(directory: Path) -> Path:
         agent = node("agent", "演示助手（预设回复）")
         guide = node("text", "使用指南", content=(HERE / "guide.md").read_text(encoding="utf-8"))
         checklist = node("text", "交付清单", content=(HERE / "checklist.md").read_text(encoding="utf-8"))
+        notes = node("example.deployment-notes", "插件笔记")
         request("POST", "/api/edges", {"source": agent["id"], "target": chat["id"], "relationship": "participate"})
         request("POST", f"/api/conversations/{chat['id']}/sessions", {
             "title": "开始体验", "group_title": "部署体验", "participant_ids": [agent["id"]]})
         cards = request("POST", "/api/legion-groups", {
-            "name": "部署体验工作区", "node_ids": [c["id"] for c in (chat, agent, guide, checklist)]})
+            "name": "部署体验工作区", "node_ids": [c["id"] for c in (chat, agent, guide, checklist, notes)]})
         legion = next(c for c in cards if c["type"] == "legion")
         layout = {"version": 2, "root": {
             "kind": "split", "axis": "horizontal", "ratio": 0.62,
             "first": {"kind": "pane", "view": {"card_id": chat["id"]}},
-            "second": {"kind": "tabs", "views": [{"card_id": c["id"]} for c in (guide, checklist)],
+            "second": {"kind": "tabs", "views": [{"card_id": c["id"]} for c in (guide, checklist, notes)],
                        "active_view": {"card_id": guide["id"]}}}}
         request("PATCH", f"/api/nodes/{legion['id']}", {"config": {"workspace_layout": layout}})
         release = request("POST", "/api/deployments", {"legion_id": legion["id"], "name": "部署模式 · 体验应用"})

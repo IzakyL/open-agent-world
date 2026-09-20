@@ -13,6 +13,7 @@ from backend.api.dependencies import get_services
 from backend.application import write_setting
 from backend.errors import ResourceValidationError
 from backend.legion_workspace import WorkspaceLayout
+from backend.plugins.deployment import merged_surfaces
 
 PREFIX = "deployment.release."
 MANIFEST = "deployment.json"
@@ -50,10 +51,18 @@ def configuration_digest(db):
 
 
 def panel_kind(services, card, section):
+    definition = services.plugins.node_type(card.type)
+    if definition.deployment is not None:
+        contract = definition.deployment
+        if (section is None and contract.surface is not None) or section in contract.sections:
+            return "plugin"
+        raise ResourceValidationError(f"{card.name}: this plugin has not published this surface")
     if card.type == "conversation" and section in (None, "sessions", "conversation", "participants"):
         return "conversation"
     if card.type == "sandbox" and section in (None, "files", "preview", "terminal"):
         return "sandbox"
+    if definition.frontend.get("workspace") or definition.frontend.get("body"):
+        raise ResourceValidationError(f"{card.name}: declare NodeDeploymentDefinition to publish this plugin view")
     if section is None:
         if card.type in ("text", "image"):
             return card.type
@@ -82,17 +91,35 @@ def release_spec(services, request: PublishRequest):
             raise ResourceValidationError("Published panes must belong to this Legion")
         section = view.get("section_id")
         kind = panel_kind(services, card, section)
-        if section == "terminal" and not request.allow_terminal:
+        if kind == "sandbox" and section == "terminal" and not request.allow_terminal:
             raise ResourceValidationError("The layout includes Terminal. Enable terminal access or remove that section before publishing.")
         panels.append({**view, "name": card.name, "kind": kind})
     # Hidden sections are permissions as well as presentation. Never send hidden IDs.
     hidden = {tuple((v["card_id"], v.get("section_id"))) for v in layout.get("hidden_sections", [])}
     extracted = {(p["card_id"], p["section_id"]) for p in panels if p.get("section_id")}
     permissions = {}
+    plugin_access = {}
+    plugin_surfaces = {}
     for panel in panels:
         node_id, kind, section = panel["card_id"], panel["kind"], panel.get("section_id")
         grants = permissions.setdefault(node_id, [])
         panel["sections"] = []
+        if kind == "plugin":
+            contract = services.plugins.node_type(services.world.get_card(node_id).type).deployment
+            selected = plugin_surfaces.setdefault(node_id, [])
+            if section is None:
+                selected.append(contract.surface)
+            for name, surface in contract.sections.items():
+                if (section is not None and name != section) or (node_id, name) in hidden:
+                    continue
+                if section is None and (node_id, name) in extracted:
+                    continue
+                selected.append(surface)
+                if name not in grants:
+                    grants.append(name)
+                panel["sections"].append(name)
+            plugin_access[node_id] = merged_surfaces(selected)
+            continue
         operations = {"conversation": ["sessions", "conversation", "participants"], "sandbox": ["files", "preview", "terminal"],
                       "tasks": ["tasks"], "text": ["text"], "image": ["image"], "agent": ["status"]}[kind]
         for operation in operations:
@@ -108,7 +135,7 @@ def release_spec(services, request: PublishRequest):
     layout["hidden_sections"] = []
     return {"schema_version": 1, "id": str(uuid4()), "name": request.name.strip() or legion.name,
             "legion_id": legion.id, "created_at": datetime.now(UTC).isoformat(),
-            "layout": layout, "panels": panels, "permissions": permissions,
+            "layout": layout, "panels": panels, "permissions": permissions, "plugin_access": plugin_access,
             "runtime_settings": {"agent_runtime": services.settings.agent_runtime,
                                  "sandbox_runtime": services.settings.sandbox_runtime,
                                  "plugin_directories": [str(path) for path in services.settings.plugin_directories]},

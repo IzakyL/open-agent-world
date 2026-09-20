@@ -116,7 +116,7 @@ journalctl -u oaw-runtime -f
 
 部署页面直接复用 Legion Workspace、WorkspaceSection 和现有的 Conversation / Sandbox / Task Board / Text / Image 组件。分栏比例与布局固定，标签可切换，切换标签保留草稿；主题和语言也沿用原控件。只移除布局编辑、返回画布、设置、未放置卡片入口与组件内的工程配置。文本沿用原文本组件，以只读方式显示。
 
-当前版本对其它插件页面、MatCreator 专属任务/知识图谱页面和自定义 WorkspaceSection 会明确拒绝发布。它们仍可以作为后台依赖运行；工程师可以发布对话与文件页面让用户访问结果。新增公开页面应给现有组件补充部署权限支持，并提供受限的业务接口，无需再造一套前端组件。部署端通过 `/api/runtime-app/workspace` 调用原有业务处理函数，不挂载完整工程 API。
+第三方与新增插件可以通过 `NodeDeploymentDefinition` 声明公开字段、业务操作和原有 WorkspaceSection，部署时复用原组件和处理函数。未声明的自定义页面（包括尚未适配的 MatCreator 页面）会拒绝发布，但仍可作为后台依赖运行。详见[插件部署接入](plugin-deployment.md)，其中包含可保存、下载的完整示例。部署端通过 `/api/runtime-app/workspace` 调用原有业务处理函数，不挂载完整工程 API。
 
 ## 数据、凭证与执行边界
 

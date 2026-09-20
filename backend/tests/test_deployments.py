@@ -30,22 +30,25 @@ def node(client, kind, name, **extra):
     return response.json()
 
 
-def prepare_source(path):
-    app = create_app(settings(path))
+def prepare_source(path, *, plugin_directories=()):
+    app = create_app(replace(settings(path), plugin_directories=plugin_directories))
     with TestClient(app, client=("127.0.0.1", 50000)) as client:
         chat = node(client, "conversation", "Ask the assistant")
         agent = node(client, "agent", "Assistant", config={"system_instruction": "PRIVATE INSTRUCTION NEVER SENT TO BROWSER"})
         text = node(client, "text", "Guide", content="# Welcome\nThis is the published guide.")
         hidden = node(client, "text", "Hidden internal notes", content="NOT PUBLIC")
         board = node(client, "oaw.tasks", "Tasks")
+        plugin_note = node(client, "example.deployment-notes", "Plugin notes") if plugin_directories else None
         edge = client.post("/api/edges", json={"source": agent["id"], "target": chat["id"], "relationship": "participate"})
         assert edge.status_code == 201, edge.text
-        response = client.post("/api/legion-groups", json={"name": "Published studio", "node_ids": [chat["id"], agent["id"], text["id"], board["id"]]})
+        response = client.post("/api/legion-groups", json={"name": "Published studio", "node_ids": [chat["id"], agent["id"], text["id"], board["id"]] + ([plugin_note["id"]] if plugin_note else [])})
         assert response.status_code == 200, response.text
         legion = next(c for c in response.json() if c["type"] == "legion")
         pane = lambda card: {"kind": "pane", "view": {"card_id": card["id"]}}
         layout = {"version": 2, "root": {"kind": "split", "axis": "horizontal", "ratio": .6,
                   "first": pane(chat), "second": {"kind": "tabs", "views": [{"card_id": text["id"]}, {"card_id": board["id"]}], "active_view": {"card_id": text["id"]}}}}
+        if plugin_note:
+            layout["root"]["second"]["views"].append({"card_id": plugin_note["id"]})
         assert client.patch(f"/api/nodes/{legion['id']}", json={"config": {"workspace_layout": layout}}).status_code == 200
         response = client.post("/api/deployments", json={"legion_id": legion["id"], "name": "Customer workspace"})
         assert response.status_code == 201, response.text
