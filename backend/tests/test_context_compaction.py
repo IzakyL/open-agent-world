@@ -353,6 +353,124 @@ class OutputLimitedSummaryModel(ScriptedModel):
                 text="Confirmed code: cobalt-731. Artifact: sandbox://lab/result.csv. Next: finish the analysis.")]))
 
 
+class BudgetedSummaryModel(ScriptedModel):
+    """Records complete requests and supplies deliberate boundary responses."""
+    replies: list[str] = []
+    window: int = 128000
+
+    async def generate_content_async(self, request, stream=False):
+        assert request.config.system_instruction == SUMMARY_INSTRUCTION
+        assert not request.config.tools
+        assert estimate(request.model_dump(mode="json", exclude_none=True)) + request.config.max_output_tokens <= self.window
+        self._summaries.append(request.model_copy(deep=True))
+        reply = self.replies.pop(0) if self.replies else "Goal: continue. Confirmed code: cobalt-731. Artifact: sandbox://lab/result.csv."
+        yield LlmResponse(content=types.Content(role="model", parts=[types.Part.from_text(text=reply)]))
+
+
+@pytest.mark.asyncio
+async def test_window_relative_summary_accepts_complete_checkpoint_above_old_fixed_cap(services, monkeypatch):
+    agent, _, _, session, _, _, _ = await setup_context(services, monkeypatch)
+    summary = "Confirmed research result and artifact reference. " * 240
+    assert estimate(summary) > 4096
+    model = BudgetedSummaryModel(replies=[summary])
+    managed = ManagedContext(services.contexts, agent.id, session.id, "run", model, "Continue",
+                             budget=ContextBudget(128000, 8192, max_output=8192))
+    managed.checkpoint.contents = [text_content("Historical research evidence. " * 4000)]
+    await managed.compact()
+    assert managed.checkpoint.summary == summary.strip()
+    assert managed.tokens() <= managed.compaction_budget().target
+    assert len(model._summaries) == 1
+
+
+@pytest.mark.parametrize("first", ["", "Overly verbose findings. " * 1000])
+@pytest.mark.asyncio
+async def test_invalid_summary_retry_keeps_source_and_respects_request_budget(services, monkeypatch, first):
+    agent, _, _, session, _, _, _ = await setup_context(services, monkeypatch)
+    model = BudgetedSummaryModel(replies=[first], window=8192)
+    managed = ManagedContext(services.contexts, agent.id, session.id, "run", model, "Continue",
+                             budget=ContextBudget(8192, 1024, max_output=1024))
+    managed.checkpoint.contents = [text_content("Original evidence cobalt-731. " * 1000)]
+    await managed.compact()
+    assert len(model._summaries) >= 2
+    assert "Original evidence cobalt-731" in model._summaries[1].contents[0].parts[0].text
+    assert "cobalt-731" in managed.checkpoint.summary
+
+
+@pytest.mark.parametrize("reply,reason", [("", "empty checkpoint"), ("verbose " * 3000, "exceeds its budget")])
+@pytest.mark.asyncio
+async def test_invalid_summary_exhaustion_is_diagnostic_and_atomic(services, monkeypatch, reply, reason):
+    from copy import deepcopy
+    agent, _, _, session, _, _, _ = await setup_context(services, monkeypatch)
+    model = BudgetedSummaryModel(replies=[reply] * 3, window=8192)
+    managed = ManagedContext(services.contexts, agent.id, session.id, "run", model, "Continue",
+                             budget=ContextBudget(8192, 1024, max_output=1024))
+    managed.checkpoint.contents = [text_content("Original evidence. " * 1200)]
+    before = deepcopy(managed.checkpoint)
+    with pytest.raises(RuntimeError, match=reason):
+        await managed.compact()
+    assert len(model._summaries) == 3
+    assert services.contexts.load(agent.id, session.id) == before
+
+
+@pytest.mark.asyncio
+async def test_smaller_window_rechunks_old_summary_and_escaped_unicode_history(services, monkeypatch):
+    agent, _, _, session, _, _, _ = await setup_context(services, monkeypatch)
+    model = BudgetedSummaryModel(window=8192)
+    managed = ManagedContext(services.contexts, agent.id, session.id, "run", model, "Continue",
+                             budget=ContextBudget(8192, 1024, max_output=1024))
+    managed.checkpoint.summary = "Prior confirmed research. " * 1200
+    managed.checkpoint.contents = [text_content('中文\\"\n\t' * 6000)]
+    source = encoded([managed.checkpoint.summary, managed.checkpoint.contents])
+    await managed.compact()
+    assert len(model._summaries) > 3
+    # Every original character is fed once, even with JSON escaping and a prior
+    # checkpoint larger than the new model's entire input window.
+    assert "".join(r.contents[0].parts[0].text.split("Next transcript fragment:\n", 1)[1]
+                   for r in model._summaries) == source
+    assert managed.tokens() <= managed.compaction_budget().target
+
+
+@pytest.mark.asyncio
+async def test_existing_summary_alone_can_be_compacted_after_window_change(services, monkeypatch):
+    agent, _, _, session, _, _, _ = await setup_context(services, monkeypatch)
+    model = BudgetedSummaryModel(window=8192)
+    managed = ManagedContext(services.contexts, agent.id, session.id, "run", model, "Continue",
+                             budget=ContextBudget(8192, 1024, max_output=1024))
+    managed.checkpoint.summary = "Old model checkpoint. " * 900
+    assert not managed.checkpoint.contents
+    await managed.before_model(None, LlmRequest())
+    assert managed.checkpoint.compaction_count == 1
+    assert managed.tokens() < managed.compaction_budget().target
+
+
+@pytest.mark.asyncio
+async def test_compaction_triggers_before_input_limit_with_fixed_context_reserved(services, monkeypatch):
+    agent, _, _, session, _, _, _ = await setup_context(services, monkeypatch)
+    model = BudgetedSummaryModel(window=8192)
+    managed = ManagedContext(services.contexts, agent.id, session.id, "run", model, "Continue",
+                             budget=ContextBudget(8192, 1024, max_output=1024))
+    managed.checkpoint.contents = [text_content("evidence " * 1180)]
+    assert managed.compaction_budget().trigger < managed.tokens() < managed.budget.input
+    await managed.before_model(None, LlmRequest())
+    assert managed.checkpoint.compaction_count == 1
+    assert managed.tokens() <= managed.compaction_budget().target
+
+
+@pytest.mark.asyncio
+async def test_unknown_model_rolls_history_even_when_static_context_exceeds_fallback(services, monkeypatch):
+    agent, _, _, session, _, _, _ = await setup_context(services, monkeypatch)
+    model = BudgetedSummaryModel(window=8192)
+    managed = ManagedContext(services.contexts, agent.id, session.id, "run", model, "Continue",
+                             budget=ContextBudget(8192, 1024, known=False, max_output=1024))
+    request = LlmRequest(config=types.GenerateContentConfig(system_instruction="Static instructions. " * 1000))
+    managed.checkpoint.contents = [text_content("Historical evidence. " * 1200)]
+    await managed.before_model(None, request)
+    assert managed.checkpoint.compaction_count == 1
+    assert managed.tokens() > managed.budget.input
+    assert managed.status.context_limit == 0
+    assert managed.tokens() <= managed.compaction_budget().target
+
+
 @pytest.mark.asyncio
 async def test_truncated_summary_retries_with_reasoning_headroom_then_commits(services, monkeypatch):
     agent, _, room, session, _, _, _ = await setup_context(services, monkeypatch)

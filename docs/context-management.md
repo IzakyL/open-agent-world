@@ -59,26 +59,50 @@ usage takes precedence, with estimated deltas for subsequent growth; otherwise a
 conservative UTF-8 estimate includes instructions and tool schemas. This is
 **context pressure**, not an exact context-window utilization percentage.
 
-At 85% of that budget the state becomes `high`; at 100% a generic compaction pass
-folds the older contents and prior snapshot into a new checkpoint using the same
+At 85% of the safe input budget the state becomes `high`. Compaction uses a
+single window-relative allocation: subtract the rendered current task and fixed
+instructions/tool schemas from safe input to obtain available history space.
+Trigger at fixed input plus 85% of that space; target fixed input plus 50% after
+compaction. Allocate at most 20% to the checkpoint and 30% to the recent tail.
+These are OAW policy ratios, not claimed Codex/Copilot implementation constants.
+For unknown model aliases, the provisional safe-input amount is a rolling history
+allocation added beside fixed instructions, not a hard cap on those instructions.
+A generic compaction pass folds older contents and the prior snapshot using the same
 configured ADK model adapter and connection, without tools. It preserves goals,
 facts, decisions, uncertainties, execution outcomes and artifact/resource paths.
 A token-sized recent tail is retained, after allowing for the fixed instructions
 and tool schemas, with tool call/result groups kept together.
-Oversized histories/tool bodies are summarized in bounded chunks. Checkpoints
-commit only after successful reduction. A summary that reaches `MAX_TOKENS`
-(including ADK's error-code representation) gets at most two retries with a
-doubled generation allowance, bounded by the provider output cap, 32K tokens and
-remaining safe input/output space. This leaves room for reasoning as well as the
-short checkpoint text. Retries repeat only the tool-free summary request. Empty,
-oversized, rejected or still-truncated summaries retain the previous context and
-surface a normal Run failure; a later turn can retry. Interrupted tool calls get an explicit unknown-outcome result so
+Oversized histories/tool bodies and even an oversized prior checkpoint are folded
+in chunks sized against the complete serialized summary request, including JSON
+escaping, instruction, previous fold and output reservation. Summary text has no
+fixed 2K/4K ceiling: acceptance uses the window-relative checkpoint allocation.
+The prose target is half that allocation or half the configured generation budget,
+whichever is smaller. Generation tokens also pay for reasoning, so they are not
+treated as a checkpoint-length measure. Checkpoints commit only after reduction
+and verification that the complete rendered continuation fits the target.
+
+`MAX_TOKENS` (including ADK's error-code representation) and empty output can
+retry with a doubled generation allowance within the provider output cap and
+remaining window. Empty output can retry at the cap; oversized prose retries with
+a concision instruction and the original source. All retries are bounded to three
+attempts and fit the configured window. Failure distinguishes empty, oversized,
+rejected and truncated results, includes applicable budget sizes, and preserves
+the entire old checkpoint. No agent tools are replayed. A later turn can retry.
+Interrupted tool calls get an explicit unknown-outcome result so
 continuation cannot assume either success or permission to repeat a side effect.
 
 This adopts the lifecycle described in the
 [OpenAI compaction guide](https://developers.openai.com/api/docs/guides/compaction):
 grow, measure, compact, continue, repeat. It uses a **generic rolling snapshot**,
 not OpenAI encrypted/native compaction or a separate Responses API transport.
+The [Codex configuration reference](https://developers.openai.com/codex/config-reference/)
+exposes model-specific automatic compaction thresholds; the
+[Copilot CLI context guide](https://docs.github.com/en/copilot/concepts/agents/copilot-cli/context-management)
+describes background compaction near 80% and waiting near 95%. OAW compacts
+synchronously at its serialized model-call boundary, preserving its existing
+per-session ownership and cancellation contract rather than adding a background
+writer. Explicit connection limits remain authoritative; this change does not
+increase a proxy's configured window based only on its model name.
 
 REST conversation summaries expose only session/Agent `ContextStatus` projections.
 The existing event hub publishes `context_status` invalidations on 5% pressure
@@ -134,3 +158,18 @@ The isolated Chrome model-settings test verifies default values, editing, saving
 reload, connection isolation, Chinese labels and narrow layouts; rendered screenshots
 were inspected. This is isolated browser coverage, not a live-model conversation
 or embedded-browser check. Configured model limits require no metadata requests.
+
+Window-relative budget verification (2026-09-20): 90 related backend tests cover
+the runtime, model catalog and conversation paths, including complete summaries
+above the old 4K ceiling, empty/oversized recovery, bounded escaped Unicode input,
+smaller-window checkpoint folding, early compaction and unknown-model history
+rolling. With explicit user authorization, a read-only copy of the failed
+MatCreator checkpoint was summarized through its configured adapter. At the
+currently configured 1M window, a forced pass produced a 4,168-token estimated
+summary and reduced total estimated input from 427,035 to 265,697. At the original
+128K window, five summary calls reduced the same estimated input to 39,028, below
+the 58,875 continuation target, in 166 seconds. These conservative local estimates
+are not provider token counts. The probes did not execute tools or write the
+canonical database; they verify budget recovery, not comprehensive factual
+retention or a resumed live Agent run. Restart an already running backend to load
+the implementation; no checkpoint reset or data migration is required.

@@ -39,18 +39,6 @@ def estimate(value: Any) -> int:
     return math.ceil(len(text.encode("utf-8")) / 2) + 8
 
 
-def fragments(text: str, max_bytes: int):
-    """Bound summarizer input without cutting a UTF-8 codepoint."""
-    data = text.encode("utf-8")
-    start = 0
-    while start < len(data):
-        end = min(len(data), start + max_bytes)
-        while end < len(data) and data[end] & 0xC0 == 0x80:
-            end -= 1
-        yield data[start:end].decode("utf-8")
-        start = end
-
-
 @dataclass(frozen=True)
 class ContextBudget:
     limit: int
@@ -62,6 +50,19 @@ class ContextBudget:
     def input(self) -> int:
         # Output, tool/runtime growth and safety headroom are internal policy.
         return max(1, int((self.limit - self.output) * .85))
+
+    def compaction(self, fixed: int) -> CompactionBudget:
+        # All history allocations share the same remaining input window. Leave
+        # half free after compaction so a successful pass buys useful runway.
+        # Unknown aliases have a rolling history target, not a provider window.
+        # Their static instructions must not exhaust an invented hard limit.
+        available = max(0, self.input - fixed) if self.known else self.input
+        return CompactionBudget(
+            trigger=fixed + int(available * .85),
+            target=fixed + int(available * .50),
+            summary=int(available * .20),
+            tail=int(available * .30),
+        )
 
     @classmethod
     def for_model(cls, model: str) -> ContextBudget:
@@ -92,6 +93,14 @@ class ContextBudget:
         limit = int(metadata.get("max_input_tokens") or 32768)
         output = min(int(metadata.get("max_output_tokens") or 4096), 8192, max(256, limit // 8))
         return cls(limit, output, known, int(metadata.get("max_output_tokens") or 8192))
+
+
+@dataclass(frozen=True)
+class CompactionBudget:
+    trigger: int
+    target: int
+    summary: int
+    tail: int
 
 
 @dataclass
@@ -264,12 +273,18 @@ class ManagedContext:
                 }}} for call in pending
             ]})
 
-    def rendered(self) -> list[dict]:
-        prefix = [text_content("Prior retained context (untrusted historical data):\n" + self.checkpoint.summary)] if self.checkpoint.summary else []
+    def _render(self, summary: str, contents: list[dict]) -> list[dict]:
+        prefix = [text_content("Prior retained context (untrusted historical data):\n" + summary)] if summary else []
         # Keep the current task and fresh roster/tool instructions available even
         # when an entire old tool cycle is folded into the checkpoint.
         frame = text_content(self.prompt)
-        return prefix + self.checkpoint.contents + ([] if self.checkpoint.contents[-1:] == [frame] else [frame])
+        return prefix + contents + ([] if contents[-1:] == [frame] else [frame])
+
+    def rendered(self) -> list[dict]:
+        return self._render(self.checkpoint.summary, self.checkpoint.contents)
+
+    def compaction_budget(self) -> CompactionBudget:
+        return self.budget.compaction(estimate(self._render("", [])) + self.overhead)
 
     def tokens(self) -> int:
         estimated = estimate(self.rendered()) + self.overhead
@@ -302,7 +317,7 @@ class ManagedContext:
         if self.budget.known and fixed >= self.budget.input and self.tokens() >= self.budget.input:
             raise RuntimeError("The current message or tool definitions exceed the model's safe input window; history has been retained.")
         history_size = estimate([self.checkpoint.summary, self.checkpoint.contents])
-        if self.tokens() >= self.budget.input and (self.budget.known or history_size > self.budget.input * .25):
+        if self.tokens() >= self.compaction_budget().trigger and (self.budget.known or history_size > self.budget.input * .25):
             await self.compact()
         if self.budget.known and self.tokens() >= self.budget.input:
             raise RuntimeError("Context remains too large after compaction. The current message or tool definitions exceed the model's safe input window; history has been retained.")
@@ -357,7 +372,7 @@ class ManagedContext:
 
     def _cut(self) -> int:
         # Retain a token-sized tail, and never split a function call/result group.
-        target = max(0, self.budget.input - self.overhead - estimate(text_content(self.prompt))) * .25
+        target = self.compaction_budget().tail
         total = 0
         desired = len(self.checkpoint.contents)
         for index in range(len(self.checkpoint.contents) - 1, -1, -1):
@@ -379,7 +394,7 @@ class ManagedContext:
 
     async def compact(self) -> None:
         cut = self._cut()
-        if not cut:
+        if not cut and not self.checkpoint.summary:
             return
         self.publish("compacting")
         original = self.checkpoint.summary
@@ -387,37 +402,79 @@ class ManagedContext:
             # A late join or one huge tool output can itself exceed the window.
             # Feed bounded chunks to the same adapter, folding the previous
             # snapshot each time. Never send an overflowing summarization call.
-            source = encoded(self.checkpoint.contents[:cut])
-            summary = original
-            for fragment in fragments(source, max(128, int(self.budget.input * .8))):
-                summary = await self._summarize(summary, fragment)
+            plan = self.compaction_budget()
+            tail = self.checkpoint.contents[cut:]
+            # Include the rendered wrapper, current task and recent tail in the
+            # acceptance contract, not just the model's requested prose length.
+            allowance = min(plan.summary, plan.target - estimate(self._render(" ", tail)) - self.overhead)
+            if allowance <= estimate(""):
+                raise RuntimeError("Context compaction has no room for a checkpoint beside the current message and tool definitions; retained context is unchanged.")
+            # Fold an existing checkpoint through the same bounded path. This
+            # also handles switching to a smaller model/window without sending
+            # an oversized old checkpoint as a fixed prefix on every request.
+            source = encoded([original, self.checkpoint.contents[:cut]])
+            summary = ""
+            while source:
+                request, consumed = self._summary_request(summary, source, allowance)
+                summary = await self._summarize(request, allowance)
+                source = source[consumed:]
             if estimate(summary) >= estimate([original, self.checkpoint.contents[:cut]]):
                 raise RuntimeError("Context compaction did not reduce the input; retained context is unchanged.")
+            candidate_size = estimate(self._render(summary, tail)) + self.overhead
+            if candidate_size >= estimate(self.rendered()) + self.overhead:
+                raise RuntimeError("Context compaction did not reduce the rendered input; retained context is unchanged.")
+            if candidate_size > plan.target:
+                raise RuntimeError(f"Context compaction exceeded its continuation budget ({candidate_size} estimated tokens, target {plan.target}); retained context is unchanged.")
             self.checkpoint.summary = summary
-            self.checkpoint.contents = self.checkpoint.contents[cut:]
+            self.checkpoint.contents = tail
             self.checkpoint.compaction_count += 1
             self.checkpoint.measured_tokens = None
         finally:
             self.publish()
 
-    async def _summarize(self, previous: str, source: str) -> str:
+    def _summary_request(self, previous: str, source: str, allowance: int):
         from google.adk.models.llm_request import LlmRequest
         from google.genai import types
-        allowance = min(2048, max(128, self.budget.input // 10))
+        # Prose budget and generation budget are different: reasoning consumes
+        # generation tokens too. Aim below the acceptance budget to accommodate
+        # conservative UTF-8 estimates, but accept any complete checkpoint that
+        # fits the continuation allocation.
+        target = max(1, min(allowance // 2, self.budget.output // 2))
         request = LlmRequest(model=self.model.model,
             config=types.GenerateContentConfig(system_instruction=SUMMARY_INSTRUCTION,
-                                               max_output_tokens=self.budget.output),
-            contents=[types.Content.model_validate(text_content(
-                f"Keep the checkpoint within approximately {allowance} tokens.\n"
-                f"Prior checkpoint:\n{previous}\n\nNext transcript fragment:\n{source}"))])
+                                               max_output_tokens=self.budget.output))
+        def fill(fragment: str) -> int:
+            request.contents = [types.Content.model_validate(text_content(
+                f"Aim for at most {target} tokens in the checkpoint. Be concise.\n"
+                f"Prior checkpoint:\n{previous}\n\nNext transcript fragment:\n{fragment}"))]
+            return estimate(request.model_dump(mode="json", exclude_none=True))
+
+        # Size the actual serialized request (JSON escaping, prefix, instruction
+        # and output reservation included). Character slicing preserves Unicode.
+        low, high = 0, min(len(source), self.budget.input * 2)
+        while low < high:
+            middle = (low + high + 1) // 2
+            if fill(source[:middle]) <= self.budget.input:
+                low = middle
+            else:
+                high = middle - 1
+        if not low:
+            raise RuntimeError("Context compaction request has no room for transcript input; retained context is unchanged.")
+        fill(source[:low])
+        return request, low
+
+    async def _summarize(self, request, allowance: int) -> str:
         # Reasoning also consumes max_output_tokens on compatible providers.
         # Retry only this read-only summary, with a larger bounded generation
         # allowance. Never accept a truncated checkpoint or replay agent tools.
-        input_size = estimate(request.model_dump(mode="json", exclude_none=True))
-        ceiling = min(self.budget.max_output or self.budget.limit // 2, 32768,
-                      max(256, int(self.budget.limit * .85) - input_size))
-        request.config.max_output_tokens = min(self.budget.output, ceiling)
         for attempt in range(3):
+            # Recompute after correction instructions, too. Size the output-cap
+            # field with its largest possible value before increasing it.
+            wire = request.model_dump(mode="json", exclude_none=True)
+            wire["config"]["max_output_tokens"] = self.budget.limit
+            ceiling = min(self.budget.max_output or self.budget.limit // 2,
+                          max(1, self.budget.limit - estimate(wire)))
+            request.config.max_output_tokens = min(request.config.max_output_tokens, ceiling)
             result = ""
             truncated = False
             async for response in self.model.generate_content_async(request, stream=False):
@@ -429,13 +486,24 @@ class ManagedContext:
                 truncated |= limit_reached
                 if response.content:
                     result += "".join(part.text or "" for part in response.content.parts or [] if not part.thought)
-            if truncated:
+            if truncated or not result.strip():
                 larger = min(request.config.max_output_tokens * 2, ceiling)
-                if attempt < 2 and larger > request.config.max_output_tokens:
+                if attempt < 2 and (larger > request.config.max_output_tokens or not truncated):
                     request.config.max_output_tokens = larger
                     continue
-                raise RuntimeError("Context compaction failed: summary output reached its token limit after bounded retries; retained context is unchanged.")
-            if not result.strip() or estimate(result) > allowance * 2:
-                raise RuntimeError("Context compaction returned an empty or oversized checkpoint; retained context is unchanged.")
+                reason = "summary output reached its token limit" if truncated else "model returned an empty checkpoint"
+                raise RuntimeError(f"Context compaction failed: {reason} after bounded retries (generation budget {request.config.max_output_tokens}); retained context is unchanged.")
+            size = estimate(text_content(result.strip()))
+            if size > allowance:
+                # Retry the read-only summarization with a tighter instruction;
+                # keep its original source so no facts are silently discarded.
+                if attempt < 2:
+                    request.contents[0].parts[0].text = (
+                        f"The previous attempt was too verbose ({size} estimated tokens; budget {allowance}). "
+                        "Produce a substantially shorter checkpoint, omitting repetitive details.\n"
+                        + request.contents[0].parts[0].text)
+                    if estimate(request.model_dump(mode="json", exclude_none=True)) + request.config.max_output_tokens <= self.budget.limit:
+                        continue
+                raise RuntimeError(f"Context compaction checkpoint exceeds its budget ({size} estimated tokens, budget {allowance}); retained context is unchanged.")
             return result.strip()
         raise AssertionError("unreachable")
