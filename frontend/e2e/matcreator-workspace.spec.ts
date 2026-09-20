@@ -51,6 +51,7 @@ test('MatCreator preset opens sessions, files, conversation and a persistent res
   await board.getByLabel('Task title', { exact: true }).fill('Generate the copper structure');
   await board.getByLabel('Task details').fill('Read Materials Core and inspect the Sandbox environment.');
   await board.getByRole('button', { name: 'Save task', exact: true }).click();
+  await board.getByRole('button', { name: '‹ Tasks', exact: true }).click();
   await expect(board.getByRole('button', { name: /Generate the copper structure/ })).toBeVisible();
   const doc = await (await request.get(`/api/nodes/${instance.node_ids.tasks}/document`)).json();
   const plan = doc.value.plans[0];
@@ -60,7 +61,9 @@ test('MatCreator preset opens sessions, files, conversation and a persistent res
   } });
   expect(updated.ok()).toBe(true);
   await expect(board.getByRole('region', { name: 'Done', exact: true }).getByRole('button', { name: /Generate the copper structure/ })).toBeVisible();
+  await board.getByRole('region', { name: 'Done', exact: true }).getByRole('button', { name: /Generate the copper structure/ }).click();
   await expect(board.getByText('copper/structure.xyz', { exact: true })).toBeVisible();
+  await board.getByRole('button', { name: '‹ Tasks', exact: true }).click();
   await page.screenshot({ path: 'test-results/matcreator-workspace-light.png' });
   const stage = workspace.locator('.legion-layout-stage');
   const fit = await stage.evaluate(element => ({ width: element.clientWidth, scrollWidth: element.scrollWidth, height: element.clientHeight, scrollHeight: element.scrollHeight }));
@@ -102,8 +105,10 @@ test('MatCreator preset opens sessions, files, conversation and a persistent res
   await workspace.getByRole('tab', { name: 'Research tasks', exact: true }).click();
   await page.reload();
   await open();
-  await expect(board.getByText('Copper structure study', { exact: true }).last()).toBeVisible();
+  await expect(board.getByRole('heading', { name: 'Copper structure study', exact: true })).toBeVisible();
+  await board.getByRole('button', { name: 'Generate the copper structure', exact: true }).click();
   await expect(board.getByText('Fixture result: validated 32 atoms', { exact: true })).toBeVisible();
+  await board.getByRole('button', { name: '‹ Tasks', exact: true }).click();
   await workspace.getByRole('button', { name: 'Use dark theme' }).click();
   await page.screenshot({ path: 'test-results/matcreator-workspace-dark.png' });
   await page.setViewportSize({ width: 960, height: 720 });
