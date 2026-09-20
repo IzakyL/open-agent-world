@@ -27,7 +27,11 @@ export type CardCreateInput = (Omit<WorldCard, "id"> | WorldCard) & {
   media_type?: string;
 };
 
-const API_BASE = (import.meta.env.VITE_API_BASE as string | undefined)?.replace(/\/$/, "") ?? "/api";
+const BUILDER_API_BASE = (import.meta.env.VITE_API_BASE as string | undefined)?.replace(/\/$/, "") ?? "/api";
+let API_BASE = BUILDER_API_BASE;
+export function configureWorkspaceApi(deployed: boolean) {
+  API_BASE = deployed ? `${BUILDER_API_BASE}/runtime-app/workspace` : BUILDER_API_BASE;
+}
 
 export function conversationAttachmentUrl(conversationId: string, sessionId: string, file: { version_id: string; path: string }, preview = false): string {
   return `${API_BASE}/conversations/${encodeURIComponent(conversationId)}/sessions/${encodeURIComponent(sessionId)}/attachments/${encodeURIComponent(file.version_id)}?${new URLSearchParams({ path: file.path, preview: String(preview) })}`;
@@ -240,6 +244,7 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
       : await response.text();
 
   if (!response.ok) {
+    if (response.status === 401 && API_BASE !== BUILDER_API_BASE) window.dispatchEvent(new Event('oaw-session-expired'));
     const bodyRecord = asRecord(body);
     const errorRecord = asRecord(bodyRecord.error);
     const detail = errorRecord.message ?? bodyRecord.detail ?? body;

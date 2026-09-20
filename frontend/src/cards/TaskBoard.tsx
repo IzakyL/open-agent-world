@@ -1,3 +1,4 @@
+import { useWorkspaceAccess } from '../workspace/WorkspaceAccess';
 import { t, useLocale } from "../i18n";
 import { Check, Circle, GitBranch, ListTodo, Play, Plus, RefreshCw, Trash2, X } from "lucide-react";
 import { useCallback, useEffect, useId, useRef, useState } from "react";
@@ -16,6 +17,7 @@ const statuses = { todo: "To do", doing: "In progress", done: "Done", blocked: "
 const snapshot = (value: unknown) => value as BoardSnapshot;
 
 function useBoard(id: string) {
+  const { deployed } = useWorkspaceAccess();
   const eventId = useWorldStore((state) => state.events.find((e) => e.payload.scope_kind === "node_document" && e.payload.owner_id === id)?.id);
   const socketState = useWorldStore((state) => state.socketState);
   const [board, setBoard] = useState<BoardSnapshot>();
@@ -30,6 +32,11 @@ function useBoard(id: string) {
     worldApi.getNodeDocument(id).then((value) => { if (active) accept(snapshot(value)); }).catch((e) => { if (active) setError(apiErrorMessage(e)); });
     return () => { active = false; };
   }, [id, eventId, socketState, accept]);
+  useEffect(() => {
+    if (!deployed) return;
+    const timer = window.setInterval(() => { void reload(); }, 3000);
+    return () => window.clearInterval(timer);
+  }, [deployed, reload]);
   return { board, accept, reload, error, setError };
 }
 
@@ -110,6 +117,7 @@ function DependencyGraph({ tasks, onSelect }: { tasks: BoardTask[]; onSelect: (t
 
 export function TaskBoardBody({ card, workspace = false }: { card: WorldCard; workspace?: boolean }) {
   useLocale();
+  const { deployed } = useWorkspaceAccess();
   const { board, accept, reload, error, setError } = useBoard(card.id);
   const execution = useNodeExecution(card.id, reload);
   const [editing, setBusy] = useState(false);
@@ -140,7 +148,7 @@ export function TaskBoardBody({ card, workspace = false }: { card: WorldCard; wo
     <header className="task-board-heading"><div><span className="task-board-eyebrow">{t("SHARED WORK BOARD")}</span><h3>{board ? t("{v0} / {v1} complete", { v0: String(board.summary.done), v1: String(board.summary.total) }) : t("Loading tasks...")}</h3></div>
       <button className="secondary-button" title={t("Reload the board and discard the open task draft")} aria-label={t("Reload task board")} disabled={busy} onClick={() => { setDraft(undefined); void reload(); }}><RefreshCw size={14} /></button></header>
     <progress aria-label={t("Task completion")} value={board?.summary.done ?? 0} max={board?.summary.total || 1} />
-    <p className="task-board-help">{t("Connect an Agent to read tasks, update progress, or manage the plan.")}</p>
+    {!deployed && <><p className="task-board-help">{t("Connect an Agent to read tasks, update progress, or manage the plan.")}</p>
     <details className="task-execution-settings"><summary>{t("Agent execution")} <span>{settings.default_executor_id ? t("Configured") : t("Optional")}</span></summary>
       <p className="task-board-help">{t("Connect this board to an Agent with “Execute with”, then choose an executor. Leaving it unset keeps this a todo board. Successful runs complete tasks automatically.")}</p>
       <fieldset disabled={busy || !board}>
@@ -151,7 +159,7 @@ export function TaskBoardBody({ card, workspace = false }: { card: WorldCard; wo
           <option value={1}>{t("One task at a time")}</option>{[2, 3, 4, 8].map((count) => <option key={count} value={count}>{t("Up to")} {count} {t("tasks in parallel")}</option>)}</select></label>
         <label className="execution-checkbox"><input type="checkbox" checked={settings.pause_on_failure} onChange={(e) => void mutate("configure_execution", { ...settings, pause_on_failure: e.target.checked })} /> {t("Pause new tasks on failure")}</label>
       </fieldset>
-    </details>
+    </details></>}
     <NodeExecutionControls execution={execution} revision={board?.revision} readyCount={ready.size} disabled={editing || !!draft} titleForItem={(id) => tasks.find((task) => task.id === id)?.title ?? id} />
     <div className="task-board-toolbar"><div className="task-view-toggle" role="group" aria-label={t("Task view")}><button aria-pressed={view === "list"} onClick={() => setView("list")}><ListTodo size={14} /> {t("List")}</button><button aria-pressed={view === "graph"} onClick={() => setView("graph")}><GitBranch size={14} /> {t("Dependencies")}</button></div>
       <select aria-label={t("Filter tasks")} value={filter} onChange={(e) => setFilter(e.target.value as typeof filter)} disabled={view === "graph"}><option value="all">{t("All tasks")}</option><option value="ready">{t("Ready to start")}</option><option value="done">{t("Completed")}</option></select></div>
@@ -174,9 +182,9 @@ export function TaskBoardBody({ card, workspace = false }: { card: WorldCard; wo
       <header><strong>{t("Task details")}</strong><button type="button" aria-label={t("Close task details")} onClick={() => setDraft(undefined)}><X size={16} /></button></header>
       <fieldset disabled={busy}><label>{t("Title")}<input aria-label={t("Task title")} maxLength={200} required value={draft.task.title} onChange={(e) => patch({ title: e.target.value })} /></label>
       <label>{t("Description")}<textarea aria-label={t("Task description")} rows={3} maxLength={4000} placeholder={t("Expected outcome or instructions")} value={draft.task.description} onChange={(e) => patch({ description: e.target.value })} /></label>
-      <label>{t("Executor")}<select aria-label={t("Task executor")} value={draft.task.executor_id ?? ""} onChange={(e) => patch({ executor_id: e.target.value || null })}>
+      {!deployed && <label>{t("Executor")}<select aria-label={t("Task executor")} value={draft.task.executor_id ?? ""} onChange={(e) => patch({ executor_id: e.target.value || null })}>
         <option value="">{t("Use board default")}</option>{draft.task.executor_id && !executors.some((agent) => agent.id === draft.task.executor_id) && <option value={draft.task.executor_id}>{t("Executor disconnected")}</option>}
-        {executors.map((agent) => <option key={agent.id} value={agent.id}>{agent.name}</option>)}</select></label>
+        {executors.map((agent) => <option key={agent.id} value={agent.id}>{agent.name}</option>)}</select></label>}
       <label>{t("Status")}<select aria-label={t("Task status")} value={draft.task.status} onChange={(e) => patch({ status: e.target.value as BoardTask["status"] })}>{Object.entries(statuses).map(([value, label]) => <option key={value} value={value}>{t(label)}</option>)}</select></label>
       <label>{t("Progress note")}<textarea aria-label={t("Progress note")} rows={2} maxLength={4000} placeholder={t("Result, blocker, or next step")} value={draft.task.note} onChange={(e) => patch({ note: e.target.value })} /></label>
       <div className="task-dependencies"><strong>{t("Depends on")}</strong><p>{t("These tasks must finish first.")}</p>{tasks.filter((task) => task.id !== draft.task.id).map((task) => <label key={task.id}><input type="checkbox" aria-label={t("Depends on {v0}", { v0: String(task.title) })} checked={draft.task.depends_on.includes(task.id)} onChange={(e) => patch({ depends_on: e.target.checked ? [...draft.task.depends_on, task.id] : draft.task.depends_on.filter((id) => id !== task.id) })} />{task.title}</label>)}{tasks.length < 2 && <p>{t("Add another task to set a dependency.")}</p>}</div>

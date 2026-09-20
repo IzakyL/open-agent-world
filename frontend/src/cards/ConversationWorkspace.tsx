@@ -1,3 +1,4 @@
+import { useWorkspaceAccess } from '../workspace/WorkspaceAccess';
 import { t, useLocale } from "../i18n";
 import { useConversationTimeline } from "../state/useConversationTimeline";
 import { MarkdownMessage } from "./MarkdownMessage";
@@ -25,6 +26,7 @@ type OutgoingMessage = { message: ConversationMessage; status: "sending" | "conf
 
 export function ConversationWorkspace({ card }: { card: WorldCard }) {
   useLocale();
+  const { deployed, permissions } = useWorkspaceAccess();
   const sections = useWorkspaceSections();
   const sessionsInline = sections.isInline("sessions");
   const conversationInline = sections.isInline("conversation");
@@ -134,7 +136,7 @@ export function ConversationWorkspace({ card }: { card: WorldCard }) {
   const participants = (activeSession?.participant_ids ?? [])
     .map((id) => agents.find((item) => item.id === id))
     .filter((item): item is ConversationAgent => Boolean(item?.connected));
-  const history = useConversationTimeline(card.id, activeSessionId, refreshEvent, socketLive, transcript, runtimeEvents);
+  const history = useConversationTimeline(card.id, !deployed || permissions[card.id]?.includes('conversation') ? activeSessionId : undefined, refreshEvent, socketLive, transcript, runtimeEvents);
   const visibleOutgoing = outgoing.filter((item) => item.message.conversation_id === card.id
     && item.message.session_id === activeSessionId && !history.messages.some((message) => message.id === item.message.id));
   const messages = [...history.messages, ...visibleOutgoing.map((item) => item.message)];
@@ -168,7 +170,7 @@ export function ConversationWorkspace({ card }: { card: WorldCard }) {
     // REST owns the durable snapshot. Socket liveness only invalidates that
     // snapshot on reconnect; it never gates historical reads.
     let current = true;
-    void worldApi.getConversation(card.id).then((summary) => {
+    const refresh = () => worldApi.getConversation(card.id).then((summary) => {
       if (!current) return;
       setSessions(summary.sessions);
       setAgents(summary.agents);
@@ -180,8 +182,10 @@ export function ConversationWorkspace({ card }: { card: WorldCard }) {
       ));
       setError(undefined);
     }).catch((reason) => current && setError(apiErrorMessage(reason)));
-    return () => { current = false; };
-  }, [accessEvent, card.id, refreshEvent, socketLive, contextEvent]);
+    void refresh();
+    const timer = deployed ? window.setInterval(() => { void refresh(); }, 3000) : undefined;
+    return () => { current = false; window.clearInterval(timer); };
+  }, [accessEvent, card.id, refreshEvent, socketLive, contextEvent, deployed]);
 
   useEffect(() => {
     const eligible = activeSession?.participant_ids.filter((id) => agents.some((agent) => agent.id === id && agent.connected)) ?? [];
@@ -624,10 +628,10 @@ export function ConversationWorkspace({ card }: { card: WorldCard }) {
           ))}
           {participants.length === 0 ? <p>{t("This session has no Agents. Create a direct or group session from the left.")}</p> : null}
         </section>
-        <section>
+        {!deployed && <section>
           <span className="workspace-panel-label">{t("Field policy")}</span>
           <p>{t("Canvas connections authorize access. Session membership selects the group. Removing an edge keeps history but blocks future turns.")}</p>
-        </section>
+        </section>}
         </div>
       </aside>
       </WorkspaceSection>

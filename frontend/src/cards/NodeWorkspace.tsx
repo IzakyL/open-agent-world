@@ -1,3 +1,4 @@
+import { useWorkspaceAccess } from '../workspace/WorkspaceAccess';
 import { t, useLocale } from "../i18n";
 import { SandboxWorkspace } from "./SandboxWorkspace";
 import { ArtifactCollection } from "./Artifacts";
@@ -183,12 +184,13 @@ export function WorkspaceSurface({ card }: WorkspaceSurfaceProps) {
 export function WorkspaceContent({ card }: WorkspaceSurfaceProps) {
   useLocale();
   const catalog = useWorldStore((state) => state.catalog);
+  const { deployed } = useWorkspaceAccess();
   const [agentTab, setAgentTab] = useState("activity");
   const ministerTab = useMinisterRole(s => s.settingsCardId === card.id) && Boolean(card.minister);
   return (
       <div className="workspace-content">
       <PluginSurface card={card} slot="workspace" level="workspace">
-      {catalog.node_types.find((definition) => definition.id === card.type)?.traits.includes("core.agent") ? <>
+      {catalog.node_types.find((definition) => definition.id === card.type)?.traits.includes("core.agent") ? deployed ? <div className="workspace-welcome"><Bot size={22} /><strong>{card.name}</strong><p>{t(card.status)}</p></div> : <>
         <nav className="agent-window-tabs nodrag nopan" role="tablist" aria-label={t("Agent window")}>
           <button role="tab" aria-selected={!ministerTab && agentTab === "activity"} onClick={() => { useMinisterRole.setState({ settingsCardId: undefined }); setAgentTab("activity"); }}>{t("Activity")}</button>
           <button role="tab" aria-selected={!ministerTab && agentTab === "settings"} onClick={() => { useMinisterRole.setState({ settingsCardId: undefined }); setAgentTab("settings"); }}>{t("Settings")}</button>

@@ -11,6 +11,7 @@
     "build": "tsc --noEmit -p tsconfig.app.json && vite build",
     "test": "vitest run src",
     "test:e2e": "node scripts/run-e2e.mjs",
+    "test:e2e:deployment": "playwright test -c playwright.deployment.config.ts",
     "test:e2e:minister": "node scripts/run-e2e.mjs --minister"
   },
   "dependencies": {

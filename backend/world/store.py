@@ -15,6 +15,7 @@ from backend.errors import (
     NotFoundError,
     PluginUnavailableError,
     RevisionConflictError,
+    PermissionDeniedError,
 )
 from backend.plugins.registry import PluginRegistry
 from backend.persistence.database import Database
@@ -66,6 +67,7 @@ class WorldStore:
         if chunk_size <= 0:
             raise ValueError("chunk_size must be positive")
         self.database = database
+        self.structure_locked = False
         self.registry = registry
         self.chunk_size = chunk_size
         self.terrain_seed = ensure_terrain_seed(database, new_world=new_world)
@@ -75,6 +77,10 @@ class WorldStore:
     def validate_minister(self, card_type, minister) -> None:
         if minister is not None and not self.registry.has_trait(card_type, "core.agent"):
             raise GraphValidationError("Only an Agent can receive the Minister role")
+
+    def _require_structure_edit(self, patch=None):
+        if self.structure_locked and (patch is None or patch.model_fields_set - {"status", "expected_revision"}):
+            raise PermissionDeniedError("Published application structure is locked")
 
     @staticmethod
     def _patched_minister(current, request):
@@ -253,6 +259,7 @@ class WorldStore:
         return Size(width=max(size.width, spec.min_size[0]), height=max(size.height, spec.min_size[1])) if spec else size
 
     def preview_card(self, request: CardCreate, *, card_id: str | None = None) -> Card:
+        self._require_structure_edit()
         """Validate a create request and materialize its node without persistence."""
 
         resolved_id = _id_or_new(card_id if card_id is not None else request.id)
@@ -360,6 +367,7 @@ class WorldStore:
         return [self._card_from_row(row) for row in rows]
 
     def update_card(self, card_id: str, request: CardPatch) -> Card:
+        self._require_structure_edit(request)
         current = self.get_card(card_id)
         self.check_revision(current, request.expected_revision)
         changes = request.model_dump(exclude_unset=True, exclude={"expected_revision"})
@@ -471,6 +479,7 @@ class WorldStore:
         return [self.get_card(item.node_id) for item in items]
 
     def preview_update_card(self, card_id: str, request: CardPatch) -> Card:
+        self._require_structure_edit(request)
         """Validate an update and return its resulting node without persisting it."""
 
         current = self.get_card(card_id)
@@ -515,6 +524,7 @@ class WorldStore:
         return self.delete_cards([card_id])[0]
 
     def delete_cards(self, card_ids: Iterable[str]) -> list[Card]:
+        self._require_structure_edit()
         ids = list(dict.fromkeys(card_ids))
         if not ids:
             return []
@@ -544,6 +554,7 @@ class WorldStore:
         return cards
 
     def create_edge(self, request: EdgeCreate) -> Edge:
+        self._require_structure_edit()
         request = self.normalize_edge_request(request)
         edge_id = _id_or_new(request.id)
         now = utc_now().isoformat()
@@ -668,6 +679,7 @@ class WorldStore:
         return [self._edge_from_row(row) for row in rows]
 
     def update_edge(self, edge_id: str, request: EdgePatch) -> Edge:
+        self._require_structure_edit()
         now = utc_now().isoformat()
         with self.database.transaction(immediate=True) as connection:
             row = connection.execute(
@@ -714,6 +726,7 @@ class WorldStore:
         return self.get_edge(edge_id)
 
     def delete_edge(self, edge_id: str) -> Edge:
+        self._require_structure_edit()
         edge = self.get_edge(edge_id)
         with self.database.transaction(immediate=True) as connection:
             cursor = connection.execute("DELETE FROM edges WHERE id = ?", (edge_id,))

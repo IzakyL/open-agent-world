@@ -4,6 +4,7 @@ import { Play, Square } from "lucide-react";
 import { apiErrorMessage, worldApi } from "../api/client";
 import { useWorldStore } from "../state/worldStore";
 import { PublishedReferences, type ArtifactReference } from "./Artifacts";
+import { useWorkspaceAccess } from '../workspace/WorkspaceAccess';
 
 export interface ExecutionSnapshot {
   status: string;
@@ -16,6 +17,7 @@ export interface ExecutionSnapshot {
 
 /** Shared host UI: no assumptions about DAGs, task fields or acceptance rules. */
 export function useNodeExecution(nodeId: string, onChanged: () => Promise<void>) {
+  const { deployed } = useWorkspaceAccess();
   const [state, setState] = useState<ExecutionSnapshot>();
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
@@ -31,10 +33,10 @@ export function useNodeExecution(nodeId: string, onChanged: () => Promise<void>)
   }, [nodeId]);
   useEffect(() => { void reload(); return () => { sequence.current++; }; }, [reload, eventId, socketState]);
   useEffect(() => {
-    if (!state?.active) return;
-    const timer = window.setInterval(() => { void reload(); }, 1000);
+    if (!state?.active && !deployed) return;
+    const timer = window.setInterval(() => { void reload(); }, state?.active ? 1000 : 3000);
     return () => window.clearInterval(timer);
-  }, [reload, state?.active]);
+  }, [reload, state?.active, deployed]);
   const act = async (operation: () => Promise<ExecutionSnapshot>) => {
     setBusy(true); setError(""); ++sequence.current;
     try { await operation(); await reload(); await onChanged(); }

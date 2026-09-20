@@ -15,6 +15,7 @@
 | 配置模型、凭据或应用存储 | [配置（英文）](configuration.md) |
 | 收集卡牌并整理底部托盘 | [卡包、卡牌库与牌组（英文）](card-library.md) |
 | 组织和复用团队 | [军团团队空间（英文）](legions.md) |
+| 为最终用户发布锁定的工作区 | [发布与部署](deployment.zh-CN.md) |
 | 查看并整理画布局部区域 | [Minister（英文）](minister.md) |
 | 使用或开发扩展 | [插件（英文）](plugins.md) |
 | 操作文件和执行命令 | [沙盒工作空间（英文）](sandbox-workspace.md) |
