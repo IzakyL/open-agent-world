@@ -24,6 +24,18 @@ describe("Application settings", () => {
   });
   afterEach(cleanup);
 
+  it("edits global environment values and removes inherited defaults", async () => {
+    vi.spyOn(worldApi, "getSandboxSettings").mockResolvedValue({ workspace_root: null, runtime: "auto", environment_variables: { OLD: "remove", REGION: "before" } });
+    const save = vi.spyOn(worldApi, "saveSandboxSettings").mockResolvedValue({ workspace_root: null, runtime: "auto", environment_variables: { REGION: " after=change " } });
+    render(<SettingsPanel />);
+    fireEvent.click(screen.getByRole("button", { name: "Sandbox" }));
+    await screen.findByDisplayValue("before");
+    fireEvent.click(screen.getByLabelText("Remove environment variable 1"));
+    fireEvent.change(screen.getByLabelText("Environment variable 1 value"), { target: { value: " after=change " } });
+    fireEvent.click(screen.getByRole("button", { name: "Save settings" }));
+    await waitFor(() => expect(save).toHaveBeenCalledWith({ workspace_root: null, runtime: "auto", environment_variables: { REGION: " after=change " } }));
+  });
+
   it("shows numeric model defaults and saves edited limits", async () => {
     const save = vi.spyOn(worldApi, "saveModelConnections").mockResolvedValue(savedCatalog());
     render(<SettingsPanel />);
@@ -105,7 +117,7 @@ describe("Application settings", () => {
     fireEvent.change(screen.getByLabelText("Default runtime"), { target: { value: "windows" } });
     fireEvent.click(screen.getByRole("button", { name: "Save settings" }));
     await waitFor(() => expect(useWorldStore.getState().settingsOpen).toBe(false));
-    expect(save).toHaveBeenCalledWith({ workspace_root: "E:\\Projects", runtime: "windows" });
+    expect(save).toHaveBeenCalledWith({ workspace_root: "E:\\Projects", runtime: "windows", environment_variables: {} });
     expect(saveModel).not.toHaveBeenCalled();
   });
 
@@ -141,7 +153,7 @@ describe("Application settings", () => {
     fireEvent.click(screen.getByRole("button", { name: "Save settings" }));
     expect((await screen.findByRole("alert")).textContent).toContain("Folder is not accessible");
     expect(useWorldStore.getState().settingsOpen).toBe(true);
-    expect(save).toHaveBeenCalledWith({ workspace_root: null, runtime: "auto" });
+    expect(save).toHaveBeenCalledWith({ workspace_root: null, runtime: "auto", environment_variables: {} });
     expect(folder.value).toBe("");
   });
 

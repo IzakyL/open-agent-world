@@ -12,6 +12,7 @@ import type { SandboxSettings, StorageSettings } from "../api/client";
 import type { SandboxRuntime } from "../types/world";
 import { FolderPathInput } from "./FolderPathInput";
 import { DeepLSettings } from "./DeepLSettings";
+import { EnvironmentVariablesEditor, environmentVariablesFromValue, environmentVariablesToValue, type EnvironmentVariableRow } from "../cards/ExecutionConfiguration";
 
 export function SettingsPanel() {
   const { locale, setLocale } = useLocale();
@@ -40,6 +41,7 @@ export function SettingsPanel() {
   }, [open, section, storageRetry]);
   const [sandbox, setSandbox] = useState<SandboxSettings>({ workspace_root: null, runtime: "auto" });
   const [sandboxSaved, setSandboxSaved] = useState(false);
+  const [environmentRows, setEnvironmentRows] = useState<EnvironmentVariableRow[]>([]);
   const [runtimes, setRuntimes] = useState<SandboxRuntime[]>([]);
   const [loaded, setLoaded] = useState(false);
   const [saving, setBusy] = useState(false);
@@ -77,6 +79,7 @@ export function SettingsPanel() {
       .then(([value, catalog]) => {
         if (!active) return;
         setSandbox(value);
+        setEnvironmentRows(environmentVariablesFromValue({ variables: value.environment_variables ?? {} }));
         setRuntimes(catalog.runtimes);
         setLoaded(true);
       })
@@ -101,7 +104,8 @@ export function SettingsPanel() {
         setStorage(saved);
         setStoragePath(saved.pending_path ?? "");
       } else if (section === "sandbox") {
-        const saved = await worldApi.saveSandboxSettings({ runtime: sandbox.runtime, workspace_root: sandbox.workspace_root?.trim() || null });
+        const variables = environmentVariablesToValue(environmentRows).variables as Record<string, string>;
+        const saved = await worldApi.saveSandboxSettings({ runtime: sandbox.runtime, workspace_root: sandbox.workspace_root?.trim() || null, environment_variables: variables });
         setSandbox(saved);
         setSandboxSaved(true);
         if (!saved.backup_paths?.length) setOpen();
@@ -200,6 +204,13 @@ export function SettingsPanel() {
             </select>
             <small id="sandbox-default-runtime-help">{t("Used when a new Sandbox has no explicit runtime. You can choose a different runtime on the card before its first start.")}</small>
           </label>
+          <section aria-label={t("Global environment variables")}>
+            <h3>{t("Global environment variables")}</h3>
+            <p className="settings-description">{t("Applied to the next command in every existing and new Sandbox. Profiles and Sandbox variables override matching global names. Running processes keep their current environment.")}</p>
+            <EnvironmentVariablesEditor rows={environmentRows} onChange={setEnvironmentRows} disabled={!loaded || busy}
+              allowSecrets={false} secrets={{}} bindings={{}} onSecretsChange={() => {}} />
+            <p className="settings-description">{t("Values are stored as plain text. Use Sandbox secret variables for credentials. Runtime-managed names such as PATH and HOME cannot be overridden.")}</p>
+          </section>
           <p className="settings-description">{t("Settings are saved on the backend and survive restarts. Workspaces in your chosen folder are retained when a Sandbox is deleted.")}</p>
         </div>}
         {(error || (section === "model" && modelError)) && <p role="alert" className="settings-error">{error || modelError} {section === "sandbox" && !loaded && <button type="button" className="secondary-button" onClick={() => setRetry((value) => value + 1)}>{t("Retry")}</button>} {section === "model" && <button type="button" className="secondary-button" onClick={() => { setError(""); setModelRetry((value) => value + 1); }}>{modelLoaded ? t("Discard draft and reload") : t("Retry")}</button>}</p>}

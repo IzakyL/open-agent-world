@@ -1,4 +1,7 @@
 {
+  "Global environment variables": ["Global environment variables", "全局环境变量"],
+  "Applied to the next command in every existing and new Sandbox. Profiles and Sandbox variables override matching global names. Running processes keep their current environment.": ["Applied to the next command in every existing and new Sandbox. Profiles and Sandbox variables override matching global names. Running processes keep their current environment.", "适用于所有已有和新建 Sandbox 的下一次命令。Profile 和 Sandbox 自身的同名变量会覆盖全局值。正在运行的进程保持原有环境。"],
+  "Values are stored as plain text. Use Sandbox secret variables for credentials. Runtime-managed names such as PATH and HOME cannot be overridden.": ["Values are stored as plain text. Use Sandbox secret variables for credentials. Runtime-managed names such as PATH and HOME cannot be overridden.", "变量以明文保存。凭据请使用 Sandbox 的 Secret 变量。PATH、HOME 等运行时管理的变量不可覆盖。"],
   "Awaiting review": ["Awaiting review", "待验收"],
   "Acceptance criteria": ["Acceptance criteria", "验收标准"],
   "Executor attempts": ["Executor attempts", "执行记录"],

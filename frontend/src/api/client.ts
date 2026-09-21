@@ -847,6 +847,7 @@ export const worldApi = {
 export interface SandboxSettings {
   workspace_root: string | null;
   runtime: string;
+  environment_variables?: Record<string, string>;
   backup_paths?: string[];
 }
 
