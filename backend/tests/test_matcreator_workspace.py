@@ -48,8 +48,14 @@ def test_research_preset_deploys_complete_independent_workspaces_and_can_be_save
     assert {(edge['source'], edge['target'], edge['relationship']) for edge in first['edges']
             if edge['source'] == a['structure']} == {
         (a['structure'], a[target], 'core.file-preview') for target in ('conversation', 'sandbox')}
-    assert len(first['edges']) == 17
-    assert document(client, a['core'])['value']['skills']
+    assert len(first['edges']) == 9
+    assert not {'core', 'simulation', 'ai', 'research'} & a.keys()
+    graph = document(client, a['knowledge'])['value']
+    assert len(graph['snapshots']) == 4
+    assert graph['skills']
+    assert all(client.get(f"/api/nodes/{skill['node_id']}").json()['parent_id'] == a['knowledge'] for skill in graph['skills'])
+    assert {skill['node_id'] for skill in graph['skills']}.isdisjoint(
+        skill['node_id'] for skill in document(client, b['knowledge'])['value']['skills'])
     created = edit(client, a['tasks'], 'create_plan', {'title': 'Copper', 'session_id': 'source-session', 'tasks': [
         {'id': 'build', 'title': 'Build copper', 'status': 'done', 'result': '32 atoms', 'outputs': ['copper.xyz']}]})
     assert created.status_code == 200, created.text
@@ -58,6 +64,11 @@ def test_research_preset_deploys_complete_independent_workspaces_and_can_be_save
     assert saved.status_code == 201, saved.text
     copy = client.post(f"/api/legions/{saved.json()['id']}/instances", json={})
     assert copy.status_code == 201, copy.text
+    copied_graph = next(node for node in copy.json()['nodes'] if node['type'] == 'matcreator.kdg')
+    copied_value = document(client, copied_graph['id'])['value']
+    assert len(copied_value['skills']) == len(graph['skills'])
+    assert copied_value['snapshots'] == graph['snapshots']
+    assert {s['node_id'] for s in copied_value['skills']}.isdisjoint(s['node_id'] for s in graph['skills'])
     board = next(node for node in copy.json()['nodes'] if node['type'] == 'matcreator.tasks')
     plan = document(client, board['id'])['value']['plans'][0]
     assert plan['session_id'] == '' and plan['tasks'][0]['status'] == 'pending'

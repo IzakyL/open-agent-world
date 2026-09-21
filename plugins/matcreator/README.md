@@ -15,8 +15,9 @@ and Research tasks / File preview / Research knowledge / Participants
 as tabs on the right. The lower-right tabs contain Sandbox controls/settings/terminal
 and **Structure viewer**. The viewer follows structure files opened from either
 the Conversation or Sandbox through their `core.file-preview` connections.
-Scientific Toolsets and the MatCreator Agent stay available
-in the workspace's bottom bar. Edit layout with the standard Legion controls;
+All scientific skills are stored directly inside Research knowledge, including their
+scripts, reference files and source snapshots. No external Toolset cards are deployed.
+The MatCreator Agent stays available in the workspace's bottom bar. Edit layout with the standard Legion controls;
 saving to the library preserves its arrangement and remaps owners on deployment.
 
 The plugin requires the bundled `science.structure-viewer` plugin (loaded first
@@ -24,8 +25,7 @@ through its declared plugin dependency). New deployments include this viewer;
 existing canvas formations keep their user-edited layout and connections.
 
 The preset connects one native OAW Agent to a Conversation, a stopped Sandbox,
-the task board, all four scientific Toolsets, and the Know-Do Graph with **Use and
-learn**. It uses the user's default model. Configure that model and the Sandbox
+the task board, and the prepopulated Know-Do Graph with **Use and learn**. It uses the user's default model. Configure that model and the Sandbox
 runtime/environment before a real computation. No host path, credentials, package
 installation or automatic Sandbox startup is embedded in the preset. Files use
 the ordinary Sandbox workspace; the Agent is instructed to use a separate output
@@ -37,9 +37,9 @@ orchestrator](https://github.com/AI4MS/MatCreator/blob/75c705c3c2bae7f2392c2d4bc
 plan dependent steps, execute, verify results, revise blocked work and record
 experience. OAW owns model calls, tools, Runs, cancellation, conversations and
 files. This preset uses a scientific system instruction on the existing Agent;
-it does not launch the upstream ADK server. Revision 3 includes equipped Summoning,
+it does not launch the upstream ADK server. Revision 4 includes equipped Summoning,
 a Research Executors Barracks and an Executor blueprint sharing the research
-Sandbox, scientific Toolsets and Know-Do Graph. OAW supplies asynchronous Run
+Sandbox and Know-Do Graph, which owns all skills from the four scientific packages. OAW supplies asynchronous Run
 dispatch and collection; the coordinator chooses tasks and verifies results.
 Remote-job reconciliation remains outside this workflow.
 

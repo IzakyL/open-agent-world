@@ -26,7 +26,7 @@ test('MatCreator preset opens sessions, files, conversation and a persistent res
   expect(instance.nodes.find((node: { id: string }) => node.id === instance.node_ids.executor).parent_id).toBe(instance.node_ids.barracks);
   const group = instance.node_ids.group;
   await page.getByRole('button', { name: 'Fit view', exact: true }).click();
-  const toolsets = ['core', 'simulation', 'ai', 'research', 'knowledge', 'barracks'].map(key => page.locator(`[data-card-id="${instance.node_ids[key]}"]`));
+  const toolsets = ['knowledge', 'barracks'].map(key => page.locator(`[data-card-id="${instance.node_ids[key]}"]`));
   for (const toolset of toolsets) await expect(toolset).toBeVisible();
   const bounds = await Promise.all(toolsets.map(toolset => toolset.boundingBox()));
   for (let i = 0; i < bounds.length; i++) for (let j = i + 1; j < bounds.length; j++) {

@@ -7,6 +7,8 @@ import pytest_asyncio
 
 from backend.agents import AgentEvent, AgentEventType
 from backend.capabilities.provider import WorldAgentCapabilityProvider
+from backend.capabilities.projection import authorized_resources
+from backend.skill_runtime import SKILL_SELECTOR
 from backend.config import Settings
 from backend.errors import ConflictError, PermissionDeniedError, ResourceValidationError
 from backend.legions.models import LegionInstantiate
@@ -119,7 +121,9 @@ async def test_parallel_dispatch_dedup_private_context_wait_and_review(research)
     for index, (context, prompt, gate) in enumerate(runtime.children.values()):
         assert "acceptance_criteria" in prompt
         capabilities = services.capabilities.derive(context.agent_id).capabilities
-        assert {ids[key] for key in ("sandbox", "knowledge", "core", "simulation", "ai", "research")} <= {cap.target_id for cap in capabilities}
+        assert {ids[key] for key in ("sandbox", "knowledge")} <= {cap.target_id for cap in capabilities}
+        graph = read_document(services, ids["knowledge"])["value"]
+        assert {skill["node_id"] for skill in graph["skills"]} <= authorized_resources(services, capabilities, SKILL_SELECTOR).keys()
         assert not any(cap.target_id in {ids["tasks"], ids["barracks"], ids["conversation"]} for cap in capabilities)
         gate.set_result("Verified 32 atoms" if index == 0 else "Verified 108 atoms")
     await asyncio.wait_for(services.run_manager.wait_execution(root.run_id), 5)

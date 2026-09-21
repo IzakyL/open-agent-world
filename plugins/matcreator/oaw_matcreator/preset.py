@@ -1,13 +1,18 @@
+from importlib.resources import files
+import json
+
+from . import knowledge
+
 from open_agent_world.plugin_api import LegionPresetDefinition, PresetNode, PresetEdge
 
 
 INSTRUCTION = """You are MatCreator, the research coordinator in OAW.
-Use the connected research task board, scientific Toolsets, Know-Do Graph and Sandbox.
+Use the connected research task board, Know-Do Graph and Sandbox. All scientific skills are stored inside the graph.
 Answer simple questions directly. For computational work follow this research loop:
 1. Clarify the scientific objective, inputs, constraints and success criteria. Do not invent missing simulation parameters.
 2. Read the task board and select the plan for this conversation session (use its session ID when available).
    Create a new named plan for a new objective, with stable task IDs and explicit dependencies.
-   Read relevant skills and search knowledge before choosing methods. Explain the plan in the conversation.
+   Use knowledge_search and knowledge_inspect before choosing methods; use returned skill_node_id values for skill resources and scripts. Explain the plan in the conversation.
 3. Delegate bounded computational tasks to Executors using your equipped Summoning and task_board_execute.
    First list the connected Barracks to discover Executor IDs. collect on the task board returns work item IDs and attempts.
    For each ready task call delegate with its item_id, library_id, agent_id, latest expected_revision and a unique request_id.
@@ -33,8 +38,8 @@ Do not use MatCreator's original shell/session server or assume its tools exist.
 """
 
 EXECUTOR_INSTRUCTION = """You are a MatCreator research Executor. Complete only the assigned task.
-Use your connected scientific Toolsets, Know-Do Graph and Sandbox. Inspect runtime and dependencies first.
-Read relevant skills selectively and adapt examples to actual OAW tools. Never invent scientific parameters or results.
+Use your connected Know-Do Graph and Sandbox. All scientific skills are stored inside the graph. Inspect runtime and dependencies first.
+Use knowledge_search and knowledge_inspect to read relevant skills selectively. Use the returned skill_node_id with OAW skill resource and script tools, and adapt examples to actual OAW tools. Never invent scientific parameters or results.
 The task prompt provides the research goal, verified upstream inputs, acceptance criteria and your output directory.
 Keep new files inside that output directory. Shared input files and other tasks' outputs must remain intact.
 Execute authorized work, wait for real command completion, inspect outputs and verify units and scientific assumptions.
@@ -60,6 +65,14 @@ def split(axis, ratio, first, second):
     return {"kind": "split", "axis": axis, "ratio": ratio, "first": first, "second": second}
 
 
+def initial_knowledge():
+    graph = knowledge.Graph().model_dump(mode="json")
+    for name in ("core", "simulation", "ai", "research"):
+        package = json.loads(files(__package__).joinpath("packages", name + ".json").read_text(encoding="utf-8"))
+        graph = knowledge.assimilate(graph, package, {"node_id": None, "source_type": "matcreator." + name})
+    return graph
+
+
 def definition():
     layout = {"version": 2, "hidden_sections": [], "root": split("horizontal", .22,
         split("vertical", .45, pane("conversation", "sessions"), pane("sandbox", "files")),
@@ -83,7 +96,8 @@ def definition():
         PresetNode(key="sandbox", type="sandbox", name="Research files & compute", x=900, y=220),
         PresetNode(key="tasks", type="matcreator.tasks", name="Research tasks", x=180, y=720),
         PresetNode(key="structure", type="science.structure-viewer", name="Structure viewer", x=540, y=720),
-        PresetNode(key="knowledge", type="matcreator.kdg", name="Research knowledge", x=900, y=720),
+        PresetNode(key="knowledge", type="matcreator.kdg", name="Research knowledge", x=900, y=720,
+                   initial_document=initial_knowledge()),
     ]
     edges = [PresetEdge(source="agent", target=target, relationship=relationship) for target, relationship in (
         ("conversation", "participate"), ("sandbox", "execute"),
@@ -93,12 +107,6 @@ def definition():
                  for target, relationship in (("sandbox", "execute"), ("knowledge", "matcreator.kdg.use")))
     edges.extend(PresetEdge(source="structure", target=target, relationship="core.file-preview")
                  for target in ("conversation", "sandbox"))
-    for index, (key, name) in enumerate((("core", "Materials Core"), ("simulation", "Atomistic Simulation"),
-                                       ("ai", "Materials AI"), ("research", "Research / Remote Compute"))):
-        nodes.append(PresetNode(key=key, type="matcreator." + key, name=name,
-                               x=180 + (index % 2) * 1400, y=1540 + (index // 2) * 1500))
-        edges.append(PresetEdge(source="agent", target=key, relationship="matcreator." + key + ".use"))
-        edges.append(PresetEdge(source="executor", target=key, relationship="matcreator." + key + ".use"))
-    return LegionPresetDefinition(id="matcreator.research", name="MatCreator research", revision=3,
+    return LegionPresetDefinition(id="matcreator.research", name="MatCreator research", revision=4,
         description="Coordinated materials research with parallel Executors, tracked tasks and verified results.",
         nodes=tuple(nodes), edges=tuple(edges))
