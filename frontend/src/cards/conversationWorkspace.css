@@ -4,6 +4,9 @@
 .conversation-session-menu.conversation-floating-actions { position: absolute; z-index: 6; margin: 0; box-sizing: border-box; overflow: auto; }
 .workspace-session-sidebar.conversation-session-navigation { flex: 1; min-width: 0; display: flex; overflow: auto; border-right: 0; }
 .conversation-session-navigation > .workspace-nav-label, .conversation-session-navigation > .conversation-group-draft { flex-shrink: 0; }
+.workspace-session-sidebar.conversation-session-navigation { gap: 4px; padding: 6px 9px; }
+.conversation-session-navigation > .workspace-nav-label { margin: 0 5px; }
+.conversation-session-navigation > .conversation-session-list { gap: 4px; padding-top: 5px; }
 .conversation-group-draft { display: flex; align-items: center; gap: 3px; min-width: 0; padding: 5px; border: 1px solid var(--line); border-radius: 8px; background: var(--surface-raised); color: var(--ink-soft); }
 .conversation-group-draft > svg { flex-shrink: 0; }
 .conversation-group-draft > input { width: 0; min-width: 0; flex: 1; padding: 3px 0; border: 0; outline: none; background: transparent; color: var(--ink); font: inherit; font-size: 10px; }

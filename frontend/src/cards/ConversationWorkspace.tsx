@@ -483,7 +483,7 @@ export function ConversationWorkspace({ card }: { card: WorldCard }) {
       <WorkspaceSection id="conversation" title={t("Conversation")} className="conversation-thread-section">
       <main className="workspace-conversation conversation-thread nodrag nopan nowheel">
         <header>
-          <div className="conversation-heading"><strong title={activeSession?.title}>{activeSession?.title ?? t("Conversation")}</strong><span>{participants.length} {t("active participants")}</span></div>
+          <div className="conversation-heading"><strong title={activeSession?.title}>{activeSession?.title ?? t("Conversation")}</strong></div>
           <div className="conversation-header-tools">
             <button type="button" className="conversation-add-agent" aria-label={t("Add agents to session")} disabled={!activeSession || availableAgents.length === 0} onClick={() => setAddingParticipants((value) => !value)}><Plus size={12} /> {t("Add")}</button>
             {addingParticipants ? (

@@ -255,7 +255,7 @@ const WorldCardNodeComponent = memo(function WorldCardNodeComponent({ data, sele
         </header>
 
         <div className="node-preview-content" aria-hidden={visualLevel !== "preview"}>
-          <NodePreview card={card} />
+          <div className="node-preview-body"><NodePreview card={card} /></div>
           {presentation.open !== "preview" && <span className="node-preview-hint">{t(presentation.open === "workspace" ? "Open workspace" : "Click for details")}</span>}
         </div>
 
