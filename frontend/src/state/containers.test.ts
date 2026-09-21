@@ -1,11 +1,20 @@
 import { describe, expect, it } from 'vitest';
-import { containerContentBounds, resizeContainerLayout, memberSurfacePosition, containerSizes, containerDisplayOwners } from './containers';
+import { containerContentBounds, resizeContainerLayout, memberSurfacePosition, containerSizes, containerDisplayOwners, ownedCardIds } from './containers';
 import { TEST_CATALOG } from './catalog.fixture';
 import { buildCardDraft } from './helpers';
 import { NODE_SURFACE_SIZE, type NodeSurfaceLevel } from './nodeSurfaces';
 import type { WorldCard } from '../types/world';
 
 const card = (id: string, type: string, x = 0, y = 0): WorldCard => ({ id, ...buildCardDraft(type, { x, y }) });
+
+it('expands overlapping roots, nested members and equipment without selecting external peers', () => {
+  const parent = card('parent', 'legion');
+  const agent = { ...card('agent', 'agent'), parent_id: parent.id };
+  const equipment = { ...card('equipment', 'text'), equipment: { owner_id: agent.id, relationship: 'read' } };
+  const nested = { ...card('nested', 'text'), parent_id: equipment.id };
+  expect(ownedCardIds([parent, agent, equipment, nested, card('external', 'text')], [parent.id, agent.id]))
+    .toEqual(new Set([parent.id, agent.id, equipment.id, nested.id]));
+});
 describe('container resize reflow', () => {
   it('preserves clamped expanded member placement when the frame origin moves', () => {
     const parent = { ...card('parent', 'legion', 200, 100), size: { width: 1200, height: 1000 } };

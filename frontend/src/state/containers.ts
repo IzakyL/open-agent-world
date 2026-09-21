@@ -58,6 +58,28 @@ export function descendants(cards: WorldCard[], id: string): WorldCard[] {
 export function ownedDescendants(cards: WorldCard[], id: string): WorldCard[] {
   return cards.filter((c) => c.parent_id === id || c.equipment?.owner_id === id).flatMap((c) => [c, ...ownedDescendants(cards, c.id)]);
 }
+// Expand many roots together: build ownership once and visit each member once.
+export function ownedCardIds(cards: WorldCard[], roots: Iterable<string>): Set<string> {
+  const children = new Map<string, string[]>();
+  for (const card of cards) {
+    for (const owner of new Set([card.parent_id, card.equipment?.owner_id])) {
+      if (!owner) continue;
+      const members = children.get(owner) ?? [];
+      members.push(card.id);
+      children.set(owner, members);
+    }
+  }
+  const ids = new Set(roots);
+  const pending = [...ids];
+  while (pending.length) {
+    for (const child of children.get(pending.pop()!) ?? []) {
+      if (ids.has(child)) continue;
+      ids.add(child);
+      pending.push(child);
+    }
+  }
+  return ids;
+}
 export function ancestors(cards: WorldCard[], card: WorldCard): WorldCard[] {
   const parentId = card.equipment?.owner_id ?? card.parent_id;
   const parent = parentId ? cardIndex(cards).get(parentId) : undefined;

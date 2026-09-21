@@ -225,7 +225,9 @@ class CardPatch(BaseModel):
 class CardsDelete(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    node_ids: Annotated[list[str], Field(min_length=1, max_length=101)]
+    # A canvas selection can exceed the formation/edit batch size. Keep deletion
+    # atomic instead of making the client split it into partially committed chunks.
+    node_ids: Annotated[list[str], Field(min_length=1, max_length=10_000)]
     expected_revisions: dict[str, Annotated[int, Field(ge=1, strict=True)]] | None = None
 
     @field_validator("node_ids")

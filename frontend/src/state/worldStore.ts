@@ -6,7 +6,7 @@ import { useGenerationStore } from "../effects/generation";
 import { isShadow } from "./shadowCollection";
 import { createJSONStorage, persist } from "zustand/middleware";
 import { profileStorage } from "./profileStorage";
-import { apiErrorMessage, normalizeCard, normalizeEdge, resourceContentUrl, worldApi, type CardCreateInput } from "../api/client";
+import { apiErrorMessage, normalizeCard, resourceContentUrl, worldApi, type CardCreateInput } from "../api/client";
 import type {
   CardType,
   EdgeDirection,
@@ -30,7 +30,7 @@ import { filterCardsToChunks, getViewportChunkKeys, viewportCenterToWorld } from
 import { EMPTY_CATALOG, getNodeType } from "./catalog";
 import { buildCardDraft, makeStressCards, mergeCardPatch } from "./helpers";
 import { summarizeLegionSelection } from "./legions";
-import { ancestors, containerContentBounds, containerDefinition, descendants, ownedDescendants, isContainer, parentFirst, resizeContainerLayout } from "./containers";
+import { ancestors, containerContentBounds, containerDefinition, descendants, ownedDescendants, ownedCardIds, isContainer, parentFirst, resizeContainerLayout } from "./containers";
 import { surfaceLevelForNode, useNodeSurfaceStore } from "./nodeSurfaces";
 import { isEquipmentConnection } from "./equipment";
 import { validateConnection, type RelationshipOption } from "./relationships";
@@ -39,6 +39,9 @@ import {
   readModelSettings,
   type ModelSettings,
 } from "./modelSettings";
+
+import { applyGraphEvents, eventType, isGraphEvent, isOlder, mergeCards, mergeEdges, sequenceEvents, type Tombstones } from "./graphEvents";
+export { isOlder, mergeCards, mergeEdges } from "./graphEvents";
 
 export type SyncState = "loading" | "online" | "syncing" | "offline";
 export type SocketState = "connecting" | "live" | "closed";
@@ -195,6 +198,30 @@ async function snapshotCardForHistory(card: WorldCard, strict = false): Promise<
   return snapshot;
 }
 
+async function snapshotCardsForHistory(cards: WorldCard[]): Promise<RestorableCard[]> {
+  const snapshots: RestorableCard[] = new Array(cards.length);
+  let next = 0;
+  let failed = false;
+  await Promise.all(Array.from({ length: Math.min(8, cards.length) }, async () => {
+    while (!failed && next < cards.length) {
+      const index = next++;
+      try { snapshots[index] = await snapshotCardForHistory(cards[index]); }
+      catch (error) { failed = true; throw error; }
+    }
+  }));
+  return snapshots;
+}
+
+async function deletePersistentCards(cards: WorldCard[]): Promise<void> {
+  const persistent = cards.filter(card => !card.ephemeral);
+  if (!persistent.length) return;
+  if (persistent.length === 1 && !persistent[0].equipment && !isContainer(persistent[0], useWorldStore.getState().catalog)) {
+    await worldApi.deleteNode(persistent[0].id);
+  } else {
+    await worldApi.deleteNodes(persistent.map(card => card.id));
+  }
+}
+
 function appendHistory(
   history: WorldHistoryOperation[],
   operation: WorldHistoryOperation,
@@ -217,36 +244,8 @@ function preferredTheme(): "light" | "dark" {
   return window.matchMedia?.("(prefers-color-scheme: dark)").matches ? "dark" : "light";
 }
 
-type EntityVersion = { revision?: number; created_at?: string };
-type Tombstones = Record<string, EntityVersion>;
-
-export function isOlder(incoming: EntityVersion, current: EntityVersion): boolean {
-  if (incoming.created_at && current.created_at && incoming.created_at !== current.created_at) return incoming.created_at < current.created_at;
-  return incoming.revision !== undefined && current.revision !== undefined && incoming.revision < current.revision;
-}
-
-function preferNewer<T extends EntityVersion>(current: T, incoming?: T): T {
+function preferNewer<T extends { revision?: number; created_at?: string }>(current: T, incoming?: T): T {
   return incoming && !isOlder(incoming, current) ? incoming : current;
-}
-
-function wasDeleted(entity: EntityVersion & { id: string }, deleted: Tombstones): boolean {
-  const previous = deleted[entity.id];
-  if (!previous) return false;
-  // A later incarnation restored with the same ID is a new object.
-  if (entity.created_at && previous.created_at) return entity.created_at <= previous.created_at;
-  return !isOlder(previous, entity);
-}
-
-export function mergeCards(current: WorldCard[], incoming: WorldCard[], deleted: Tombstones = {}): WorldCard[] {
-  const byId = new Map(current.map((card) => [card.id, card]));
-  for (const card of incoming) if (!wasDeleted(card, deleted) && (!byId.has(card.id) || !isOlder(card, byId.get(card.id)!))) byId.set(card.id, card);
-  return [...byId.values()];
-}
-
-export function mergeEdges(current: WorldEdge[], incoming: WorldEdge[], deleted: Tombstones = {}): WorldEdge[] {
-  const byId = new Map(current.map((edge) => [edge.id, edge]));
-  for (const edge of incoming) if (!wasDeleted(edge, deleted) && (!byId.has(edge.id) || !isOlder(edge, byId.get(edge.id)!))) byId.set(edge.id, edge);
-  return [...byId.values()];
 }
 
 function reconcileSnapshotCards(current: WorldCard[], incoming: WorldCard[], keys: string[], catalog: PluginCatalog, deleted: Tombstones = {}): WorldCard[] {
@@ -394,6 +393,7 @@ interface WorldState {
   stopSandbox: (id: string) => Promise<boolean>;
   executeSandbox: (id: string, command: string) => Promise<boolean>;
   ingestEvent: (event: RuntimeEvent) => void;
+  ingestEvents: (events: RuntimeEvent[]) => void;
   setSocketState: (state: SocketState) => void;
   toggleActivity: () => void;
   setActivityOpen: (open: boolean) => void;
@@ -1126,22 +1126,18 @@ export const useWorldStore = create<WorldState>()(persist((set, get) => ({
 
   deleteCards: (ids) => withHistoryTransaction(async () => {
     // Container members may have been created server-side since the last snapshot.
-    if (ids.some((id) => get().cards.some((card) => card.id === id && isContainer(card, get().catalog)))) {
+    const selectedIds = new Set(ids);
+    if (get().cards.some(card => selectedIds.has(card.id) && isContainer(card, get().catalog))) {
       try {
         const snapshot = await worldApi.getWorld();
-        const owned = new Set(ids);
-        ids.forEach((id) => ownedDescendants(snapshot.nodes, id).forEach((member) => owned.add(member.id)));
+        const owned = ownedCardIds(snapshot.nodes, ids);
         set((state) => ({ cards: mergeCards(state.cards, snapshot.nodes.filter((card) => owned.has(card.id)), state.cardTombstones) }));
       } catch (error) {
         get().pushToast({ tone: "error", title: "Cards were not removed", detail: apiErrorMessage(error) });
         return;
       }
     }
-    const requested = new Set(ids);
-    for (const id of ids) {
-      const card = get().cards.find((item) => item.id === id);
-      if (card) ownedDescendants(get().cards, id).forEach((member) => requested.add(member.id));
-    }
+    const requested = ownedCardIds(get().cards, ids);
     const cards = [...get().cards, ...get().stressCards].filter((card) => requested.has(card.id));
     if (cards.length === 0) return;
 
@@ -1151,36 +1147,20 @@ export const useWorldStore = create<WorldState>()(persist((set, get) => ({
 
     const snapshots = new Map<string, RestorableCard>();
     try {
-      await Promise.all(cards.filter(card => !irreversible.has(card.id)).map(async (card) => snapshots.set(card.id, await snapshotCardForHistory(card))));
+      for (const snapshot of await snapshotCardsForHistory(cards.filter(card => !irreversible.has(card.id)))) snapshots.set(snapshot.id, snapshot);
     } catch (error) {
       get().pushToast({ tone: "error", title: "Cards were not removed", detail: `Could not preserve document data for undo: ${apiErrorMessage(error)}` });
       return;
     }
 
     const attachedBefore = get().edges.filter((edge) => requested.has(edge.source) || requested.has(edge.target)).map(copyEdge);
-    const removed: WorldCard[] = [];
-    if (cards.some((card) => card.equipment || isContainer(card, get().catalog))) {
-      try {
-        const persistent = cards.filter((card) => !card.ephemeral);
-        if (persistent.length) await worldApi.deleteNodes(persistent.map((card) => card.id));
-        removed.push(...cards);
-      } catch (error) {
-        get().pushToast({ tone: "error", title: "Cards were not removed", detail: apiErrorMessage(error) });
-        return;
-      }
-    } else for (const card of cards) {
-      try {
-        if (!card.ephemeral) await worldApi.deleteNode(card.id);
-        removed.push(card);
-      } catch (error) {
-        get().pushToast({
-          tone: "error",
-          title: `${card.name} was not removed`,
-          detail: apiErrorMessage(error),
-        });
-      }
+    try {
+      await deletePersistentCards(cards);
+    } catch (error) {
+      get().pushToast({ tone: "error", title: "Cards were not removed", detail: apiErrorMessage(error) });
+      return;
     }
-    if (removed.length === 0) return;
+    const removed = cards;
 
     const removedIds = new Set(removed.map((card) => card.id));
     const cannotUndo = removed.some(card => irreversible.has(card.id));
@@ -1735,71 +1715,52 @@ export const useWorldStore = create<WorldState>()(persist((set, get) => ({
     }
   },
 
-  ingestEvent: (event) => {
-    const nodeId = event.node_id ?? event.agent_id ?? event.sandbox_id ?? event.resource_id;
-    const normalizedType = event.type.replace(/[.\s-]/g, "_").toLowerCase();
-    if (event.stream_id && event.sequence !== undefined) {
-      const { eventStream, eventSequence } = get();
-      const sameStream = eventStream === event.stream_id;
-      if (sameStream && eventSequence !== undefined && event.sequence <= eventSequence) return;
-      const gap = eventStream !== undefined && (!sameStream || (eventSequence !== undefined
-        && event.sequence > eventSequence + (normalizedType === "connection_ready" ? 0 : 1)));
-      set({ eventStream: event.stream_id, eventSequence: event.sequence });
-      if (gap) { markWorldMutation(); void get().refreshWorld(); }
+  ingestEvents: (events) => {
+    let graphEvents: RuntimeEvent[] = [];
+    const flush = () => {
+      if (!graphEvents.length) return;
+      const sequenced = sequenceEvents(get(), graphEvents);
+      graphEvents = [];
+      if (!sequenced.events.length) return;
+      const graph = sequenced.events.filter(isGraphEvent);
+      if (graph.length || sequenced.gap) markWorldMutation();
+      set(state => ({
+        ...applyGraphEvents(state, graph),
+        eventStream: sequenced.eventStream,
+        eventSequence: sequenced.eventSequence,
+      }));
+      if (sequenced.gap) void get().refreshWorld();
+    };
+    for (const event of events) {
+      if (isGraphEvent(event) || eventType(event) === "connection_ready") graphEvents.push(event);
+      else {
+        // Runtime effects must observe all graph changes preceding them.
+        flush();
+        get().ingestEvent(event);
+      }
     }
-    if (normalizedType === "connection_ready") return;
+    flush();
+  },
+
+  ingestEvent: (event) => {
+    const normalizedType = eventType(event);
+    if (isGraphEvent(event) || normalizedType === "connection_ready") {
+      get().ingestEvents([event]);
+      return;
+    }
+    const sequenced = sequenceEvents(get(), [event]);
+    if (!sequenced.events.length) return;
+    if (event.stream_id && event.sequence !== undefined) {
+      set({ eventStream: sequenced.eventStream, eventSequence: sequenced.eventSequence });
+    }
+    if (sequenced.gap) { markWorldMutation(); void get().refreshWorld(); }
+    const nodeId = event.node_id ?? event.agent_id ?? event.sandbox_id ?? event.resource_id;
     if (normalizedType === "conversation_session_deleted") {
       const view = useConversationView.getState();
       const sessionId = event.session_id ?? event.payload.session_id;
       for (const [conversationId, selected] of Object.entries(view.sessions)) {
         if (selected === sessionId) view.selectSession(conversationId, undefined);
       }
-    }
-    if (["card_created", "card_updated", "card_deleted", "edge_created", "edge_updated", "edge_deleted"].includes(normalizedType)) {
-      markWorldMutation();
-      set(state => {
-        let cards = state.cards, edges = state.edges;
-        const cardTombstones = { ...state.cardTombstones }, edgeTombstones = { ...state.edgeTombstones };
-        if (normalizedType.startsWith("card_") && event.payload.node) {
-          const node = normalizeCard(event.payload.node);
-          const current = cards.find(card => card.id === node.id);
-          if (!current || !isOlder(node, current)) {
-            if (normalizedType === "card_deleted") {
-              cardTombstones[node.id] = { revision: node.revision, created_at: node.created_at };
-              for (const edge of edges.filter(item => item.source === node.id || item.target === node.id)) {
-                edgeTombstones[edge.id] = { revision: edge.revision, created_at: edge.created_at };
-              }
-              cards = cards.filter(card => card.id !== node.id);
-              edges = edges.filter(edge => edge.source !== node.id && edge.target !== node.id);
-            } else {
-              // These two fields are the existing local runtime view. A graph edit
-              // must not erase streamed output or the currently displayed command.
-              if (current) {
-                if (current.config.output !== undefined) node.config.output = current.config.output;
-                if (current.config.active_command !== undefined) node.config.active_command = current.config.active_command;
-              }
-              cards = mergeCards(cards, [node], cardTombstones);
-            }
-          }
-        } else if (normalizedType === "card_deleted" && nodeId) {
-          cards = cards.filter(card => card.id !== nodeId);
-          edges = edges.filter(edge => edge.source !== nodeId && edge.target !== nodeId);
-        }
-        if (normalizedType.startsWith("edge_") && event.payload.edge) {
-          const edge = normalizeEdge(event.payload.edge);
-          const current = edges.find(item => item.id === edge.id);
-          if (!current || !isOlder(edge, current)) {
-            if (normalizedType === "edge_deleted") {
-              edgeTombstones[edge.id] = { revision: edge.revision, created_at: edge.created_at };
-              edges = edges.filter(item => item.id !== edge.id);
-            } else edges = mergeEdges(edges, [edge], edgeTombstones);
-          }
-        }
-        return { cards, edges, cardTombstones, edgeTombstones, events: [event, ...state.events].slice(0, 160),
-          selectedCardIds: state.selectedCardIds.filter(id => cards.some(card => card.id === id) || state.stressCards.some(card => card.id === id)),
-          selectedEdgeId: edges.some(edge => edge.id === state.selectedEdgeId) ? state.selectedEdgeId : undefined };
-      });
-      return;
     }
     if (normalizedType === "nodes_generated") {
       const { source_id, target_id, container_id, nodes } = event.payload;
@@ -1950,13 +1911,10 @@ export const useWorldStore = create<WorldState>()(persist((set, get) => ({
           break;
         }
         case "card-created": {
-          const expanded = operation.cards.flatMap((card) => [card, ...ownedDescendants(get().cards, card.id)]);
-          operation.cards = await Promise.all(parentFirst([...new Map(expanded.map((card) => [card.id, card])).values()]).map((card) => snapshotCardForHistory(card)));
-          if (operation.cards.some((card) => card.equipment || isContainer(card, get().catalog))) {
-            await worldApi.deleteNodes(operation.cards.filter((card) => !card.ephemeral).map((card) => card.id));
-          } else {
-            for (const card of operation.cards) if (!card.ephemeral) await worldApi.deleteNode(card.id);
-          }
+          const owned = ownedCardIds(get().cards, operation.cards.map(card => card.id));
+          const expanded = mergeCards(operation.cards, get().cards.filter(card => owned.has(card.id)));
+          operation.cards = await snapshotCardsForHistory(expanded);
+          await deletePersistentCards(operation.cards);
           const ids = new Set(operation.cards.map((card) => card.id));
           set((state) => ({
             cards: state.cards.filter((card) => !ids.has(card.id)),
@@ -2124,11 +2082,7 @@ export const useWorldStore = create<WorldState>()(persist((set, get) => ({
           break;
         }
         case "cards-deleted": {
-          if (operation.cards.some((card) => card.equipment || isContainer(card, get().catalog))) {
-            await worldApi.deleteNodes(operation.cards.filter((card) => !card.ephemeral).map((card) => card.id));
-          } else {
-            for (const card of operation.cards) if (!card.ephemeral) await worldApi.deleteNode(card.id);
-          }
+          await deletePersistentCards(operation.cards);
           const ids = new Set(operation.cards.map((card) => card.id));
           set((state) => ({
             cards: state.cards.filter((card) => !ids.has(card.id)),

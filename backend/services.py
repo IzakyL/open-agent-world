@@ -1123,9 +1123,12 @@ class ApplicationServices:
                     edge,
                     affected_agents=affected[edge.id],
                 )
+            from backend.node_containers import touch_parent
+            # The complete batch is already absent. Invalidate each surviving
+            # parent's document once, regardless of how many members it lost.
+            for parent_id in dict.fromkeys(card.parent_id for card in deleted):
+                touch_parent(self, parent_id)
             for card in deleted:
-                from backend.node_containers import touch_parent
-                touch_parent(self, card.parent_id)
                 self.events.publish_event_nowait(RuntimeEvent(
                     type=EventType.CARD_DELETED,
                     node_id=card.id,
