@@ -133,14 +133,14 @@ describe("Application settings", () => {
     await screen.findByText("Workspace settings saved.");
     expect(useWorldStore.getState().settingsOpen).toBe(true);
     for (const path of saved.backup_paths) expect(screen.getByText(path)).toBeTruthy();
-    expect(screen.getByText(/please delete them manually/)).toBeTruthy();
+    expect(screen.getByText(/please delete unused backup folders manually/)).toBeTruthy();
     expect(screen.getByRole("button", { name: /^Close$/ })).toBeTruthy();
     rendered.unmount();
     vi.mocked(worldApi.getSandboxSettings).mockResolvedValue(saved);
     render(<SettingsPanel />);
     fireEvent.click(screen.getByRole("button", { name: "Sandbox" }));
     await screen.findByText(saved.backup_paths[0]);
-    expect(screen.getByText(/will not clean them up automatically/)).toBeTruthy();
+    expect(screen.getByText(/please delete unused backup folders manually/)).toBeTruthy();
   });
 
   it("keeps the dialog and draft after a rejected path, and supports clearing the default", async () => {
@@ -209,7 +209,7 @@ describe("Application settings", () => {
     fireEvent.change(screen.getAllByLabelText("Authentication source").at(-1)!, { target: { value: "environment" } });
     expect((screen.getByLabelText("API key") as HTMLInputElement).disabled).toBe(false);
     expect((screen.getByLabelText("Backend environment variable") as HTMLInputElement).placeholder).toBe("OPENAI_API_KEY");
-    expect(screen.getByText(/managed deployments/)).toBeTruthy();
+    expect(screen.getByText("Set this variable on the server before starting OAW.")).toBeTruthy();
   });
 
   it.each(["none", "environment"] as const)("accepts a key directly from %s without opening advanced options", async (auth_mode) => {

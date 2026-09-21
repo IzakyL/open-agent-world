@@ -41,7 +41,7 @@ export function ModelConnectionsEditor({ value, onChange, saved, busy }: {
     reportInteraction({ type: "model-connection-selected" });
   };
   return <fieldset className="model-editor" disabled={busy}>
-    <div className="settings-page-heading"><h3>{t("Models & connections")}</h3><p>{t("Connect your accounts, then choose the models your agents can use.")}</p></div>
+    <div className="settings-page-heading"><h3>{t("Models & connections")}</h3></div>
     <label className="field-label"><span>{t("Default for new agents")}</span>
       <select value={value.default_model ?? ""} onChange={e => onChange({ ...value, default_model: e.target.value || null })}>
         <option value="">{t("Choose a default model")}</option>
@@ -80,7 +80,7 @@ export function ModelConnectionsEditor({ value, onChange, saved, busy }: {
           {connection.adapter === "legacy" && <option value="legacy">{t("Previous automatic routing")}</option>}
         </select></label>
         <label className="field-label"><span>{t("Base URL")}</span><input type="url" value={connection.base_url} onChange={e => update({ base_url: e.target.value })} placeholder={t("Use provider default")} spellCheck={false} />
-          <small>{t("Use the service’s API address, including /v1 if required. Leave blank for the provider default.")}</small></label>
+        </label>
         <div className="field-label connection-key-field">
           <label htmlFor="connection-key">{t("API key")}</label><input id="connection-key" type="password" value={connection.api_key ?? ""}
             autoComplete="new-password" spellCheck={false} data-1p-ignore
@@ -89,10 +89,10 @@ export function ModelConnectionsEditor({ value, onChange, saved, busy }: {
               const api_key = e.target.value;
               update({ api_key, ...(api_key.trim() ? { auth_mode: "api_key", clear_api_key: false } : {}) });
             }} />
-          <small>{connection.clear_api_key ? t("The saved key will be removed when you save. Enter a new key to replace it instead.")
+          {(connection.clear_api_key || connection.auth_mode !== "api_key") && <small>{connection.clear_api_key ? t("The saved key will be removed when you save.")
             : connection.auth_mode === "none" ? t("Optional for this connection. Leave blank to use no key, or enter a key to use it.")
             : connection.auth_mode === "environment" ? t("Using backend credentials. Enter a key here to use it instead.")
-            : t("Keys are encrypted on the backend. Their values are never returned to the browser.")}</small>
+            : ""}</small>}
           {connection.api_key_configured && <button type="button" className="secondary-button" onClick={() => update({ clear_api_key: !connection.clear_api_key, api_key: "" })}>{connection.clear_api_key ? t("Keep saved key") : t("Remove saved key")}</button>}
         </div>
         </div>
@@ -108,7 +108,7 @@ export function ModelConnectionsEditor({ value, onChange, saved, busy }: {
           </select>
             {connection.auth_mode === "environment" && <label className="field-label"><span>{t("Environment variable name")}</span><input aria-label={t("Backend environment variable")} aria-describedby="connection-environment-help" value={connection.environment_variable ?? ""} maxLength={128} spellCheck={false}
               placeholder={defaultEnvironmentVariable(connection.adapter)} onChange={e => update({ environment_variable: e.target.value || null })} />
-              <small id="connection-environment-help">{t("Enter a variable name, not an API key. For managed deployments, set its value on the server before starting OAW. Leave blank to use")} {defaultEnvironmentVariable(connection.adapter)}.</small>
+              <small id="connection-environment-help">{t("Set this variable on the server before starting OAW.")}</small>
             </label>}
           </div>}
         </div>
@@ -137,11 +137,9 @@ export function ModelConnectionsEditor({ value, onChange, saved, busy }: {
                 value={Number.isNaN(model.max_output_tokens) ? "" : model.max_output_tokens ?? DEFAULT_MAX_OUTPUT_TOKENS}
                 onChange={e => update({ models: connection.models.map(m => m.id === model.id ? { ...m, max_output_tokens: e.target.valueAsNumber } : m) })} /></label>
             </div>
-            <p className="settings-description">{t("Defaults: 128,000 context / 8,192 output. Adjust to your service's limits. Output must be smaller than the context window.")}</p>
           </details>
         </div>)}
         </div>
-        <p className="settings-description">{t("Changes apply to new runs. Disable saved models or connections to preserve existing agent references.")}</p>
       </div> : <div className="connection-empty"><Server size={32} /><h4>{t("Your models, your accounts")}</h4><p>{t("Add multiple accounts from the same provider, or connect your own service.")}</p></div>}
     </div>
   </fieldset>;

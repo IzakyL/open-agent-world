@@ -1,4 +1,12 @@
 {
+  "Moves on next restart. The original folder is kept as a backup.": ["Moves on next restart. The original folder is kept as a backup.", "下次重启时迁移，原文件夹保留为备份。"],
+  "After verifying the new files, please delete unused backup folders manually.": ["After verifying the new files, please delete unused backup folders manually.", "确认新文件无误后，请手动删除不再使用的备份文件夹。"],
+  "Changing this folder moves all Sandbox workspaces and keeps backups. Stop Sandboxes and Agents first.": ["Changing this folder moves all Sandbox workspaces and keeps backups. Stop Sandboxes and Agents first.", "修改位置会迁移所有 Sandbox 工作目录并保留备份，请先停止 Sandbox 和 Agent。"],
+  "Saving settings. Please keep this window open.": ["Saving settings. Please keep this window open.", "正在保存，请保持此窗口打开。"],
+  "Applies to all Sandboxes on their next command. Local values take priority.": ["Applies to all Sandboxes on their next command. Local values take priority.", "所有 Sandbox 从下一次命令起生效，同名局部变量优先。"],
+  "Plain text values. Store credentials as Sandbox secrets.": ["Plain text values. Store credentials as Sandbox secrets.", "以明文保存，凭据请使用 Sandbox 的 Secret 变量。"],
+  "The saved key will be removed when you save.": ["The saved key will be removed when you save.", "保存后将移除原密钥。"],
+  "Set this variable on the server before starting OAW.": ["Set this variable on the server before starting OAW.", "请在启动 OAW 前设置服务器上的此变量。"],
   "Global environment variables": ["Global environment variables", "全局环境变量"],
   "Applied to the next command in every existing and new Sandbox. Profiles and Sandbox variables override matching global names. Running processes keep their current environment.": ["Applied to the next command in every existing and new Sandbox. Profiles and Sandbox variables override matching global names. Running processes keep their current environment.", "适用于所有已有和新建 Sandbox 的下一次命令。Profile 和 Sandbox 自身的同名变量会覆盖全局值。正在运行的进程保持原有环境。"],
   "Values are stored as plain text. Use Sandbox secret variables for credentials. Runtime-managed names such as PATH and HOME cannot be overridden.": ["Values are stored as plain text. Use Sandbox secret variables for credentials. Runtime-managed names such as PATH and HOME cannot be overridden.", "变量以明文保存。凭据请使用 Sandbox 的 Secret 变量。PATH、HOME 等运行时管理的变量不可覆盖。"],
