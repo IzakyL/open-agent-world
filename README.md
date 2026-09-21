@@ -64,7 +64,7 @@ Add skill toolboxes, isolated Sandboxes, and specialized viewers through plugins
 2. Add your model connection in **Settings → Models**.
 3. Follow the canvas tutorial to connect your first cards, form a Legion, and arrange its workspace.
 
-Prefer running from source? See [Getting started](docs/getting-started.md).
+On Linux, run `bash scripts/setup.sh`, then `bash scripts/start.sh` from a source checkout. See [Getting started](docs/getting-started.md) for prerequisites and source installation on all platforms.
 
 [First team](docs/user-guide/first-team.md) · [Plugins and packs](docs/user-guide/plugins.md) · [Plugin development](docs/developers/index.md) · [Contributing](docs/getting-started.md#development-and-verification)
 

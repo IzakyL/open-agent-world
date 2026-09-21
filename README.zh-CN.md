@@ -64,7 +64,7 @@
 2. 在 **设置 → 模型** 中添加你的模型连接。
 3. 跟随画布教程连接第一组卡片、组建 Legion，并布置它的工作区。
 
-想从源码运行？查看[入门指南](docs/getting-started.zh-CN.md)。
+Linux 用户可在源码目录运行 `bash scripts/setup.sh` 安装，再用 `bash scripts/start.sh` 启动。前置依赖和各平台的源码运行方式见[入门指南](docs/getting-started.zh-CN.md)。
 
 [交互教程](docs/tutorial.zh-CN.md) · [插件（英文）](docs/plugins.md) · [参与贡献](docs/getting-started.zh-CN.md#开发与验证)
 
