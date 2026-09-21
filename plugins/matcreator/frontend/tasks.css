@@ -87,3 +87,6 @@
 .mc-task-error, .mc-task-conflict { border-left: 3px solid #b6815b; padding: 9px; background: #b6815b12; overflow-wrap: anywhere; }
 .mc-task-empty { text-align: center; padding: 38px 10px; }.mc-task-empty > span { color: #72958a; letter-spacing: .15em; }.mc-task-empty p { max-width: 330px; margin: 12px auto 20px; line-height: 1.7; opacity: .65; }
 .mc-task-preview { padding: 12px; }.mc-task-preview strong, .mc-task-preview small { display: block; }.mc-task-preview strong { margin-top: 8px; font-size: 22px; }
+.mc-task-attempt { margin-block: 10px; padding: 10px; border: 1px solid var(--border-color, #7775); border-radius: 8px; overflow-wrap: anywhere; }
+.mc-task-attempt p { white-space: pre-wrap; }
+.mc-task-section.is-review, .mc-task-detail-title.is-review { color: #bd913c; }

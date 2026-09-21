@@ -30,7 +30,9 @@ def test_research_preset_deploys_complete_independent_workspaces_and_can_be_save
     a, b = first['node_ids'], second['node_ids']
     assert set(a.values()).isdisjoint(b.values())
     nodes = {node['id']: node for node in first['nodes']}
-    assert all(nodes[a[key]]['parent_id'] == a['group'] for key in a if key != 'group')
+    assert all(nodes[a[key]]['parent_id'] == a['group'] for key in a if key not in {'group', 'executor', 'summoning'})
+    assert nodes[a['executor']]['parent_id'] == a['barracks']
+    assert nodes[a['summoning']]['equipment']['owner_id'] == a['agent']
     assert nodes[a['sandbox']]['status'] == 'stopped'
     assert nodes[a['agent']]['config']['model'] == 'oaw:default'
     assert 'task board' in nodes[a['agent']]['config']['system_instruction']
@@ -46,7 +48,7 @@ def test_research_preset_deploys_complete_independent_workspaces_and_can_be_save
     assert {(edge['source'], edge['target'], edge['relationship']) for edge in first['edges']
             if edge['source'] == a['structure']} == {
         (a['structure'], a[target], 'core.file-preview') for target in ('conversation', 'sandbox')}
-    assert len(first['edges']) == 10
+    assert len(first['edges']) == 17
     assert document(client, a['core'])['value']['skills']
     created = edit(client, a['tasks'], 'create_plan', {'title': 'Copper', 'session_id': 'source-session', 'tasks': [
         {'id': 'build', 'title': 'Build copper', 'status': 'done', 'result': '32 atoms', 'outputs': ['copper.xyz']}]})

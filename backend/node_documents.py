@@ -75,7 +75,7 @@ async def invoke_document_action(services, node_id, action, request, *, capabili
         spec = definition(services, node_id)
         handler = spec.actions.get(action)
         if action == "replace" or (handler is not None and not handler.read_only):
-            services.node_execution.assert_editable(node_id)
+            services.node_execution.assert_editable(node_id, allow_delegated=True)
         if capability is not None:
             live = services.capabilities.capability_for_id(capability.agent_id, capability.id)
             if live.target_id != node_id or handler is None or handler.capability_kind != live.kind:

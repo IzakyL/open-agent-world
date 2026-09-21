@@ -22,9 +22,11 @@ test('MatCreator preset opens sessions, files, conversation and a persistent res
   const response = await deployed;
   expect(response.status()).toBe(201);
   const instance = await response.json();
+  expect(instance.nodes.find((node: { id: string }) => node.id === instance.node_ids.summoning).equipment.owner_id).toBe(instance.node_ids.agent);
+  expect(instance.nodes.find((node: { id: string }) => node.id === instance.node_ids.executor).parent_id).toBe(instance.node_ids.barracks);
   const group = instance.node_ids.group;
   await page.getByRole('button', { name: 'Fit view', exact: true }).click();
-  const toolsets = ['core', 'simulation', 'ai', 'research'].map(key => page.locator(`[data-card-id="${instance.node_ids[key]}"]`));
+  const toolsets = ['core', 'simulation', 'ai', 'research', 'knowledge', 'barracks'].map(key => page.locator(`[data-card-id="${instance.node_ids[key]}"]`));
   for (const toolset of toolsets) await expect(toolset).toBeVisible();
   const bounds = await Promise.all(toolsets.map(toolset => toolset.boundingBox()));
   for (let i = 0; i < bounds.length; i++) for (let j = i + 1; j < bounds.length; j++) {
@@ -50,11 +52,23 @@ test('MatCreator preset opens sessions, files, conversation and a persistent res
   await board.getByRole('button', { name: 'Add task', exact: true }).click();
   await board.getByLabel('Task title', { exact: true }).fill('Generate the copper structure');
   await board.getByLabel('Task details').fill('Read Materials Core and inspect the Sandbox environment.');
+  await board.getByLabel('Acceptance criteria').fill('Verify exactly 32 copper atoms and publish the structure.');
   await board.getByRole('button', { name: 'Save task', exact: true }).click();
   await board.getByRole('button', { name: '‹ Tasks', exact: true }).click();
   await expect(board.getByRole('button', { name: /Generate the copper structure/ })).toBeVisible();
-  const doc = await (await request.get(`/api/nodes/${instance.node_ids.tasks}/document`)).json();
+  let doc = await (await request.get(`/api/nodes/${instance.node_ids.tasks}/document`)).json();
   const plan = doc.value.plans[0];
+  expect((await request.post(`/api/nodes/${instance.node_ids.tasks}/actions/update_task`, { data: {
+    expected_revision: doc.revision,
+    arguments: { plan_id: plan.id, task_id: plan.tasks[0].id, status: 'review', result: 'Executor reports 32 atoms; verify the file.' },
+  } })).ok()).toBe(true);
+  await expect(board.getByRole('region', { name: 'Awaiting review', exact: true })).toBeVisible();
+  await board.getByRole('button', { name: 'Generate the copper structure', exact: true }).click();
+  await expect(board.getByText('Executor finished. Verify the outputs and record evidence before marking this task done.')).toBeVisible();
+  await expect(board.getByText('Verify exactly 32 copper atoms and publish the structure.')).toBeVisible();
+  await page.screenshot({ path: 'test-results/matcreator-task-review.png' });
+  await board.getByRole('button', { name: '‹ Tasks', exact: true }).click();
+  doc = await (await request.get(`/api/nodes/${instance.node_ids.tasks}/document`)).json();
   const updated = await request.post(`/api/nodes/${instance.node_ids.tasks}/actions/update_task`, { data: {
     expected_revision: doc.revision,
     arguments: { plan_id: plan.id, task_id: plan.tasks[0].id, status: 'done', result: 'Fixture result: validated 32 atoms', outputs: ['copper/structure.xyz'] },

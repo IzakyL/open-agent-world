@@ -37,13 +37,16 @@ orchestrator](https://github.com/AI4MS/MatCreator/blob/75c705c3c2bae7f2392c2d4bc
 plan dependent steps, execute, verify results, revise blocked work and record
 experience. OAW owns model calls, tools, Runs, cancellation, conversations and
 files. This preset uses a scientific system instruction on the existing Agent;
-it does not launch the upstream ADK server or implement its DAG scheduler,
-parallel step executors or remote-job reconciliation.
+it does not launch the upstream ADK server. Revision 3 includes equipped Summoning,
+a Research Executors Barracks and an Executor blueprint sharing the research
+Sandbox, scientific Toolsets and Know-Do Graph. OAW supplies asynchronous Run
+dispatch and collection; the coordinator chooses tasks and verifies results.
+Remote-job reconciliation remains outside this workflow.
 
 ### Research tasks
 
 The board supports multiple named plans with optional session references, task
-dependencies, **To do / In progress / Blocked / Done**, result notes and output
+dependencies, **To do / In progress / Awaiting review / Blocked / Done**, acceptance criteria, result notes and output
 paths. A session reference is a label; switching conversation sessions does not
 automatically switch the selected plan or Sandbox folder. Choose the matching
 plan from **Research plans**. Output paths are recorded references; inspect the
@@ -60,6 +63,48 @@ immediately. Saving a reusable Legion keeps task structure and descriptions, but
 clears session references, results and output references and resets all tasks in
 the copy. The new Sandbox does not contain the source project's computed files.
 Ordinary reloads and backend restarts preserve the live board's progress.
+
+### Delegating research
+
+The coordinator discovers Executor IDs using Summoning `list`, then uses
+`task_board_execute` with `action=collect` to read runnable work IDs and attempts.
+`delegate` takes `item_id`, `library_id`, `agent_id`, `expected_revision` and a
+unique `request_id`. Admission persists a stable attempt and supplies the Executor
+with task inputs, verified dependency results, acceptance criteria and its own
+`research/<board>/<task>/<attempt>/` output folder. Repeat the same request ID
+only to recover an uncertain dispatch response; a deliberate retry gets a new ID.
+
+Launch independent tasks, then use `wait` with `instance_ids`, `wait_mode=any|all`
+and a bounded `timeout_seconds` (0–60). A timeout leaves work running. Continue
+waiting or doing useful independent work until the results arrive. `collect`
+reconciles terminal Runs and retains failures. Success enters **Awaiting review**;
+the coordinator must inspect actual files, record evidence/output paths and mark
+**Done**. Return inadequate results to **Blocked** before retrying. The task detail
+shows each attempt, report, output directory and a targeted **Stop task** button.
+Stopping the coordinator propagates through dependent child Runs. Collection
+never restarts cancelled work. Restart recovery reconciles existing attempts,
+including admissions interrupted before their handles reached the board.
+
+Each summoned Executor has a private retained context. It does not join the main
+Conversation or receive its whole history; supply necessary scientific details in
+the task. Its shared connections retain normal live graph authorization. Bare
+Executor snapshots do not wait for unrelated shared Sandbox commands to finish.
+
+Restart the backend/frontend and place **MatCreator research** from the Legions
+deck to use revision 3. Existing placed Legions retain their configured Agents and
+layout; they are not silently replaced. The updated task tools also work on old
+boards when their coordinator has Summoning connected to a suitable Barracks and
+uses the new coordination instructions.
+
+This release keeps the coordinator active through explicit bounded waits. It does
+not yet inject messages into running providers or automatically reopen a finished
+coordinator turn. Remote calculations must still be checked through their actual
+job tools. Suggested acceptance request: “Build 2×2×2 and 3×3×3 copper supercells,
+verify the atom counts independently, then compare the results.”
+
+Host integration tests: `backend/tests/test_matcreator_workspace.py`;
+delegation tests: `plugins/matcreator/tests/test_delegation.py`;
+rendered workspace tests: `frontend/e2e/matcreator-workspace.spec.ts`.
 
 Example request: “Plan a copper supercell study. Inspect the available scientific
 environment, record the steps in the task board, generate the structure when

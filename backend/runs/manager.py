@@ -721,7 +721,8 @@ class RunManager:
                         awaiting=str(event.payload.get('name', 'tool execution')) if active_tools else None,
                         last_signal=event.type.value)
                     text = event.payload.get("text")
-                    if event.type.value == "agent_message" and isinstance(text, str):
+                    if isinstance(text, str) and (event.type.value == "agent_message"
+                            or (event.type.value == "agent_completed" and text.strip())):
                         self.state.set(context.state_context.local_scope, "output_text", text, run_id=record.run_id)
                     if event.run_status is not None:
                         current = self.get_run(record.run_id)

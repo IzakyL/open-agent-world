@@ -14,6 +14,7 @@ from backend.node_documents import read_document, write_document
 from backend.plugins.execution import ExecutionPolicy, WorkItem, WorkOutcome
 from backend.runs.models import TERMINAL_RUN_STATUSES
 from backend.state import StateContext
+from backend.node_delegation import NodeDelegationMixin
 
 logger = logging.getLogger(__name__)
 
@@ -25,7 +26,7 @@ class ExecutionRequest(BaseModel):
 
 
 @dataclass
-class NodeExecutionService:
+class NodeExecutionService(NodeDelegationMixin):
     services: object
     workers: dict[str, asyncio.Task] = field(default_factory=dict)
     stopping: set[str] = field(default_factory=set)
@@ -50,13 +51,26 @@ class NodeExecutionService:
         self.services.state.set(self._scope(node_id), "execution", state)
 
     def active(self, node_id):
-        return node_id in self.workers
+        if node_id in self.workers:
+            return True
+        node = self.services.world.maybe_get_card(node_id)
+        spec = self.services.plugins.node_type(node.type).execution if node else None
+        if spec and spec.summoning:
+            return any(entry.get("run_id") and self.services.run_manager.get_run(entry["run_id"]).status not in TERMINAL_RUN_STATUSES
+                for entry in self.state(node_id)["attempts"])
+        return False
 
-    def assert_editable(self, node_id):
+    def assert_editable(self, node_id, *, allow_delegated=False):
+        node = self.services.world.get_card(node_id)
+        spec = self.services.plugins.node_type(node.type).execution
+        if allow_delegated and spec and spec.summoning:
+            return  # Independent plan edits remain possible; attempts have host-owned state.
         if self.active(node_id):
             raise ConflictError("Stop execution before changing or deleting this work source")
 
     def executors(self, node_id):
+        if self.spec(node_id).summoning:
+            return []
         relationship = self.spec(node_id).executor_relationship
         ids = {edge.target for edge in self.services.world.list_edges_from(node_id)
                if edge.relationship == relationship}
@@ -88,6 +102,8 @@ class NodeExecutionService:
         write_document(self.services, node_id, value, current["revision"], run_id=outcome.run_id)
 
     async def start(self, node_id, request, *, capability=None):
+        if self.spec(node_id).summoning:
+            raise ResourceValidationError("Use the coordinator's task delegation tools for this work source")
         async with self.services._node_mutation():
             self.authorize(node_id, capability)
             self.assert_editable(node_id)
@@ -116,6 +132,20 @@ class NodeExecutionService:
             return self.snapshot(node_id)
 
     async def stop(self, node_id, *, capability=None):
+        if self.spec(node_id).summoning:
+            async with self.services._node_mutation():
+                self.authorize(node_id, capability)
+                self.stopping.add(node_id)
+                attempts = self.state(node_id)["attempts"]
+            try:
+                for entry in attempts:
+                    if entry.get("run_id"):
+                        await self.services.run_manager.cancel_run(entry["run_id"])
+                async with self.services._node_mutation():
+                    self.collect_delegations(node_id)
+                    return self.snapshot(node_id)
+            finally:
+                self.stopping.discard(node_id)
         async with self.services._node_mutation():
             self.authorize(node_id, capability)
             context = self.services.run_manager.current_context
@@ -243,6 +273,9 @@ class NodeExecutionService:
 
     async def startup(self):
         for node in self.services.world.list_cards():
+            if self.services.plugins.node_type(node.type).execution and self.spec(node.id).summoning:
+                self.collect_delegations(node.id)
+                continue
             if self.services.plugins.node_type(node.type).execution and self.state(node.id)["status"] == "running":
                 await self.reconcile(node.id)
 

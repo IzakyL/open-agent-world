@@ -1,7 +1,7 @@
 """Instantiate live configured Agents using the existing portable graph and Run host."""
 from dataclasses import dataclass, field
 import asyncio
-from contextlib import nullcontext
+from contextlib import asynccontextmanager, nullcontext
 from datetime import datetime, timezone
 import json
 from uuid import uuid4
@@ -20,6 +20,19 @@ from backend.events import EventType
 class SummoningService:
     services: object
     _cleanup_locks: dict = field(default_factory=dict)
+
+    @asynccontextmanager
+    async def admission(self, agent_id):
+        """A bare Agent snapshot contains config only; shared compute need not finish first."""
+        world = self.services.world
+        def has_owned_state():
+            return (world.maybe_get_card(agent_id) is None or bool(world.equipment_for(agent_id))
+                    or bool(world.owned_descendants(agent_id)))
+        capture = has_owned_state()
+        async with (self.services._portable_state_gate.capture() if capture else nullcontext()), self.services._node_mutation():
+            if not capture and has_owned_state():
+                raise ConflictError("Executor equipment changed during admission; retry the dispatch")
+            yield
 
     def assert_admission(self, node_id):
         if any(r.get('stopping') and node_id in self.owned_ids(r) for r in self.records()):
@@ -184,16 +197,18 @@ class SummoningService:
             raise ConflictError("This root task reached its concurrent summon limit")
         return policy
 
-    async def action(self, node_id, request, *, capability=None):
+    async def action(self, node_id, request, *, capability=None, dispatch_id=None, task_id=None, _capture_held=False):
         services = self.services
         manager = services.run_manager
         if request.action == "list":
             return self.snapshot(node_id, capability)
+        if request.action == "wait":
+            return await self.wait_instances(node_id, request, capability=capability)
         if request.action in {"stop", "reclaim"}:
             self.authorize(node_id, capability)
             record = self.find_instance(node_id, request.instance_id, capability)
             return await self.teardown(record, request.action)
-        async with (services._portable_state_gate.capture() if request.action == "summon" else nullcontext()), services._node_mutation():
+        async with (self.admission(request.agent_id) if request.action == "summon" and not _capture_held else services._node_mutation()):
             self.authorize(node_id, capability)
             if request.action == "inspect":
                 return self.view(self.find_instance(node_id, request.instance_id, capability))
@@ -257,7 +272,9 @@ class SummoningService:
                           "entry_agent_id": instance.node_ids[entry_key],
                           "root_node_ids": [instance.node_ids[entry_key]],
                           "node_ids": [n.id for n in instance.nodes], "attempts": [],
-                          "root_policy": policy, "created_root_id": root_id, "reclaimed": False, "stopping": False}
+                          "root_policy": policy, "created_root_id": root_id, "reclaimed": False, "stopping": False,
+                          "context_mode": request.context_mode, "dispatch_id": dispatch_id}
+                record["context_id"] = f"summon:{record['id']}" if request.context_mode == "task" else (context.context_id if context else None)
                 self.save(record)
                 await services.events.publish(
                     EventType.NODES_GENERATED, node_id=record["entry_agent_id"],
@@ -275,7 +292,8 @@ class SummoningService:
                 if context and manager.get_run(context.run_id).status in TERMINAL_RUN_STATUSES:
                     raise RuntimeUnavailableError("The calling Run ended before summon admission")
                 run = await manager.start_run(record["entry_agent_id"], request.prompt, caller_kind="summon",
-                                              caller_id=capability.agent_id if capability else None)
+                                              caller_id=capability.agent_id if capability else None,
+                                              context_id=record.get("context_id"), task_id=task_id)
             except RuntimeUnavailableError as error:
                 record["admission_error"] = str(error)
                 self.save(record)
@@ -285,9 +303,38 @@ class SummoningService:
             record["created_root_id"] = record["created_root_id"] or run.root_run_id
             self.save(record)
         # Human try returns immediately; Agent tools return the completed turn and handle.
-        if capability is not None:
+        if capability is not None and request.wait:
             await manager.wait_execution(run.run_id)
         return self.view(record)
+
+    async def wait_instances(self, node_id, request, *, capability=None):
+        """Bounded event-driven join. Timeout/cancellation only removes waiters, never child Runs."""
+        self.authorize(node_id, capability)
+        ids = request.instance_ids or ([request.instance_id] if request.instance_id else [])
+        if not ids or len(ids) != len(set(ids)):
+            raise ResourceValidationError("Supply unique instance_ids to wait for")
+        records = [self.find_instance(node_id, key, capability) for key in ids]
+        manager = self.services.run_manager
+        pending = [record for record in records if record["attempts"] and
+                   manager.get_run(record["attempts"][-1]["run_id"]).status not in TERMINAL_RUN_STATUSES]
+        already_done = len(pending) != len(records)
+        waiters = []
+        try:
+            if pending and request.timeout_seconds and not (request.wait_mode == "any" and already_done):
+                waiters = [asyncio.create_task(manager.wait_terminal(r["attempts"][-1]["run_id"])) for r in pending]
+                await asyncio.wait(waiters, timeout=request.timeout_seconds,
+                    return_when=asyncio.FIRST_COMPLETED if request.wait_mode == "any" else asyncio.ALL_COMPLETED)
+        finally:
+            for waiter in waiters:
+                if not waiter.done():
+                    waiter.cancel()
+            if waiters:
+                await asyncio.gather(*waiters, return_exceptions=True)
+        # A graph edit during the wait revokes access immediately.
+        self.authorize(node_id, capability)
+        results = [self.view(self.find_instance(node_id, key, capability)) for key in ids]
+        return {"instances": results, "pending_instance_ids": [r["id"] for r in results
+            if r["status"] not in {"succeeded", "failed", "cancelled", "interrupted", "reclaimed", "ready"}]}
 
     def find_instance(self, node_id, instance_id, capability):
         record = next((r for r in self.records() if r["id"] == instance_id and r["library_id"] == node_id), None)

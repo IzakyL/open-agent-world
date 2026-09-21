@@ -10,6 +10,23 @@ const board = (revision: number, title = task.title) => ({ revision, value: { pl
   { id: 'research', title: 'Copper study', goal: 'Verify a structure', session_id: '', tasks: [{ ...task, title }] },
 ] } });
 
+it('shows executor evidence and sends a targeted stop without silently accepting a result', async () => {
+  const state = board(1);
+  const collect = { document: state, execution: {
+    items: [{ id: 'work-a', metadata: { plan_id: 'research', task_id: 'build' } }],
+    attempts: [{ item_id: 'work-a', instance_id: 'instance-a', run_id: 'run-a', agent_id: 'executor-a',
+      status: 'running', output_directory: 'research/a/attempt-1', text: '' }],
+  } };
+  const delegationAction = vi.fn().mockResolvedValue(collect);
+  const documentAction = vi.fn();
+  render(<TaskBoard {...{ host: { delegationAction, documentAction } } as unknown as PluginViewProps} />);
+  fireEvent.click(await screen.findByRole('button', { name: 'Build copper' }));
+  expect(screen.getByText('research/a/attempt-1')).toBeTruthy();
+  fireEvent.click(screen.getByRole('button', { name: 'Stop task' }));
+  await waitFor(() => expect(delegationAction).toHaveBeenCalledWith('stop', { instance_id: 'instance-a' }));
+  expect(documentAction).not.toHaveBeenCalled();
+});
+
 it('retains an editor draft when the agent updates the board and reloads explicitly', async () => {
   const read = vi.fn().mockResolvedValue(board(1));
   const action = vi.fn();

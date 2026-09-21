@@ -134,6 +134,9 @@ class _CapabilityContext:
             return service.snapshot(capability.target_id)
         raise ResourceValidationError("Unknown execution action")
 
+    async def node_delegation_action(self, capability, action, arguments):
+        return await self.services.node_execution.delegation_action(capability.target_id, action, arguments, capability=capability)
+
     async def node_document_action(self, capability, action, arguments, expected_revision=None):
         from backend.node_documents import DocumentActionRequest, invoke_document_action
         return await invoke_document_action(self.services, capability.target_id, action,

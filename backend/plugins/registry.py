@@ -27,7 +27,7 @@ from backend.plugins.deployment import NodeDeploymentDefinition
 from backend.plugins.containers import NodeContainerDefinition
 from backend.plugins.execution import NodeExecutionDefinition
 
-PLUGIN_API_VERSION = "1.21"
+PLUGIN_API_VERSION = "1.22"
 _IDENTIFIER = re.compile(r"^[a-z][a-z0-9]*(?:[._:/-][a-z0-9]+)*$")
 _API_VERSION = re.compile(r"^(0|[1-9]\d*)\.(0|[1-9]\d*)$")
 
@@ -707,7 +707,7 @@ class PluginRegistry:
                     raise ValueError("executable nodes require a document")
                 if not all(callable(fn) for fn in (execution.items, execution.apply_outcome, execution.policy)):
                     raise TypeError("execution callbacks must be callable")
-                if execution.executor_relationship not in staged.relationships:
+                if not execution.summoning and execution.executor_relationship not in staged.relationships:
                     raise ValueError("executor relationship must be owned by the same plugin")
                 if execution.control_capability_kind and execution.control_capability_kind not in staged.capability_handlers:
                     raise ValueError("execution control capability must be owned by the same plugin")

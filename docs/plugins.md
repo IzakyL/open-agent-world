@@ -25,6 +25,17 @@ Plugin-specific documentation can remain in its own package or repository. These
 
 ## Developing a plugin
 
+Plugin API 1.22 adds Agent-directed delegation to `NodeExecutionDefinition` with
+`summoning=True`. Plugins reuse `WorkItem`/`WorkOutcome` for task readiness and
+acceptance; the host owns the attempt ledger, Run binding and Summoning admission.
+`CapabilityContext.node_delegation_action` supports `delegate`, `wait`, `collect`
+and `stop`. Dispatch requires both the work-source control capability and a live
+Summoning grant to the selected Barracks. `DelegationRequest`, `DelegationWait`
+and `DelegationStop` define bounded inputs. `WorkItem.metadata` provides display
+references. Preset nodes can use `owner_key` and `equipment_relationship` for
+private equipment. Frontend views use `host.delegationAction` for collection and
+targeted Stop; see the MatCreator plugin for a complete example.
+
 Plugin API 1.21 adds opt-in deployment of existing plugin Workspace views and sections through `NodeDeploymentDefinition` and `DeploymentSurface`. See [plugin deployment](plugin-deployment.md) for scoped fields/actions, frontend integration and a runnable example.
 
 Start with the installable [Greeter example](../examples/plugins/greeter/README.md), then consult [package discovery](#package-structure-and-discovery), [the public API](#public-plugin-api), and the contracts below.

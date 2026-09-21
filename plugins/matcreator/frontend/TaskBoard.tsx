@@ -2,12 +2,16 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { t, useLocale, type PluginViewProps } from '@oaw/plugin-api';
 import './tasks.css';
 
-type Status = 'pending' | 'running' | 'blocked' | 'done';
-type Task = { id: string; title: string; description: string; depends_on: string[]; status: Status; result: string; outputs: string[] };
+type Status = 'pending' | 'running' | 'review' | 'blocked' | 'done';
+type Task = { id: string; title: string; description: string; acceptance?: string; depends_on: string[]; status: Status; result: string; outputs: string[] };
 type Plan = { id: string; title: string; goal: string; session_id: string; tasks: Task[] };
 type Snapshot = { value: { plans: Plan[] }; revision: number };
+type Attempt = { item_id: string; instance_id: string | null; agent_id: string | null; run_id: string | null; status: string; error?: string; text?: string; output_directory: string; reconciliation_error?: string };
+type Execution = { items: { id: string; metadata: { plan_id: string; task_id: string } }[]; attempts: Attempt[] };
+type Collected = { document: Snapshot; execution: Execution };
 const columns: { id: Status; label: string }[] = [
   { id: 'pending', label: 'To do' }, { id: 'running', label: 'In progress' },
+  { id: 'review', label: 'Awaiting review' },
   { id: 'blocked', label: 'Blocked' }, { id: 'done', label: 'Done' },
 ];
 const message = (error: unknown) => error instanceof Error ? error.message : String(error);
@@ -21,13 +25,16 @@ const titleWidth = (title: string) => [...title].reduce((width, character) => wi
 
 function useBoard(host: PluginViewProps['host']) {
   const [snapshot, setSnapshot] = useState<Snapshot>();
+  const [execution, setExecution] = useState<Execution>();
   const [error, setError] = useState('');
   const alive = useRef(false);
   const accept = useCallback((next: Snapshot) => {
     if (alive.current) setSnapshot(previous => !previous || next.revision >= previous.revision ? next : previous);
   }, []);
   const refresh = useCallback(async () => {
-    const next = await host.readDocument() as Snapshot;
+    const collected = host.delegationAction ? await host.delegationAction('collect', {}) as unknown as Collected : undefined;
+    const next = collected?.document ?? await host.readDocument() as Snapshot;
+    if (alive.current && collected) setExecution(collected.execution);
     accept(next);
     return next;
   }, [host, accept]);
@@ -43,7 +50,7 @@ function useBoard(host: PluginViewProps['host']) {
     void poll();
     return () => { stopped = true; alive.current = false; clearTimeout(timer); };
   }, [refresh]);
-  return { snapshot, error, refresh, accept };
+  return { snapshot, execution, error, refresh, accept };
 }
 
 export function TaskPreview({ host }: PluginViewProps) {
@@ -59,7 +66,7 @@ export function TaskPreview({ host }: PluginViewProps) {
 
 export function TaskBoard({ host }: PluginViewProps) {
   useLocale();
-  const { snapshot, error: readError, refresh, accept } = useBoard(host);
+  const { snapshot, execution, error: readError, refresh, accept } = useBoard(host);
   const [selected, setSelected] = useState('');
   const [creating, setCreating] = useState(false);
   const [title, setTitle] = useState('');
@@ -80,6 +87,8 @@ export function TaskBoard({ host }: PluginViewProps) {
   const plan = plans.find(item => item.id === selected) ?? plans.at(-1);
   const done = plan?.tasks.filter(task => task.status === 'done').length ?? 0;
   const taskDetail = plan?.tasks.find(task => task.id === taskId);
+  const itemId = execution?.items.find(item => item.metadata.plan_id === plan?.id && item.metadata.task_id === taskId)?.id;
+  const attempts = execution?.attempts.filter(attempt => attempt.item_id === itemId) ?? [];
   const inTask = !!editor || taskId !== undefined;
   useEffect(() => {
     if (surface.current) surface.current.scrollTop = inTask ? 0 : listScroll.current;
@@ -185,6 +194,7 @@ export function TaskBoard({ host }: PluginViewProps) {
           }}>{t(editor.fresh ? 'Use latest board revision' : 'Reload latest task')}</button></div>}
         <label>{t('Task title')}<input autoFocus aria-label={t('Task title')} required maxLength={180} value={editor.task.title} onChange={event => patch({ title: event.target.value })} /></label>
         <label>{t('Task details')}<textarea aria-label={t('Task details')} maxLength={8000} value={editor.task.description} onChange={event => patch({ description: event.target.value })} /></label>
+        <label>{t('Acceptance criteria')}<textarea aria-label={t('Acceptance criteria')} maxLength={8000} value={editor.task.acceptance ?? ''} onChange={event => patch({ acceptance: event.target.value })} /></label>
         <label>{t('Task status')}<select aria-label={t('Task status')} value={editor.task.status} onChange={event => patch({ status: event.target.value as Status })}>
           {columns.map(column => <option key={column.id} value={column.id}>{t(column.label)}</option>)}
         </select></label>
@@ -212,6 +222,23 @@ export function TaskBoard({ host }: PluginViewProps) {
             <p>{!descriptionExpanded && taskDetail.description.length > 280 ? `${taskDetail.description.slice(0, 280)}…` : taskDetail.description}</p>
             {taskDetail.description.length > 280 && <button className="mc-task-description-toggle" aria-expanded={descriptionExpanded} onClick={() => setDescriptionExpanded(expanded => !expanded)}>{t(descriptionExpanded ? 'Collapse' : 'Full description')}</button>}
           </section>}
+          {taskDetail.acceptance && <section className="mc-task-detail-section"><h3>{t('Acceptance criteria')}</h3><p>{taskDetail.acceptance}</p></section>}
+          {taskDetail.status === 'review' && <p className="mc-task-hint" role="status">{t('Executor finished. Verify the outputs and record evidence before marking this task done.')}</p>}
+          {!!attempts.length && <section className="mc-task-detail-section"><h3>{t('Executor attempts')}</h3>
+            {attempts.map((attempt, index) => <div className="mc-task-attempt" key={attempt.instance_id ?? index}>
+              <strong>{t('Attempt')} {index + 1} · {t(attempt.status)}</strong>
+              <p>{t('Output directory')}: <code>{attempt.output_directory}</code></p>
+              {(attempt.error || attempt.reconciliation_error) && <p role="alert">{attempt.error || attempt.reconciliation_error}</p>}
+              {attempt.text && <details><summary>{t('Executor report')}</summary><p>{attempt.text}</p></details>}
+              <details><summary>{t('Execution references')}</summary><p>Agent: {attempt.agent_id}<br />Run: {attempt.run_id}<br />Instance: {attempt.instance_id}</p></details>
+              {attempt.instance_id && ['created', 'running', 'waiting'].includes(attempt.status) && <button disabled={busy} onClick={async () => {
+                setBusy(true); setError('');
+                try { await host.delegationAction('stop', { instance_id: attempt.instance_id }); await refresh(); }
+                catch (reason) { setError(message(reason)); }
+                finally { setBusy(false); }
+              }}>{t('Stop task')}</button>}
+            </div>)}
+          </section>}
           <section className="mc-task-detail-section"><h3>{t('Prerequisite tasks')}</h3>
             {taskDetail.depends_on.length ? <ul className="mc-task-detail-dependencies">{taskDetail.depends_on.map(id => {
               const dependency = plan.tasks.find(task => task.id === id);
@@ -224,10 +251,10 @@ export function TaskBoard({ host }: PluginViewProps) {
           <dl className="mc-task-detail-references"><dt>{t('Task ID')}</dt><dd>{taskDetail.id}</dd>{plan.session_id && <><dt>{t('Session')}</dt><dd>{plan.session_id}</dd></>}</dl>
         </> : <p role="status">{t('Task no longer exists')}</p>}
       </article> : <div className={`mc-task-sections${view === 'board' ? ' wants-board' : ''}`}>
-        {(['running', 'blocked', 'pending', 'done'] as Status[]).map(status => {
+        {(['running', 'review', 'blocked', 'pending', 'done'] as Status[]).map(status => {
           const tasks = plan.tasks.filter(task => task.status === status);
           if (!tasks.length) return null;
-          const label = { running: 'Running', blocked: 'Needs attention', pending: 'Next', done: 'Completed' }[status];
+          const label = { running: 'Running', review: 'Awaiting review', blocked: 'Needs attention', pending: 'Next', done: 'Completed' }[status];
           return <section className={`mc-task-section is-${status}`} aria-label={t(status === 'done' ? 'Done' : label)} key={status}>
             <h4><span className="mc-task-dot" />{t(label)}<span>{tasks.length}</span></h4>
             <div className={`mc-task-grid${tasks.some(task => titleWidth(task.title) > 42) ? ' has-long-titles' : ''}`}>

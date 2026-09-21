@@ -20,6 +20,7 @@ export interface PluginViewProps {
     updateConfig(patch: Record<string, unknown>): Promise<void>;
     getAgentInfo(): Promise<{ session_id: string; details?: Record<string, unknown> }>;
     documentAction(action: string, arguments_: Record<string, unknown>, expectedRevision?: number): Promise<{ value: unknown; revision: number }>;
+    delegationAction(action: 'collect' | 'wait' | 'stop', arguments_: Record<string, unknown>): Promise<Record<string, unknown>>;
     resourceAction(action: string, arguments_: Record<string, unknown>, confirm?: boolean): Promise<Record<string, unknown>>;
     listCards(traits?: string[]): Promise<WorldCard[]>;
     readDocument(nodeId?: string): Promise<{ value: unknown; revision: number }>;

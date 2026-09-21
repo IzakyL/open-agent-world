@@ -86,6 +86,17 @@ def invocation(agent_id, session_id, run_id="run-1"):
 
 
 @pytest.mark.asyncio
+async def test_private_delegation_context_does_not_replay_parent_conversation(services, monkeypatch):
+    agent, _, room, session, model, runtime, config = await setup_context(services, monkeypatch)
+    add_history(services, room, session, count=2)
+    private = invocation(agent.id, "summon:isolated-task")
+    result = [event async for event in runtime.execute(config, private, RuntimeInput("Inspect only the assigned file"))]
+    assert result
+    assert "cobalt-731" not in model._requests[-1]
+    assert "Inspect only the assigned file" in model._requests[-1]
+
+
+@pytest.mark.asyncio
 async def test_saved_limits_drive_pressure_output_and_next_run_compaction(services, monkeypatch):
     agent, _, room, session, model, runtime, config = await setup_context(services, monkeypatch)
     add_history(services, room, session, count=30)

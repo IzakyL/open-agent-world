@@ -14,6 +14,7 @@ from backend.plugins.deployment import DeploymentSurface, NodeDeploymentDefiniti
 from backend.plugins.resources import NodeResourceAction, NodeResourceContext
 from backend.plugins.containers import NodeContainerDefinition
 from backend.plugins.execution import ExecutionPolicy, NodeExecutionDefinition, WorkItem, WorkOutcome
+from backend.plugins.execution import DelegationRequest, DelegationWait, DelegationStop
 
 from backend.agents import (
     AgentCapabilityProvider,
@@ -81,6 +82,7 @@ from backend.runs import InvocationContext, RuntimeInput
 from backend.world.models import Card, CardCreate, CardPatch, Edge
 
 __all__ = [
+    "DelegationRequest", "DelegationWait", "DelegationStop",
     "DeploymentSurface", "NodeDeploymentDefinition",
     "LegionPresetDefinition", "PresetNode", "PresetEdge",
     "NodeResourceAction", "NodeResourceContext",

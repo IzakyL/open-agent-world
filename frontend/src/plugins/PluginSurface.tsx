@@ -28,6 +28,7 @@ export function PluginSurface({ card, slot, level, children }: {
     updateConfig: async (config) => { await updateCard(card.id, { config }); },
     getAgentInfo: () => worldApi.getAgentInfo(card.id),
     documentAction: (action, arguments_, expectedRevision) => worldApi.nodeDocumentAction(card.id, action, arguments_, expectedRevision),
+    delegationAction: (action, arguments_) => worldApi.nodeDelegationAction(card.id, action, arguments_),
     resourceAction: (action, arguments_, confirm) => worldApi.nodeResourceAction(card.id, action, arguments_, confirm),
     listCards: async (traits = []) => (access.deployed ? useWorldStore.getState().cards.filter(node => node.id in access.permissions) : (await worldApi.getWorld()).nodes).filter(node => {
       const type = useWorldStore.getState().catalog.node_types.find(item => item.id === node.type);

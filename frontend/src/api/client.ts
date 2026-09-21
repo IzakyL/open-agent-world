@@ -441,6 +441,12 @@ export const worldApi = {
     return request(`/nodes/${encodeURIComponent(id)}/execution`);
   },
 
+  nodeDelegationAction(id: string, action: string, args: Record<string, unknown>): Promise<Record<string, unknown>> {
+    return request(`/nodes/${encodeURIComponent(id)}/execution/actions/${encodeURIComponent(action)}`, {
+      method: "POST", body: JSON.stringify({ arguments: args }),
+    });
+  },
+
   startNodeExecution(id: string, revision: number, itemId?: string): Promise<import("../cards/NodeExecution").ExecutionSnapshot> {
     return request(`/nodes/${encodeURIComponent(id)}/execution/start`, {
       method: "POST", body: JSON.stringify({ expected_revision: revision, item_id: itemId }),
