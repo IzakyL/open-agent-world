@@ -47,6 +47,8 @@ This site tracks **`dev`**. It describes development behavior, which may be newe
 
 Enable **Settings → Pages → Build and deployment → Source → GitHub Actions** in the repository. The [Documentation workflow](../../.github/workflows/docs.yml) validates pull requests and builds/publishes documentation changes pushed to `dev`. It also tests the tutorial plugin packages. Manual dispatch becomes available once the workflow exists on the repository's default branch; it only deploys when run on `dev`.
 
+In **Settings → Environments → github-pages → Deployment branches and tags**, allow the `dev` branch. GitHub may initially allow only the default branch (`main`); in that case the build succeeds but the deployment is rejected before its steps run. Keep the environment policy aligned with the workflow's publishing branch.
+
 The workflow builds a static site, uploads only `.tmp/docs-site`, then deploys to the `github-pages` environment with `pages: write` and `id-token: write`. See [GitHub's custom workflow documentation](https://docs.github.com/en/pages/getting-started-with-github-pages/using-custom-workflows-with-github-pages) for repository prerequisites.
 
 Expected address: <https://theafish.github.io/open-agent-world/>. A successful build alone does not prove deployment; check the deploy job and load the public URL.
