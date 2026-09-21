@@ -2,6 +2,10 @@
 
 [Documentation](README.md)
 
+This is the detailed plugin contract reference. New authors should follow
+[Build a plugin](developers/index.md), starting with a small working card.
+For everyday use, see [Plugins and packs](user-guide/plugins.md).
+
 ## Using plugins
 
 Plugins add cards, relationships, tools, and runtime integrations. The backend discovers packages under the repository's `plugins/` directory and installed Python entry points at startup. Install only reviewed code: plugins execute inside the trusted backend process.

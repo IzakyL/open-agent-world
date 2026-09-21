@@ -13,7 +13,7 @@
 
 连接智能体、文件和工具，让每个智能体各司其职，在同一个工作空间里协作。
 
-[下载](https://github.com/theAfish/open-agent-world/releases) · [开始使用](docs/install.md) · [文档](docs/README.zh-CN.md)
+[下载](https://github.com/theAfish/open-agent-world/releases) · [使用指南](https://theafish.github.io/open-agent-world/user-guide/index.zh-CN/) · [开发插件](https://theafish.github.io/open-agent-world/developers/index.zh-CN/) · [文档](https://theafish.github.io/open-agent-world/README.zh-CN/)
 
 </div>
 
