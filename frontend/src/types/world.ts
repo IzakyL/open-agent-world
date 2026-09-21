@@ -1,3 +1,5 @@
+export type PluginStateSpec = { mode: "none" } | { mode: "scoped"; supportedScopes: ("shared" | "session")[]; defaultScope: "shared" | "session"; userConfigurable?: boolean };
+
 export type CardType = string;
 
 export type NodeSurfaceLevel = "node" | "preview" | "inspector" | "workspace";
@@ -107,6 +109,8 @@ export interface CardConfig extends Record<string, unknown> {
 }
 
 export interface WorldCard {
+  state_scope?: "shared" | "session" | null;
+  state_scope_override?: "shared" | "session" | null;
   id: string;
   revision?: number;
   parent_id?: string | null;
@@ -151,6 +155,8 @@ export interface WorldSnapshot {
 }
 
 export interface NodeTypeCatalogItem {
+  state?: PluginStateSpec;
+  has_scoped_state?: boolean;
   icon_url?: string | null;
   frontend?: Partial<Record<"preview" | "body" | "settings" | "workspace", string>>;
   id: CardType;
@@ -180,6 +186,7 @@ export interface NodeTypeCatalogItem {
   /** Whether a user may create this node directly from the card library. */
   user_creatable: boolean;
   has_document?: boolean;
+  deletion_warning?: string | null;
   transformations?: Record<string, { label: string; source_traits: string[] }>;
   has_execution?: boolean;
   summoning?: Record<string, never> | null;
@@ -232,6 +239,8 @@ export interface LegionBounds {
  * and relationship state intentionally stays behind the API boundary.
  */
 export interface LegionSummary {
+  preset?: boolean;
+  starter?: boolean;
   id: string;
   name: string;
   description?: string;
@@ -258,6 +267,7 @@ export interface LegionNodePresentation {
   level: NodeSurfaceLevel;
   base_level?: "node" | "preview" | null;
   workspace_size?: WorldSize | null;
+  surface_sizes?: Partial<Record<NodeSurfaceLevel, WorldSize>>;
 }
 
 export interface LegionDeployOptions {
@@ -349,6 +359,15 @@ export interface ConversationSummary {
   conversation_id: string;
   sessions: ConversationSession[];
   agents: ConversationAgent[];
+  context_statuses?: Record<string, Record<string, ContextStatus>>;
+}
+
+export interface ContextStatus {
+  pressure: number;
+  state: "normal" | "high" | "compacting";
+  estimated_tokens?: number;
+  context_limit?: number;
+  compaction_count: number;
 }
 
 export interface ContainerDefinition {

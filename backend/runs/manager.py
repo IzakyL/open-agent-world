@@ -5,6 +5,7 @@ import json
 import logging
 from collections.abc import Awaitable, Callable, Mapping
 from contextvars import ContextVar
+from contextlib import AsyncExitStack, asynccontextmanager
 from dataclasses import dataclass, field, replace
 from typing import Any
 
@@ -98,6 +99,7 @@ class RunManager:
     execution_deadline_seconds: float = 3600.0
     _cleanup_tasks: dict[str, asyncio.Task] = field(default_factory=dict)
     admission_check: Any = None
+    cleanup_execution: Callable[[str], Awaitable[None]] | None = None
     persist_provider_event: Callable[[AgentEvent, RunRecord, str, str], Awaitable[str | None]] | None = None
 
     def __post_init__(self):
@@ -204,6 +206,17 @@ class RunManager:
 
     def list_child_runs(self, parent_run_id: str) -> list[RunRecord]:
         return self.store.list_children(parent_run_id)
+
+    @asynccontextmanager
+    async def workspace_maintenance(self, agent_ids: list[str]):
+        """Hold admission while workspace files move. Caller holds graph mutation."""
+        async with AsyncExitStack() as stack:
+            for agent_id in sorted(agent_ids):
+                await stack.enter_async_context(self._start_locks.setdefault(agent_id, asyncio.Lock()))
+            if self._occupied_runs or any(not task.done() for task in self._runtime_tasks.values()):
+                from backend.errors import ConflictError
+                raise ConflictError("Stop running Agents before migrating workspace locations")
+            yield
 
     async def start_run(
         self,
@@ -430,6 +443,8 @@ class RunManager:
             # finished unwinding. Agent deletion must join that tail before it
             # removes provider state.
             await self._join_runtime_task(run_id)
+            if self.cleanup_execution is not None:
+                await self.cleanup_execution(run_id)
             if propagate:
                 for child in self.list_child_runs(run_id):
                     if child.lifecycle.get('cancellation_policy', 'dependent') == 'dependent':
@@ -463,6 +478,8 @@ class RunManager:
                 for child in self.list_child_runs(run_id):
                     if child.lifecycle.get('cancellation_policy', 'dependent') == 'dependent':
                         await self.cancel_run(child.run_id, propagate=True)
+            if self.cleanup_execution is not None:
+                await self.cleanup_execution(run_id)
             if provider is not None:
                 await provider.stop(run_id)
             if task_to_wait is not None:
@@ -704,7 +721,8 @@ class RunManager:
                         awaiting=str(event.payload.get('name', 'tool execution')) if active_tools else None,
                         last_signal=event.type.value)
                     text = event.payload.get("text")
-                    if event.type.value == "agent_message" and isinstance(text, str):
+                    if isinstance(text, str) and (event.type.value == "agent_message"
+                            or (event.type.value == "agent_completed" and text.strip())):
                         self.state.set(context.state_context.local_scope, "output_text", text, run_id=record.run_id)
                     if event.run_status is not None:
                         current = self.get_run(record.run_id)
@@ -832,6 +850,18 @@ class RunManager:
                 "agent runtime is not configured; set OPEN_AGENT_WORLD_AGENT_RUNTIME explicitly"
             )
         return provider_id
+
+    def uses_oaw_context(self, card: Card) -> bool:
+        """Ownership, not core.agent membership, selects host compaction."""
+        from backend.agents.google_adk import GoogleAdkAgentRuntime
+        provider_id = card.config.get("runtime_provider_id") or self.default_runtime_provider_id
+        if provider_id != "google.adk":
+            return False
+        installed = self._providers.get(provider_id)
+        if installed is not None:
+            return type(installed) is GoogleAdkAgentRuntime and installed.context_store is not None
+        return (self.plugins.has_runtime_provider(provider_id)
+                and self.plugins.runtime_provider_owner_id(provider_id) == "open-agent-world.core")
 
     def _optional_provider_id(self, card: Card) -> str | None:
         configured = card.config.get("runtime_provider_id")

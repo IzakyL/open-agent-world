@@ -13,7 +13,7 @@
 
 Connect agents, files, and tools. Give each agent a role and a place to work together.
 
-[Download](https://github.com/theAfish/open-agent-world/releases) · [Get started](docs/install.md) · [Documentation](docs/README.md)
+[Download](https://github.com/theAfish/open-agent-world/releases) · [User guide](https://theafish.github.io/open-agent-world/user-guide/) · [Build plugins](https://theafish.github.io/open-agent-world/developers/) · [Documentation](https://theafish.github.io/open-agent-world/)
 
 </div>
 
@@ -52,6 +52,6 @@ Add skill toolboxes, isolated Sandboxes, and specialized viewers through plugins
 
 Prefer running from source? See [Getting started](docs/getting-started.md).
 
-[Tutorial](docs/tutorial.md) · [Plugins](docs/plugins.md) · [Contributing](docs/getting-started.md#development-and-verification)
+[First team](docs/user-guide/first-team.md) · [Plugins and packs](docs/user-guide/plugins.md) · [Plugin development](docs/developers/index.md) · [Contributing](docs/getting-started.md#development-and-verification)
 
 OAW is an experimental project. No repository license file is currently included.

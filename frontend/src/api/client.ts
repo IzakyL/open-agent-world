@@ -1,3 +1,4 @@
+import { cardStateSession, stateSessionHeaders } from "../state/cardState";
 import type { SummoningSnapshot, SummonedInstance } from "../cards/Barracks";
 import type {
   CardConfig,
@@ -27,14 +28,18 @@ export type CardCreateInput = (Omit<WorldCard, "id"> | WorldCard) & {
   media_type?: string;
 };
 
-const API_BASE = (import.meta.env.VITE_API_BASE as string | undefined)?.replace(/\/$/, "") ?? "/api";
+const BUILDER_API_BASE = (import.meta.env.VITE_API_BASE as string | undefined)?.replace(/\/$/, "") ?? "/api";
+let API_BASE = BUILDER_API_BASE;
+export function configureWorkspaceApi(deployed: boolean) {
+  API_BASE = deployed ? `${BUILDER_API_BASE}/runtime-app/workspace` : BUILDER_API_BASE;
+}
 
 export function conversationAttachmentUrl(conversationId: string, sessionId: string, file: { version_id: string; path: string }, preview = false): string {
   return `${API_BASE}/conversations/${encodeURIComponent(conversationId)}/sessions/${encodeURIComponent(sessionId)}/attachments/${encodeURIComponent(file.version_id)}?${new URLSearchParams({ path: file.path, preview: String(preview) })}`;
 }
 
-export function nodeDocumentDownloadUrl(id: string, name: string): string {
-  return `${API_BASE}/nodes/${encodeURIComponent(id)}/document/downloads/${encodeURIComponent(name)}`;
+export function nodeDocumentDownloadUrl(id: string, name: string, sessionId: string | null = cardStateSession(id) ?? null): string {
+  return `${API_BASE}/nodes/${encodeURIComponent(id)}/document/downloads/${encodeURIComponent(name)}${sessionId ? `?state_session=${encodeURIComponent(sessionId)}` : ""}`;
 }
 
 export class ApiError extends Error {
@@ -127,6 +132,8 @@ export function normalizeCard(input: unknown): WorldCard {
     config.preview_url = resourceContentUrl(String(source.id));
   }
   return {
+    state_scope: source.state_scope as WorldCard["state_scope"],
+    state_scope_override: source.state_scope_override as WorldCard["state_scope_override"],
     id: String(source.id),
     revision: typeof source.revision === "number" ? source.revision : undefined,
     equipment: source.equipment as WorldCard["equipment"] ?? null,
@@ -168,6 +175,8 @@ export function normalizeLegionSummary(input: unknown): LegionSummary {
   const source = asRecord(input);
   const bounds = asRecord(source.bounds);
   return {
+    preset: source.preset === true,
+    starter: source.starter === true,
     id: String(source.id),
     name: String(source.name ?? "Untitled Legion"),
     description: typeof source.description === "string" && source.description.trim()
@@ -238,6 +247,7 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
       : await response.text();
 
   if (!response.ok) {
+    if (response.status === 401 && API_BASE !== BUILDER_API_BASE) window.dispatchEvent(new Event('oaw-session-expired'));
     const bodyRecord = asRecord(body);
     const errorRecord = asRecord(bodyRecord.error);
     const detail = errorRecord.message ?? bodyRecord.detail ?? body;
@@ -295,7 +305,7 @@ export const worldApi = {
 
   saveSandboxSettings(settings: SandboxSettings): Promise<SandboxSettings> {
     return request<SandboxSettings>("/settings/sandbox", {
-      method: "PUT", body: JSON.stringify(settings),
+      method: "PUT", body: JSON.stringify({ workspace_root: settings.workspace_root, runtime: settings.runtime }),
     });
   },
   async getSummoning(id: string): Promise<SummoningSnapshot> {
@@ -306,14 +316,31 @@ export const worldApi = {
     return request(`/nodes/${encodeURIComponent(id)}/summoning/actions`, { method: "POST", body: JSON.stringify(args) });
   },
 
-  async getNodeDocument(id: string): Promise<{ value: Record<string, unknown>; revision: number; summary: Record<string, unknown> }> {
-    return request(`/nodes/${encodeURIComponent(id)}/document`);
+  async getNodeDocument(id: string, sessionId: string | null = cardStateSession(id) ?? null): Promise<{ value: Record<string, unknown>; revision: number; summary: Record<string, unknown> }> {
+    return request(`/nodes/${encodeURIComponent(id)}/document`, { headers: stateSessionHeaders(sessionId) });
   },
 
-  async nodeDocumentAction(id: string, action: string, args: Record<string, unknown>, expectedRevision?: number): Promise<{ value: Record<string, unknown>; revision: number; summary: Record<string, unknown> }> {
-    return request(`/nodes/${encodeURIComponent(id)}/actions/${encodeURIComponent(action)}`, {
-      method: "POST", body: JSON.stringify({ arguments: args, expected_revision: expectedRevision }),
+  async nodeResourceAction(id: string, action: string, args: Record<string, unknown>, confirm = false, sessionId: string | null = cardStateSession(id) ?? null): Promise<Record<string, unknown>> {
+    return request(`/nodes/${encodeURIComponent(id)}/resource/${encodeURIComponent(action)}`, {
+      method: "POST", headers: stateSessionHeaders(sessionId), body: JSON.stringify({ arguments: args, confirm }),
     });
+  },
+
+  async nodeDocumentAction(id: string, action: string, args: Record<string, unknown>, expectedRevision?: number, sessionId: string | null = cardStateSession(id) ?? null): Promise<{ value: Record<string, unknown>; revision: number; summary: Record<string, unknown> }> {
+    return request(`/nodes/${encodeURIComponent(id)}/actions/${encodeURIComponent(action)}`, {
+      method: "POST", headers: stateSessionHeaders(sessionId), body: JSON.stringify({ arguments: args, expected_revision: expectedRevision }),
+    });
+  },
+
+  getCardStateSnapshot(id: string): Promise<{ namespaces: unknown[] }> {
+    return request(`/nodes/${encodeURIComponent(id)}/state-snapshot`);
+  },
+  restoreCardStateSnapshot(id: string, snapshot: { namespaces: unknown[] }): Promise<void> {
+    return request(`/nodes/${encodeURIComponent(id)}/state-snapshot`, { method: 'POST', body: JSON.stringify(snapshot) });
+  },
+  cardState(id: string, method: 'GET' | 'PUT' | 'PATCH' | 'DELETE', value?: Record<string, unknown>, expectedRevision?: number, sessionId: string | null = cardStateSession(id) ?? null): Promise<{ value: Record<string, unknown>; revision: number }> {
+    return request(`/nodes/${encodeURIComponent(id)}/state`, { method, headers: stateSessionHeaders(sessionId),
+      ...(method === 'GET' ? {} : { body: JSON.stringify({ value, expected_revision: expectedRevision }) }) });
   },
 
   async getCatalog(): Promise<PluginCatalog> {
@@ -424,18 +451,24 @@ export const worldApi = {
     return normalizeCard(unwrap(body, "node"));
   },
 
-  getNodeExecution(id: string): Promise<import("../cards/NodeExecution").ExecutionSnapshot> {
-    return request(`/nodes/${encodeURIComponent(id)}/execution`);
+  getNodeExecution(id: string, sessionId: string | null = cardStateSession(id) ?? null): Promise<import("../cards/NodeExecution").ExecutionSnapshot> {
+    return request(`/nodes/${encodeURIComponent(id)}/execution`, { headers: stateSessionHeaders(sessionId) });
   },
 
-  startNodeExecution(id: string, revision: number, itemId?: string): Promise<import("../cards/NodeExecution").ExecutionSnapshot> {
-    return request(`/nodes/${encodeURIComponent(id)}/execution/start`, {
-      method: "POST", body: JSON.stringify({ expected_revision: revision, item_id: itemId }),
+  nodeDelegationAction(id: string, action: string, args: Record<string, unknown>, sessionId: string | null = cardStateSession(id) ?? null): Promise<Record<string, unknown>> {
+    return request(`/nodes/${encodeURIComponent(id)}/execution/actions/${encodeURIComponent(action)}`, {
+      method: "POST", headers: stateSessionHeaders(sessionId), body: JSON.stringify({ arguments: args }),
     });
   },
 
-  stopNodeExecution(id: string): Promise<import("../cards/NodeExecution").ExecutionSnapshot> {
-    return request(`/nodes/${encodeURIComponent(id)}/execution/stop`, { method: "POST" });
+  startNodeExecution(id: string, revision: number, itemId?: string, sessionId: string | null = cardStateSession(id) ?? null): Promise<import("../cards/NodeExecution").ExecutionSnapshot> {
+    return request(`/nodes/${encodeURIComponent(id)}/execution/start`, {
+      method: "POST", headers: stateSessionHeaders(sessionId), body: JSON.stringify({ expected_revision: revision, item_id: itemId }),
+    });
+  },
+
+  stopNodeExecution(id: string, sessionId: string | null = cardStateSession(id) ?? null): Promise<import("../cards/NodeExecution").ExecutionSnapshot> {
+    return request(`/nodes/${encodeURIComponent(id)}/execution/stop`, { method: "POST", headers: stateSessionHeaders(sessionId) });
   },
 
   async restoreNode(node: CardCreateInput): Promise<WorldCard> {
@@ -453,6 +486,7 @@ export const worldApi = {
         expanded: node.expanded,
         status: node.status,
         config: node.config,
+        state_scope: node.state_scope_override,
         content: node.content,
         data_base64: node.data_base64,
         media_type: node.media_type,
@@ -609,8 +643,8 @@ export const worldApi = {
     });
   },
 
-  async transformDocument(id: string, operation: string, body: Record<string, unknown>): Promise<Record<string, unknown>> {
-    return request(`/nodes/${encodeURIComponent(id)}/transformations/${encodeURIComponent(operation)}`, { method: "POST", body: JSON.stringify(body) });
+  async transformDocument(id: string, operation: string, body: Record<string, unknown>, sessionId: string | null = cardStateSession(id) ?? null): Promise<Record<string, unknown>> {
+    return request(`/nodes/${encodeURIComponent(id)}/transformations/${encodeURIComponent(operation)}`, { method: "POST", headers: stateSessionHeaders(sessionId), body: JSON.stringify(body) });
   },
   async appointMinister(id: string, expected_revision: number, source?: WorldCard): Promise<WorldCard> {
     return normalizeCard(await request(`/ministers/${encodeURIComponent(id)}/appoint`, { method: 'POST',
@@ -683,6 +717,16 @@ export const worldApi = {
       `/conversations/${encodeURIComponent(conversationId)}/sessions/${encodeURIComponent(sessionId)}/participants/${encodeURIComponent(agentId)}`,
       { method: "DELETE" },
     );
+  },
+
+  renameConversationGroup(conversationId: string, groupId: string, title: string): Promise<ConversationSession[]> {
+    return request(`/conversations/${encodeURIComponent(conversationId)}/groups/${encodeURIComponent(groupId)}`, {
+      method: "PATCH", body: JSON.stringify({ title }),
+    });
+  },
+
+  deleteConversationGroup(conversationId: string, groupId: string): Promise<void> {
+    return request(`/conversations/${encodeURIComponent(conversationId)}/groups/${encodeURIComponent(groupId)}`, { method: "DELETE" });
   },
 
   deleteConversationSession(conversationId: string, sessionId: string): Promise<void> {
@@ -803,6 +847,8 @@ export const worldApi = {
 export interface SandboxSettings {
   workspace_root: string | null;
   runtime: string;
+  environment_variables?: Record<string, string>;
+  backup_paths?: string[];
 }
 
 export function runtimeWebSocketUrl(): string {

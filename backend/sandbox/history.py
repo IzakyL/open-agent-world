@@ -28,7 +28,7 @@ def read_key(services, history_key, sandbox_id):
 
 def recent_summaries(services, sandbox_id):
     """The Agent view uses the same receipts as the UI, with smaller output tails."""
-    fields = ("id", "caller", "run_id", "argv", "started_at", "state", "exit_code", "timed_out", "cancelled", "termination_reason",
+    fields = ("id", "operation_kind", "caller", "run_id", "argv", "started_at", "state", "exit_code", "timed_out", "cancelled", "termination_reason",
               "cancellation_reason", "error", "duration_seconds")
     return [
         {key: entry[key] for key in fields if key in entry}
@@ -41,8 +41,11 @@ def save(services, sandbox_id, item):
     history_key = item.get('history_key') or key(services, sandbox_id)
     items = [entry for entry in read_key(services, history_key, sandbox_id) if entry["id"] != item["id"]]
     items.append(item)
-    # Unresolved cleanup must not age out of the bounded command history.
-    kept = [entry for entry in items[:-20] if entry.get('cleanup') in {'pending', 'failed', 'uncertain'}] + items[-20:]
+    # Live work, uncollected operation results and unresolved cleanup must not
+    # age out while an Agent still holds a handle. Collected results are bounded.
+    kept = [entry for entry in items[:-20] if entry['state'] == 'running'
+            or (entry.get('operation_kind') and not entry.get('result_observed'))
+            or entry.get('cleanup') in {'pending', 'failed', 'uncertain'}] + items[-20:]
     with services.database.transaction(immediate=True) as connection:
         connection.execute("INSERT INTO application_settings (key, value_json) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value_json = excluded.value_json",
             (history_key, json.dumps(kept)))

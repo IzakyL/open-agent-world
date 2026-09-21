@@ -9,6 +9,7 @@ from backend.api.dependencies import get_services
 from backend.api.desktop import router as desktop_router
 from backend.api.legions import router as legions_router
 from backend.api.node_documents import router as node_documents_router
+from backend.api.node_resources import router as node_resources_router
 from backend.api.legion_groups import router as legion_groups_router
 from backend.api.resources import router as resources_router
 from backend.api.runtime import router as runtime_router
@@ -20,6 +21,7 @@ from backend.api.execution_credentials import router as execution_credentials_ro
 from backend.api.artifacts import router as artifacts_router
 from backend.api.library_translation import router as library_translation_router
 from backend.api.card_library import router as card_library_router
+from backend.api.card_state import router as card_state_router
 from backend.api.file_preview import router as file_preview_router
 from backend.plugins import PluginCatalog
 from backend.services import ApplicationServices
@@ -49,6 +51,8 @@ api_router.include_router(execution_credentials_router)
 api_router.include_router(plugin_assets_router)
 api_router.include_router(summoning_router)
 api_router.include_router(node_documents_router)
+api_router.include_router(card_state_router)
+api_router.include_router(node_resources_router)
 api_router.include_router(legions_router)
 api_router.include_router(legion_groups_router)
 api_router.include_router(resources_router)

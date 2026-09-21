@@ -2,7 +2,8 @@
 from datetime import UTC, datetime
 
 from backend.errors import NotFoundError
-from backend.legions.models import LegionBlueprint, LegionRecord, LegionTemplateEdge, LegionTemplateNode
+from backend.legions.models import LegionBlueprint, LegionRecord, LegionTemplateDependency, LegionTemplateEdge, LegionTemplateNode
+from backend.plugins.presets import LegionPresetDefinition
 from backend.plugins.registry import PluginRegistry
 
 
@@ -14,6 +15,9 @@ PRESETS = {
 
 
 def preset_record(preset_id: str, registry: PluginRegistry) -> LegionRecord:
+    for preset in registry.legion_presets():
+        if preset.id == preset_id:
+            return plugin_preset_record(preset, registry)
     if preset_id not in PRESETS:
         raise NotFoundError(f"blueprint {preset_id!r} does not exist")
     name, description = PRESETS[preset_id]
@@ -76,3 +80,49 @@ def preset_record(preset_id: str, registry: PluginRegistry) -> LegionRecord:
                                           "height": max(n.position.y + n.size.height for n in nodes)},
                                   nodes=nodes, edges=edges),
     )
+
+
+def plugin_preset_record(preset: LegionPresetDefinition, registry: PluginRegistry) -> LegionRecord:
+    nodes = []
+    for item in preset.nodes:
+        definition = registry.node_type(item.type)
+        if not definition.templateable:
+            raise ValueError(f"Preset node type {item.type!r} must be templateable")
+        handler = definition.template_handler
+        config = registry.validate_config(item.type, item.config)
+        if item.presentation not in definition.resolved_presentation().states:
+            raise ValueError(f"Unsupported preset presentation for {item.type!r}")
+        dependencies = []
+        if handler:
+            handler.validate_payload(item.payload, handler.payload_version)
+            dependencies = [LegionTemplateDependency(kind=dep.kind, id=dep.id,
+                plugin_id=registry.owner_id(dep.kind, dep.id)) for dep in handler.dependencies(config)]
+        elif item.payload:
+            raise ValueError("Preset payload requires a template handler")
+        if item.initial_document is not None:
+            if definition.document is None:
+                raise ValueError("Preset initial document requires a document node")
+            definition.document.model.model_validate(item.initial_document)
+        nodes.append(LegionTemplateNode(
+            key=item.key, type=item.type, parent_key=item.parent_key,
+            owner_key=item.owner_key, equipment_relationship=item.equipment_relationship,
+            plugin_id=registry.node_type_owner_id(item.type), name=item.name,
+            position={"x": item.x, "y": item.y},
+            size={"width": definition.default_size[0], "height": definition.default_size[1]},
+            expanded=False, status=definition.template_status or definition.default_status,
+            config=config, initial_document=item.initial_document,
+            payload_version=handler.payload_version if handler else None,
+            payload=item.payload if handler else None, dependencies=dependencies,
+            presentation={"level": item.presentation,
+                          "base_level": "node"},
+        ))
+    edges = [LegionTemplateEdge(key=f"edge-{index}", source=item.source, target=item.target,
+                relationship=item.relationship, direction=item.direction,
+                plugin_id=registry.relationship_owner_id(item.relationship))
+             for index, item in enumerate(preset.edges)]
+    now = datetime(2026, 9, 18, tzinfo=UTC)
+    return LegionRecord(id=preset.id, name=preset.name, description=preset.description,
+        revision=preset.revision, created_at=now, updated_at=now,
+        blueprint=LegionBlueprint(nodes=nodes, edges=edges, bounds={
+            "width": max(n.position.x + n.size.width for n in nodes),
+            "height": max(n.position.y + n.size.height for n in nodes)}))

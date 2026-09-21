@@ -1,6 +1,7 @@
 """Task planning and dependency rules; no host-private services or UI code."""
 from __future__ import annotations
-from open_agent_world.plugin_api import PackDefinition
+from open_agent_world.plugin_api import PackDefinition, ScopedStateSpec
+from open_agent_world.task_graph import validate_task_graph
 from typing import Literal
 import json
 from pydantic import BaseModel, ConfigDict, Field, model_validator
@@ -44,27 +45,7 @@ class Board(BaseModel):
 
     @model_validator(mode="after")
     def validate_graph(self):
-        tasks = {t.id: t for t in self.tasks}
-        if len(tasks) != len(self.tasks):
-            raise ValueError("Task IDs must be unique")
-        visiting, visited = set(), set()
-        def visit(key):
-            if key in visiting:
-                raise ValueError("Dependencies must not form a cycle")
-            if key in visited:
-                return
-            visiting.add(key)
-            task = tasks[key]
-            for dependency in task.depends_on:
-                if dependency not in tasks:
-                    raise ValueError(f"Task {task.title!r} refers to missing dependency {dependency!r}")
-                visit(dependency)
-            if task.status in {"doing", "done"} and any(tasks[d].status != "done" for d in task.depends_on):
-                raise ValueError(f"Finish dependencies before starting or completing {task.title!r}. Reopen dependent tasks before reopening their prerequisites.")
-            visiting.remove(key)
-            visited.add(key)
-        for key in tasks:
-            visit(key)
+        validate_task_graph(self.tasks)
         return self
 
 class BoardConfig(BaseModel):
@@ -166,7 +147,7 @@ def execution_policy(value):
     return ExecutionPolicy(max_parallel=settings.max_parallel, pause_on_failure=settings.pause_on_failure)
 
 class TaskBoardPlugin:
-    descriptor = PluginDescriptor(id=PREFIX, version="0.2.0", plugin_api_version="1.14", name="Task Board", description="Shared planning with optional Agent execution.")
+    descriptor = PluginDescriptor(id=PREFIX, version="0.2.1", plugin_api_version="1.23", name="Task Board", description="Shared planning with optional Agent execution.")
 
     def register(self, registration):
         actions = {"read": (read, Empty), "upsert": (upsert, Upsert), "progress": (progress, Progress), "remove": (remove, Remove)}
@@ -217,6 +198,7 @@ class TaskBoardPlugin:
         registration.register_node_type(NodeTypeDefinition(
             id=PREFIX, label="Task Board", description="Plan tasks and dependencies; share only the permissions each Agent needs.", icon="workflow", color="#6c827d",
             deck_id="fields", deck_label="Fields", deck_icon="workflow", default_name="Task Board", default_size=(360, 235), default_status="available", statuses=frozenset({"available"}),
+            state=ScopedStateSpec(supportedScopes=("shared", "session"), defaultScope="session"),
             config_model=BoardConfig, traits=frozenset({"oaw.task-board", "ui.task-board.v1"}),
             surfaces={"preview":True,"inspector":True,"workspace":True}, templateable=True,
             document=NodeDocumentDefinition(model=Board, actions=documents, summarize=summarize, capture=capture, remap_references=remap_references),

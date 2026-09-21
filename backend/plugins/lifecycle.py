@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from pathlib import Path
 from typing import TYPE_CHECKING, Any, Mapping, Protocol, Sequence
 
 if TYPE_CHECKING:
@@ -73,6 +74,10 @@ class ManagedResourceRemoval(Protocol):
 
 
 class ManagedResourceLifecycle(Protocol):
+    def node_storage_path(self, node_id: str) -> Path:
+        """Reserved directory for this node's native files; does not create it."""
+        ...
+
     def create_text(self, node_id: str, filename: str, content: str = "") -> None: ...
 
     def create_image(

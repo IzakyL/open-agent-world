@@ -231,7 +231,9 @@ class CardLibraryStore:
             if entry in previous:
                 continue  # Unavailable references can be kept or removed without losing the deck.
             if entry.kind == "legion":
-                if not db.execute("SELECT 1 FROM legions WHERE id=?", (entry.id,)).fetchone():
+                if not db.execute("SELECT 1 FROM legions WHERE id=?", (entry.id,)).fetchone() and not any(
+                    preset.id == entry.id for preset in self.registry.legion_presets()
+                ):
                     raise NotFoundError("Saved Legion no longer exists")
             elif entry.id not in state.collection or not state.collection[entry.id].unlocked or not self.card_available(state, entry.id):
                 raise GraphValidationError("Only collected, available cards can be added to a deck")

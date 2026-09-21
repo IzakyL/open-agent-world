@@ -39,7 +39,9 @@ They share `codex-workspace` under **Settings → Sandbox → Default Workspace 
 The directory is created on first run. If that setting is blank, OAW uses
 `<application data directory>/codex-workspace`. Set an existing absolute Project
 folder on a card to override this default. Changing the default location affects
-blank cards on their next run; existing files are not moved. Connected Sandbox
+blank cards on their next run; the shared workspace is copied and verified before
+the setting switches, with the original retained as a backup. Stop Agents and
+Sandboxes before migration. Connected Sandbox
 tools still use their own environments and directories.
 
 Try: “Read the connected note, inspect the project README, and describe how this

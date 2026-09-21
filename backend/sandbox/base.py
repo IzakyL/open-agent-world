@@ -31,6 +31,16 @@ class SandboxBackend(ABC):
     supports_invocation_environment: bool = False
     supports_execution_policy: bool = False
 
+    async def managed_workspace(self, sandbox_id: str) -> Path:
+        """Host path of this runtime's internal workspace, even when overridden."""
+        info = await self.get(sandbox_id)
+        if info.workspace_path is not None:
+            raise SandboxValidationError("This runtime does not support restoring its managed workspace")
+        return Path(info.workspace)
+
+    async def prepare_managed_workspace(self, sandbox_id: str) -> Path:
+        return await self.managed_workspace(sandbox_id)
+
     @abstractmethod
     async def create(self, sandbox_id: str) -> SandboxInfo:
         """Create managed storage and its security identity."""

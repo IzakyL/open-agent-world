@@ -26,21 +26,62 @@ Agents with an execute relationship receive `install_python_packages`. For examp
 {"sandbox": "my_sandbox", "requirements": ["numpy>=2", "pillow"]}
 ```
 
-After a missing import, call this tool and retry the Python command. Skills do not
+After a missing import, call this tool, collect its final result, and retry the Python command. Skills do not
 need complete dependency declarations. The manual API is
 `POST /api/sandboxes/{id}/python/packages` with `{"requirements": [...]}`.
 Start the sandbox once to select its execution platform before installing.
 
 The manager serializes mutations with an OS file lock, including across backend
-processes. A lock wait exceeding 60 seconds reports a busy error; retry the call.
+processes. A lock wait exceeding 60 seconds returns structured `resource_busy`
+feedback to the Agent, without failing its reasoning turn. Inspect the installation
+and wait before retrying the rejected command.
 Package installs have a 30-minute wall-clock limit; interpreter setup has a
 10-minute limit. The WSL transport budget covers lock acquisition, setup, installer
 bootstrap and package installation. uv retains its connect/read timeouts for
 stalled network I/O. Progress is written live to `runtime/python/install-output.log`;
 `runtime/python/install.log` retains outcomes, elapsed time and output tails,
 including failures and timeouts. Cancellation drains active
-mutations before releasing ownership. Runtime execution itself does not wait for
-an installation once the venv has been initialized.
+mutations before releasing ownership. Commands check Python preparation before
+launch; while installation invalidates launcher readiness, even shell commands
+can encounter this preparation barrier. Host waiting does not use that barrier.
+
+## Agent execution and waiting
+
+`execute_command`, `run_skill_script`, and `install_python_packages` share the
+Sandbox operation journal. Their `wait_seconds` observation budget defaults to
+1 second (0–60). A quick operation returns its result; an unfinished operation
+returns `status: "running"`, `operation_id`, and `command_id`. This is acceptance,
+not success. Do not submit the same command again while it is running.
+
+```json
+{"sandbox": "my_sandbox", "operation_id": "returned-id", "wait_seconds": 30}
+```
+
+Pass this to `wait_sandbox_operation`. It waits on the host, returns the final
+result or another running response, and never launches Python or a shell. The
+Agent may do independent work between waits. `wait_seconds: 0` polls immediately.
+Omitting `operation_id` performs a cancellable host timer; after it returns,
+inspect the resource again. Elapsed time alone does not establish readiness.
+
+`inspect_sandbox.active_commands` includes installations and their operation kind;
+`shared_python` reports bounded installation output and the last observed install
+state. Logs may describe an earlier operation: operation receipts, not old log
+entries, establish current liveness. Pending installation waits also return this
+progress observation. Final results use the existing command journal. Uncollected
+operation results remain available even after newer commands finish; collected
+results follow the journal's normal retention limit.
+
+Cancelling a wait does not cancel execution. Use `cancel_command` with the returned
+ID to cancel a particular operation, subject to the existing ownership checks.
+Stopping an Agent Run also cleans up its owned pending operations. Package mutation
+must drain before releasing its lock; cleanup can therefore remain pending. A
+backend restart marks unfinished work interrupted and does not replay side effects.
+
+Resource contention and environment preparation failures are operational tool
+results. Nonzero exits, process timeouts, stdout and stderr remain command results.
+Security isolation failures, unconfirmed cleanup, unexpected implementation faults,
+and explicit cancellation retain their distinct control semantics. Neither an
+error result nor a timed wait is treated as task success.
 
 `uv` creates the environment when available. Otherwise the standard-library venv
 module creates the initial environment and bootstraps a standalone `uv` into

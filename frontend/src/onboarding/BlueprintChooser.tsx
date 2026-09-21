@@ -13,13 +13,14 @@ export function BlueprintChooser() {
   const [presets, setPresets] = useState<LegionSummary[]>([]);
   const [error, setError] = useState('');
   const [retry, setRetry] = useState(0);
-  const saved = useWorldStore(s => s.legions);
+  const legions = useWorldStore(s => s.legions);
+  const saved = legions.filter(item => !item.preset);
   const offline = useWorldStore(s => s.syncState === 'offline');
   const busy = useTutorialStore(s => s.busy);
   useEffect(() => {
     let active = true;
     setError('');
-    worldApi.getBlueprintPresets().then(items => { if (active) setPresets(items); })
+    worldApi.getBlueprintPresets().then(items => { if (active) setPresets(items.filter(item => item.starter)); })
       .catch(e => { if (active) setError(apiErrorMessage(e)); });
     return () => { active = false; };
   }, [retry]);

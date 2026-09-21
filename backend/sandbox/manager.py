@@ -114,6 +114,44 @@ class SandboxManager(SandboxBackend):
             raise SandboxValidationError(f"workspace directory is not accessible: {exc}") from exc
         return str(resolved)
 
+    async def managed_workspace(self, sandbox_id: str) -> Path:
+        binding = self._binding(sandbox_id)
+        if binding.provisioned:
+            return await self._backend(binding.resolved_runtime or "").managed_workspace(sandbox_id)
+        # No files exist before provisioning; its selected runtime owns the eventual path.
+        return self.root / "sandboxes" / sandbox_id / "workspace"
+
+    async def prepare_managed_workspace(self, sandbox_id: str) -> Path:
+        """Provision stopped storage before restoring files to an internal workspace."""
+        binding = self._binding(sandbox_id)
+        async with binding.lock:
+            if not binding.provisioned:
+                runtime = await self.registry.select(self.preferred if binding.runtime == "auto" else binding.runtime)
+                if not runtime.available:
+                    raise SandboxSecurityError(runtime.reason or "sandbox runtime unavailable")
+                await self._provision(binding, runtime.id)
+            return await self.managed_workspace(sandbox_id)
+
+    async def _provision(self, binding: _Binding, runtime_id: str) -> None:
+        backend = self._backend(runtime_id)
+        created = False
+        try:
+            await backend.get(binding.sandbox_id)
+        except SandboxNotFoundError:
+            await backend.create(binding.sandbox_id)
+            created = True
+        try:
+            await backend.configure(binding.sandbox_id, workspace_path=binding.workspace_path, workspace_access=binding.workspace_access)
+            binding.resolved_runtime = runtime_id
+            binding.provisioned = True
+            self._write(binding)
+        except BaseException:
+            binding.resolved_runtime = None
+            binding.provisioned = False
+            if created:
+                await backend.destroy(binding.sandbox_id)
+            raise
+
     async def configure_options(self, sandbox_id: str, config: Mapping[str, Any]) -> None:
         binding = self._binding(sandbox_id)
         runtime = str(config.get("runtime", "auto"))
@@ -208,25 +246,9 @@ class SandboxManager(SandboxBackend):
                     raise SandboxSecurityError(runtime.network_reason or "Networking is unavailable for the pinned runtime")
                 binding.network_error = None
             backend = self._backend(runtime.id)
-            created = False
             if not binding.provisioned:
-                try:
-                    await backend.get(sandbox_id)
-                except SandboxNotFoundError:
-                    await backend.create(sandbox_id)
-                    created = True
-                try:
-                    await backend.configure(sandbox_id, workspace_path=binding.workspace_path, workspace_access=binding.workspace_access)
-                    # Pin before execution. A failed start can be retried with the same data.
-                    binding.resolved_runtime = runtime.id
-                    binding.provisioned = True
-                    self._write(binding)
-                except BaseException:
-                    binding.resolved_runtime = None
-                    binding.provisioned = False
-                    if created:
-                        await backend.destroy(sandbox_id)
-                    raise
+                # Pin before execution. A failed start can be retried with the same data.
+                await self._provision(binding, runtime.id)
             for attachment in binding.attachments.values():
                 await backend.attach_resource(sandbox_id, attachment.resource_id, attachment.source,
                                               attachment.relative_path, attachment.access)
@@ -294,6 +316,16 @@ class SandboxManager(SandboxBackend):
         if not binding.provisioned:
             raise SandboxStateError("Start the Sandbox before installing packages")
         return await self.prepare_python(binding.resolved_runtime, requirements)
+
+    async def python_status(self, sandbox_id):
+        binding = self._binding(sandbox_id)
+        if not binding.provisioned:
+            return None
+        backend = self._backend(binding.resolved_runtime)
+        if hasattr(backend, "python_status"):
+            return await backend.python_status()
+        runtime = getattr(backend, "python_runtime", None)
+        return await asyncio.to_thread(runtime.snapshot) if runtime is not None else None
 
     async def reset_cache(self, sandbox_id):
         binding = self._binding(sandbox_id)

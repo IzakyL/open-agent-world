@@ -7,11 +7,13 @@ from open_agent_world.plugin_api import (
 )
 from open_agent_world.skill_packages import SkillPackage, register_skill_package, register_skill_node, SkillContainerDefinition, ToolboxConfig
 from . import knowledge as k
+from . import tasks, preset
 
 READ = "matcreator.kdg.read"
 
 class MatCreatorPlugin:
-    descriptor = PluginDescriptor(id="matcreator", version="0.1.0", plugin_api_version="1.14", name="MatCreator")
+    descriptor = PluginDescriptor(id="matcreator", version="0.3.0", plugin_api_version="1.23", name="MatCreator",
+                                  requires_plugins=("science.structure-viewer", "oaw.barracks"))
 
     def register(self, registration):
         for name in ("core", "simulation", "ai", "research"):
@@ -83,8 +85,10 @@ class MatCreatorPlugin:
             description="Explicitly authorize editing local graph knowledge and reviewing memories; source snapshots stay immutable.",
             source_traits=frozenset({"core.agent"}), target_types=frozenset({"matcreator.kdg"}),
             capabilities=tuple(CapabilityGrantDefinition(kind=kind) for kind in [READ, *["matcreator.kdg." + key for key in [*reads, *writes]]])))
+        tasks.register(registration)
+        registration.register_legion_preset(preset.definition())
         registration.register_pack(PackDefinition(id='matcreator.default', name='MatCreator',
-            description='Scientific skills and a Know-Do Graph.', cards=tuple(registration.nodes)))
+            description='Scientific skills, research tasks and a Know-Do Graph.', cards=tuple(registration.nodes)))
 
 def create_plugin():
     return MatCreatorPlugin()

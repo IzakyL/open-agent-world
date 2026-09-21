@@ -2,6 +2,10 @@
 
 [Documentation](README.md)
 
+This is the detailed plugin contract reference. New authors should follow
+[Build a plugin](developers/index.md), starting with a small working card.
+For everyday use, see [Plugins and packs](user-guide/plugins.md).
+
 ## Using plugins
 
 Plugins add cards, relationships, tools, and runtime integrations. The backend discovers packages under the repository's `plugins/` directory and installed Python entry points at startup. Install only reviewed code: plugins execute inside the trusted backend process.
@@ -24,6 +28,24 @@ To disable a plugin, first remove its world objects, relationships, dependent Ag
 Plugin-specific documentation can remain in its own package or repository. These links are a directory, not a requirement to copy all plugin content into OAW's docs. In-app plugin documentation and tutorial delivery are not implemented; no new manifest or framework is required here.
 
 ## Developing a plugin
+
+Plugin API 1.23 adds declarative `state` policies, bound `ctx.state` / `host.state`,
+and host-owned shared/session namespaces. Legacy plugins remain unchanged. See
+[Card state lifecycle](card-state.md) for declarations, migration, defaults and
+stateless capabilities.
+
+Plugin API 1.22 adds Agent-directed delegation to `NodeExecutionDefinition` with
+`summoning=True`. Plugins reuse `WorkItem`/`WorkOutcome` for task readiness and
+acceptance; the host owns the attempt ledger, Run binding and Summoning admission.
+`CapabilityContext.node_delegation_action` supports `delegate`, `wait`, `collect`
+and `stop`. Dispatch requires both the work-source control capability and a live
+Summoning grant to the selected Barracks. `DelegationRequest`, `DelegationWait`
+and `DelegationStop` define bounded inputs. `WorkItem.metadata` provides display
+references. Preset nodes can use `owner_key` and `equipment_relationship` for
+private equipment. Frontend views use `host.delegationAction` for collection and
+targeted Stop; see the MatCreator plugin for a complete example.
+
+Plugin API 1.21 adds opt-in deployment of existing plugin Workspace views and sections through `NodeDeploymentDefinition` and `DeploymentSurface`. See [plugin deployment](plugin-deployment.md) for scoped fields/actions, frontend integration and a runnable example.
 
 Start with the installable [Greeter example](../examples/plugins/greeter/README.md), then consult [package discovery](#package-structure-and-discovery), [the public API](#public-plugin-api), and the contracts below.
 
@@ -158,6 +180,54 @@ uv run --project backend --with-editable ./path/to/my-plugin `
 
 The repository's [Greeter plugin](../examples/plugins/greeter/README.md) is the
 canonical compact example.
+
+## Native file resources
+
+Plugin API 1.20 adds `PluginDescriptor.requires_plugins`, a tuple of plugin IDs.
+The loader orders local and installed plugins by these dependencies before
+registration, and reports missing dependencies or cycles before installing them.
+Direct registry installation also requires dependencies to be installed first.
+Declare these when a preset references another plugin's node types, for example
+MatCreator's `requires_plugins=("science.structure-viewer",)`.
+
+Plugin API 1.19 adds host observation budgets to Sandbox execution and package
+installation, plus `CapabilityContext.wait_sandbox_operation(...)`. Long operations
+return a running receipt; plugins can await that ID without relaunching work.
+Existing direct host calls remain synchronous when the observation budget is
+omitted; Agent-facing tools opt into a one-second default observation budget.
+See [Shared Python and operation waiting](shared-python-runtime.md#agent-execution-and-waiting).
+
+Plugin API 1.18 adds `registration.register_legion_preset(LegionPresetDefinition(...))`.
+Import `LegionPresetDefinition`, `PresetNode` and `PresetEdge` from
+`open_agent_world.plugin_api`. Preset IDs must use the plugin namespace. Declare
+portable node keys, types, configuration, positions, presentation levels,
+optional initial documents/template payloads and internal relationships. Include
+a `legion` node with `parent_key=None`; member references and workspace section
+owners use template keys. The host resolves contribution owners, validates the
+formation before registration commits, and deploys through the existing Legion
+transaction. A disabled owner or referenced node/relationship plugin hides its
+presets. The bottom Legions deck displays plugin presets, supports click/drag
+deployment and copying references into custom decks. Presets cannot be deleted
+from the Legions deck; deployed copies can be edited and saved as ordinary
+Legions. See `plugins/matcreator/oaw_matcreator/preset.py` for an example.
+
+Plugin API 1.17 adds `NodeResourceAction` for native files that cannot be
+represented as JSON node documents. Register a `resource_actions` mapping on
+`NodeTypeDefinition`; each synchronous handler receives a `NodeResourceContext`
+with a host-selected storage directory, cancellation event, actor ID and
+desktop-only confirmation flag. Handlers run off the event loop while the host
+holds the normal node mutation lock, and must observe cancellation and impose
+finite execution limits. Agents invoke them through
+`CapabilityContext.node_resource_action`; their live capability kind must match
+the registered action. Frontend views call `host.resourceAction` through the
+authenticated control-plane API. Lifecycle handlers obtain the same directory
+from `context.resources.node_storage_path(node.id)` and own reversible creation
+and journaled post-delete cleanup. Do not create files during registration.
+
+For native resources without a canvas snapshot, set `deletion_warning` on the
+node definition. The UI confirms permanent deletion, clears undo history after
+success, and rejects copy or undo operations that would silently lose the native
+data. See [the SQLite plugin](../plugins/sqlite/README.md) for the complete example.
 
 ## Local frontend extensions and public assets
 

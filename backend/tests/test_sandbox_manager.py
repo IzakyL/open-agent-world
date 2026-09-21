@@ -49,6 +49,9 @@ class RecordingBackend(SandboxBackend):
         self.records[sandbox_id] = replace(info, workspace_path=workspace_path,
                                           workspace_access=workspace_access,
                                           workspace=Path(workspace_path) if workspace_path else self.root / sandbox_id)
+
+    async def managed_workspace(self, sandbox_id):
+        return self.root / sandbox_id
         return self.records[sandbox_id]
 
     async def start(self, sandbox_id):
@@ -341,7 +344,7 @@ def test_api_saves_real_folder_uses_runtime_shell_and_preserves_settings_on_fail
         services.close()
 
 
-def test_global_sandbox_defaults_persist_and_only_apply_to_new_cards(tmp_path):
+def test_global_sandbox_location_migrates_existing_cards_and_persists(tmp_path):
     manager, backend = make_manager(tmp_path)
     settings = Settings.for_data_root(manager.root)
     root, other, explicit = (tmp_path / name for name in ("workspaces", "other", "explicit"))
@@ -349,7 +352,7 @@ def test_global_sandbox_defaults_persist_and_only_apply_to_new_cards(tmp_path):
         folder.mkdir()
     services = create_services(settings, sandbox_backend=manager)
     with TestClient(create_app(settings, services=services)) as client:
-        assert client.get("/api/settings/sandbox").json() == {"workspace_root": None, "runtime": "auto"}
+        assert client.get("/api/settings/sandbox").json() == {"workspace_root": None, "runtime": "auto", "backup_paths": [], "environment_variables": {}}
         old = client.post("/api/nodes", json={"type": "sandbox"}).json()
         response = client.put("/api/settings/sandbox", json={"workspace_root": str(root), "runtime": "test-linux"})
         assert response.status_code == 200, response.text
@@ -359,7 +362,8 @@ def test_global_sandbox_defaults_persist_and_only_apply_to_new_cards(tmp_path):
         assert first_folder.parent == root and first_folder.is_dir()
         assert second["config"]["workspace_path"] != str(first_folder)
         assert first["config"]["runtime"] == "test-linux"
-        assert services.world.get_card(old["id"]).config["workspace_path"] is None
+        assert Path(services.world.get_card(old["id"]).config["workspace_path"]).parent == root
+        assert services.world.get_card(old["id"]).config["runtime"] == "auto"
         chosen = client.post("/api/nodes", json={"type": "sandbox", "config": {
             "workspace_path": str(explicit), "runtime": "another",
         }}).json()
@@ -368,9 +372,14 @@ def test_global_sandbox_defaults_persist_and_only_apply_to_new_cards(tmp_path):
         assert client.post(f"/api/sandboxes/{first['id']}/start").status_code == 200
         assert backend.records[first["id"]].workspace == first_folder
         assert client.post(f"/api/sandboxes/{first['id']}/stop").status_code == 200
-        assert client.put("/api/settings/sandbox", json={"workspace_root": str(other)}).status_code == 200
-        assert services.world.get_card(first["id"]).config["workspace_path"] == str(first_folder)
         (first_folder / "work.txt").write_text("keep me")
+        (explicit / "project.txt").write_text("explicit project")
+        assert client.put("/api/settings/sandbox", json={"workspace_root": str(other)}).status_code == 200
+        migrated = Path(services.world.get_card(first["id"]).config["workspace_path"])
+        assert migrated.parent == other
+        assert (migrated / "work.txt").read_text() == "keep me"
+        assert (other / chosen["id"] / "project.txt").read_text() == "explicit project"
+        assert (explicit / "project.txt").read_text() == "explicit project"
         assert client.delete(f"/api/nodes/{first['id']}").status_code == 200
         assert (first_folder / "work.txt").read_text() == "keep me"
     services.close()
@@ -380,7 +389,10 @@ def test_global_sandbox_defaults_persist_and_only_apply_to_new_cards(tmp_path):
         assert client.get("/api/settings/sandbox").json()["workspace_root"] == str(other)
         new = client.post("/api/nodes", json={"type": "sandbox"}).json()
         assert Path(new["config"]["workspace_path"]).parent == other
-        assert client.put("/api/settings/sandbox", json={"workspace_root": None}).status_code == 200
+        # The deliberately unavailable explicit runtime must not prevent changing other defaults.
+        assert client.delete(f"/api/nodes/{chosen['id']}").status_code == 200
+        response = client.put("/api/settings/sandbox", json={"workspace_root": None})
+        assert response.status_code == 200, response.text
         reset = client.post("/api/nodes", json={"type": "sandbox"}).json()
         assert reset["config"]["workspace_path"] is None
     services.close()
@@ -395,7 +407,7 @@ def test_invalid_sandbox_defaults_do_not_replace_saved_settings(tmp_path):
             response = client.put("/api/settings/sandbox", json={"workspace_root": root})
             assert response.status_code == 422, response.text
         assert client.put("/api/settings/sandbox", json={"runtime": "unknown"}).status_code == 422
-        assert client.get("/api/settings/sandbox").json() == {"workspace_root": None, "runtime": "auto"}
+        assert client.get("/api/settings/sandbox").json() == {"workspace_root": None, "runtime": "auto", "backup_paths": [], "environment_variables": {}}
     services.close()
 
 

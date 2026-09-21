@@ -31,6 +31,10 @@ including restoration of saved shared variables. Library presets are unaffected.
 
 ## Workspace mode
 
+A saved workspace can be published as a locked application with **Publish application**.
+See [deployment](deployment.md) for the operator surface contract, independent data
+copies, access passwords, server hosting, updates and rollback.
+
 Unplaced member cards appear as compact icons in the bottom bar. Click an icon to
 open its workspace or inspector in a temporary panel for viewing and configuration;
 click again, use the close button, or press Escape to collapse it. Switching or
@@ -87,8 +91,10 @@ usable as whole-card panes. See [plugin section API](plugins.md#composable-works
 The window is a presentation of existing members: canvas positions, Glue, team
 settings, connections and runtime ownership stay independent. Cards omitted from
 the window continue working. Missing or detached members disappear from the
-window and adjacent regions expand. Nested containers are not dockable in this
-first version. The window supports splits and tab groups; floating subwindows
+window and adjacent regions expand. Containers without a workspace surface are
+not dockable. Plugin containers with a workspace surface (such as scientific
+Toolsets and knowledge graphs) can be docked; nested Legions remain excluded.
+The window supports splits and tab groups; floating subwindows
 are not implemented.
 
 Layouts live in `config.workspace_layout`, with `version: 2`, a nullable `root`,
@@ -117,6 +123,13 @@ selects its first remaining view; empty regions disappear and single-tab groups
 can collapse to a pane. Templates without a layout open with an empty workspace.
 The bundled Coding workspace preset supplies a Conversation/Sandbox split when
 deployed with a Legion wrapper; unwrapped deployment has no Legion window.
+
+Plugins can contribute their own presets through Plugin API 1.18. They appear in
+the bottom **Legions** deck alongside saved formations and deploy with their
+workspace layout. The MatCreator research preset combines Sessions, Files,
+Conversation, research tasks, preview, terminal and knowledge tabs. Presets are
+owned by the plugin; edit a deployed copy and **Save to library** to keep a custom
+version. See [MatCreator usage](../plugins/matcreator/README.md).
 
 ## Runtime settings and state
 
@@ -192,7 +205,7 @@ GET /api/legion-groups/{legion_id}/state
 PUT /api/legion-groups/{legion_id}/state      {value, expected_revision}
 GET /api/legions/presets
 POST /api/legions/presets/{id}/instances     {position, unwrap: true}
-POST /api/legions                           {name, node_ids, presentation: {node_id: {level, base_level, workspace_size}}}
+POST /api/legions                           {name, node_ids, presentation: {node_id: {level, base_level, surface_sizes}}}
 POST /api/legions/{id}/instances            {position, as_group | unwrap}
 ```
 

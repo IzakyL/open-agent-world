@@ -26,6 +26,7 @@ from backend.agents import (
     GoogleAdkAgentRuntime,
     RuntimeProvider,
 )
+from backend.agents.context import ContextStore
 from backend.capabilities.broker import CapabilityBroker
 from backend.card_library import CardLibraryStore
 from backend.visual_observation import VisualObservers
@@ -415,6 +416,9 @@ class _PreparedResourceRemoval:
 class _LifecycleResources:
     resources: ManagedResourceStore
 
+    def node_storage_path(self, node_id: str) -> Path:
+        return self.resources.node_storage_path(node_id)
+
     def create_text(self, node_id: str, filename: str, content: str = "") -> None:
         self.resources.create_text(node_id, filename, content)
 
@@ -440,6 +444,9 @@ class _LifecycleResources:
 class _RecoveryLifecycleResources:
     resources: ManagedResourceStore
     record: ResourceRecord | None
+
+    def node_storage_path(self, node_id: str) -> Path:
+        return self.resources.node_storage_path(node_id)
 
     @staticmethod
     def _invalid() -> None:
@@ -533,6 +540,7 @@ class ApplicationServices:
     plugins: PluginRegistry
     conversations: ConversationStore
     state: StateStore
+    contexts: ContextStore
     legions: LegionStore
     llm_settings: LlmSettingsStore
     card_library: CardLibraryStore
@@ -546,7 +554,9 @@ class ApplicationServices:
     _execution_secrets: ContextVar[tuple[str, ...]] = field(
         default_factory=lambda: ContextVar("execution_secrets", default=()), init=False, repr=False)
     run_manager: RunManager | None = None
+    card_state: object = None
     node_execution: NodeExecutionService | None = None
+    sandbox_operations: Any = None
     summoning: SummoningService | None = None
     sandbox_backend: SandboxBackend | None = None
     plugin_bootstrap: Any = None
@@ -683,6 +693,7 @@ class ApplicationServices:
         if self.plugin_bootstrap is not None:
             await self.plugin_bootstrap.shutdown()
         await self.node_execution.shutdown()
+        await self.sandbox_operations.shutdown()
         context = self._node_lifecycle_context()
         for card in self.world.list_cards():
             lifecycle = self.plugins.node_type(card.type).lifecycle
@@ -797,7 +808,7 @@ class ApplicationServices:
                     except OSError as exc:
                         raise ResourceValidationError(f"Cannot create Sandbox workspace: {exc}") from exc
                 card = self.world.create_card(request, card_id=preview.id)
-                if definition.document is not None and definition.document.initial_value is not None:
+                if definition.document is not None and definition.document.initial_value is not None and definition.state is None:
                     from backend.node_documents import write_document
                     initial = dict(definition.document.initial_value)
                     if _skip_collection_seed and definition.container and definition.container.document_field:
@@ -891,6 +902,8 @@ class ApplicationServices:
 
     async def update_card(self, card_id: str, request: CardPatch) -> Card:
         async with self._node_mutation():
+            if "state_scope" in request.model_fields_set:
+                self.node_execution.assert_editable(card_id, all_states=True)
             if request.config is not None:
                 self.resources.artifacts.assert_source_idle(card_id)
             current = self.world.get_card(card_id)
@@ -955,6 +968,8 @@ class ApplicationServices:
             previous_cards = {item.node_id: self.world.get_card(item.node_id) for item in updates}
             prepared: list[tuple[CardBatchPatch, NodeLifecycleTransaction]] = []
             for item in updates:
+                if "state_scope" in item.patch.model_fields_set:
+                    self.node_execution.assert_editable(item.node_id, all_states=True)
                 if item.patch.config is not None:
                     self.resources.artifacts.assert_source_idle(item.node_id)
                 current = self.world.get_card(item.node_id)
@@ -1020,7 +1035,10 @@ class ApplicationServices:
             for card in cards:
                 self.resources.artifacts.assert_source_idle(card.id)
             for card in cards:
-                self.node_execution.assert_editable(card.id)
+                self.node_execution.assert_editable(card.id, all_states=True)
+                if self.plugins.has_trait(card.type, "core.conversation"):
+                    for session in self.conversations.list_sessions(card.id):
+                        self.node_execution.assert_session_idle(session.id)
             for card in cards:
                 if self.world.is_container(card) and any(m.id not in ids for m in self.world.list_members(card.id)):
                     raise GraphValidationError("Detach members before deleting their container")
@@ -1105,9 +1123,12 @@ class ApplicationServices:
                     edge,
                     affected_agents=affected[edge.id],
                 )
+            from backend.node_containers import touch_parent
+            # The complete batch is already absent. Invalidate each surviving
+            # parent's document once, regardless of how many members it lost.
+            for parent_id in dict.fromkeys(card.parent_id for card in deleted):
+                touch_parent(self, parent_id)
             for card in deleted:
-                from backend.node_containers import touch_parent
-                touch_parent(self, card.parent_id)
                 self.events.publish_event_nowait(RuntimeEvent(
                     type=EventType.CARD_DELETED,
                     node_id=card.id,
@@ -1749,6 +1770,7 @@ class ApplicationServices:
                 owner_key=node_keys.get(card.equipment.owner_id) if card.equipment else None,
                 equipment_relationship=card.equipment.relationship if card.equipment else None,
                 initial_document=definition.document.remap_references(definition.document.capture(documents[card.id]["value"]), node_keys) if definition.document else None,
+                state_scope=card.state_scope_override,
                 initial_shared_state=shared_states[card.id]["value"] if card.id in shared_states else None,
                 type=card.type,
                 plugin_id=self.plugins.node_type_owner_id(card.type),
@@ -1863,7 +1885,7 @@ class ApplicationServices:
             return self._legion_summary(self.legions.delete(legion_id))
 
     async def instantiate_legion(
-        self, legion_id: str, request: LegionInstantiate, *, record=None, bindings=()
+        self, legion_id: str, request: LegionInstantiate, *, record=None, bindings=(), _publish_graph=True
     ) -> LegionInstance:
         async with self._node_mutation():
             event_transaction = _SandboxEventTransaction()
@@ -1876,10 +1898,11 @@ class ApplicationServices:
                 raise
             event_transaction.state = "committing"
             self._sandbox_event_transaction.reset(token)
-            for node in instance.nodes:
-                self._publish_card_created_nowait(node)
-            for edge in instance.edges:
-                self._publish_edge_change_nowait(EventType.EDGE_CREATED, edge)
+            if _publish_graph:
+                for node in instance.nodes:
+                    self._publish_card_created_nowait(node)
+                for edge in instance.edges:
+                    self._publish_edge_change_nowait(EventType.EDGE_CREATED, edge)
             for event in event_transaction.state_events:
                 self.events.publish_event_nowait(event)
             index = 0
@@ -1921,6 +1944,7 @@ class ApplicationServices:
                 ), _creation_receipts=creation_receipts, _publish_event=False)
                 created_nodes.append(wrapper)
             from backend.node_containers import parent_first
+            scoped_document_seeds = []
             for node in parent_first(template_nodes, key=lambda n: n.key, parent=lambda n: n.owner_key or n.parent_key):
                 definition = self.plugins.node_type(node.type)
                 config = (definition.template_remap_config(dict(node.config), node_ids)
@@ -1931,6 +1955,7 @@ class ApplicationServices:
                         parent_id=node_ids.get(node.parent_key) if node.parent_key else (wrapper.id if wrapper and not node.owner_key else None),
                         equipment={"owner_id": node_ids[node.owner_key], "relationship": node.equipment_relationship} if node.owner_key else None,
                         type=node.type,
+                        state_scope=node.state_scope,
                         name=node.name,
                         position={
                             "x": request.position.x + node.position.x,
@@ -1947,7 +1972,9 @@ class ApplicationServices:
                     _publish_event=False,
                     _skip_collection_seed=node.initial_document is not None,
                 ))
-                if node.initial_document is not None:
+                if node.initial_document is not None and definition.state is not None:
+                    scoped_document_seeds.append(node)
+                elif node.initial_document is not None:
                     from backend.node_documents import read_document, write_document
                     document_spec = self.plugins.node_type(node.type).document
                     revision = read_document(self, node_ids[node.key])["revision"]
@@ -1956,6 +1983,14 @@ class ApplicationServices:
                     from backend.legions.runtime import LegionStateWrite, write_shared_state
                     write_shared_state(self.world, self.state, node_ids[node.key],
                                        LegionStateWrite(value=node.initial_shared_state, expected_revision=0))
+            for node in scoped_document_seeds:
+                from backend.node_documents import read_document, write_document
+                new_id = node_ids[node.key]
+                spec = self.plugins.node_type(node.type).document
+                kind = self.world.get_card(new_id).state_scope
+                identity = (kind, self.card_state.default_session(new_id) if kind == "session" else "*")
+                revision = read_document(self, new_id, state_identity=identity)["revision"]
+                write_document(self, new_id, spec.remap_references(node.initial_document, node_ids), revision, state_identity=identity)
             for edge in record.blueprint.edges:
                 if edge.source in removed_keys or edge.target in removed_keys:
                     continue
@@ -2515,6 +2550,11 @@ class ApplicationServices:
             conversation_id=conversation_id,
             sessions=sessions,
             agents=agents,
+            context_statuses={
+                session_id: {agent_id: status for agent_id, status in statuses.items()
+                             if self._require_run_manager().uses_oaw_context(self.world.get_card(agent_id))}
+                for session_id, statuses in self.contexts.statuses(conversation_id).items()
+            },
         )
 
     def list_agent_conversation_sessions(
@@ -2588,6 +2628,27 @@ class ApplicationServices:
         )
         return updated
 
+    async def rename_conversation_group(self, conversation_id: str, group_id: str, title: str) -> list[ConversationSession]:
+        self._require_card_type(conversation_id, CardType.CONVERSATION)
+        sessions = self.conversations.rename_group(conversation_id, group_id, title)
+        for session in sessions:
+            await self.events.publish(EventType.CONVERSATION_SESSION_UPDATED, conversation_id=conversation_id,
+                                      session_id=session.id, payload={"session": session.model_dump(mode="json")})
+        return sessions
+
+    async def delete_conversation_group(self, conversation_id: str, group_id: str) -> None:
+        self._require_card_type(conversation_id, CardType.CONVERSATION)
+        for session in self.conversations.list_sessions(conversation_id):
+            if session.group_id == group_id:
+                self.node_execution.assert_session_idle(session.id)
+        session_ids = self.conversations.delete_group(conversation_id, group_id)
+        for session_id in session_ids:
+            self.state.delete_scope("session", session_id)
+        for session_id in session_ids:
+            await self.events.publish(EventType.CONVERSATION_SESSION_DELETED, node_id=conversation_id,
+                                      conversation_id=conversation_id, session_id=session_id,
+                                      payload={"session_id": session_id, "group_id": group_id})
+
     async def delete_conversation_session(
         self, conversation_id: str, session_id: str
     ) -> None:
@@ -2595,6 +2656,7 @@ class ApplicationServices:
         session = self.conversations.get_session(conversation_id, session_id)
         if session.is_default:
             raise ConversationValidationError("the default General session cannot be deleted")
+        self.node_execution.assert_session_idle(session_id)
         self.conversations.delete_session(conversation_id, session_id)
         self.state.delete_scope("session", session_id)
         await self.events.publish(
@@ -2892,6 +2954,7 @@ class ApplicationServices:
         agent_id: str | None = None,
         _skill_request: RunSkillScript | None = None,
         _keep_on_disconnect: bool = False,
+        _operation_id: str | None = None,
         environment_id: str | None = None,
         target_id: str | None = None,
     ) -> CommandResult:
@@ -2921,7 +2984,7 @@ class ApplicationServices:
                 secret_token = None
                 receipt = None
                 from backend.sandbox.models import execution_command_id
-                command_id = uuid4().hex
+                command_id = _operation_id or uuid4().hex
                 command_token = execution_command_id.set(command_id)
                 try:
                     execution_argv = argv
@@ -2964,14 +3027,15 @@ class ApplicationServices:
                         self._require_card_type(sandbox_id, CardType.SANDBOX)
                         from backend.sandbox.history import save, key as command_history_key
                         from backend.security.redaction import redact
-                        receipt = {"id": command_id, "caller": agent_id or "user", "state": "running",
+                        receipt = self._sandbox_commands.get(command_id, {}) if _operation_id else {}
+                        receipt.update({"id": command_id, "caller": agent_id or "user", "state": "running",
                             "sandbox_id": sandbox_id,
                             "history_key": command_history_key(self, sandbox_id),
                             "run_id": self.run_manager.current_context.run_id if self.run_manager.current_context else None,
                             "started_at": datetime.now(UTC).isoformat(), "argv": redact(list(execution_argv), secrets),
-                            "skill_id": _skill_request.skill_id if _skill_request else None}
+                            "skill_id": _skill_request.skill_id if _skill_request else None})
                         peers = tuple({key: item.get(key) for key in ("id", "caller", "run_id", "argv", "started_at")}
-                            for item in self._sandbox_commands.values() if item["sandbox_id"] == sandbox_id)
+                            for item in self._sandbox_commands.values() if item["sandbox_id"] == sandbox_id and item["id"] != command_id)
                         self._sandbox_commands[command_id] = receipt
                         self._sandbox_tasks[command_id] = asyncio.current_task()
                         save(self, sandbox_id, receipt)
@@ -3026,7 +3090,7 @@ class ApplicationServices:
                                 receipt.update(state="interrupted", error="Command interrupted")
                             save(self, sandbox_id, receipt)
                     finally:
-                        if receipt is not None:
+                        if receipt is not None and _operation_id is None:
                             self._sandbox_commands.pop(command_id, None)
                             self._sandbox_tasks.pop(command_id, None)
                         try:
@@ -3086,7 +3150,11 @@ class ApplicationServices:
             return await self.sandbox_backend.registry.describe(self.sandbox_backend.preferred, refresh=refresh)
         return {"runtimes": [], "default_runtime": None}
 
-    async def install_python_packages(self, sandbox_id, requirements, *, agent_id=None):
+    async def install_python_packages(self, sandbox_id, requirements, *, agent_id=None, _operation_id=None):
+        if _operation_id is None:
+            return await self.sandbox_operations.submit(agent_id, sandbox_id, "python_install",
+                lambda operation_id: self.install_python_packages(sandbox_id, requirements,
+                    agent_id=agent_id, _operation_id=operation_id), wait_seconds=None)
         from backend.sandbox.python_runtime import validate_requirements
         from backend.sandbox.models import SandboxValidationError
         self._require_card_type(sandbox_id, CardType.SANDBOX)
@@ -3098,13 +3166,12 @@ class ApplicationServices:
                 raise ValueError("At least one package is required")
         except ValueError as exc:
             raise SandboxValidationError(str(exc)) from exc
+        if _operation_id is not None:
+            self._sandbox_commands[_operation_id]["requirements"] = requirements
         backend = self._require_sandbox_backend()
         if not isinstance(backend, SandboxManager):
             raise SandboxValidationError("Managed Python installation is unavailable on this backend")
-        try:
-            return await backend.install_python_packages(sandbox_id, requirements)
-        except RuntimeError as exc:
-            raise SandboxValidationError(str(exc)) from exc
+        return await backend.install_python_packages(sandbox_id, requirements)
 
     async def publish_sandbox_event(self, event: SandboxEvent) -> None:
         # Service receipts own admission/completion; native events may arrive
@@ -3373,9 +3440,11 @@ class ApplicationServices:
             for agent_id in session.participant_ids
             if self.world.maybe_get_card(agent_id) is not None
         ]
-        transcript = self.conversations.list_messages(
-            conversation_id, session.id, limit=40
-        )
+        managed = self._require_run_manager().uses_oaw_context(self.world.get_card(target_agent_id))
+        # The OAW runtime ingests canonical messages by cursor, including messages
+        # older than 40 and peer turns. Plugin continuation remains provider-owned.
+        transcript = [] if managed else self.conversations.list_messages(
+            conversation_id, session.id, limit=40)
         lines = "\n".join(
             f"{item.sender_name}: {item.content}" + ''.join(
                 f"\n[Attachment: {file.name}; version_id={file.version_id}; path={file.path}; {file.size_bytes} bytes]"
@@ -3631,6 +3700,8 @@ class ApplicationServices:
         if isinstance(provider, GoogleAdkAgentRuntime):
             from backend.security.model_connections import ModelConnectionStore
             provider.model_connections = ModelConnectionStore(self.llm_settings)
+            if provider_id == "google.adk" and type(provider) is GoogleAdkAgentRuntime:
+                provider.context_store = self.contexts
         manager.install_provider(provider_id, provider)
         if default:
             manager.default_runtime_provider_id = provider_id
@@ -3676,6 +3747,8 @@ def create_services(
     services = None
 
     def publish_state_mutation(mutation: StateMutation) -> None:
+        with database.locked() as db:
+            namespace = db.execute("SELECT card_id, scope_type, scope_id FROM card_state_instances WHERE state_scope_id=?", (mutation.scope.scope_id,)).fetchone()
         event = RuntimeEvent(
             type=state_event_types[mutation.kind],
             node_id=(
@@ -3688,7 +3761,8 @@ def create_services(
             payload={
                 "scope_id": mutation.scope.scope_id,
                 "scope_kind": mutation.scope.scope_kind,
-                "owner_id": mutation.scope.owner_id,
+                "owner_id": namespace["card_id"] if namespace else mutation.scope.owner_id,
+                **({"state_scope": namespace["scope_type"], "state_session_id": namespace["scope_id"]} if namespace else {}),
                 "key": mutation.key,
                 "revision": mutation.revision,
                 **({"actor_id": mutation.actor_id} if mutation.actor_id else {}),
@@ -3705,6 +3779,7 @@ def create_services(
         events.publish_event_nowait(event)
 
     state = StateStore(database, plugin_registry, event_sink=publish_state_mutation)
+    contexts = ContextStore(database, events)
     state.ensure_scope("world", "default", schema_id="core.world")
     legions = LegionStore(database)
     services = ApplicationServices(
@@ -3717,6 +3792,7 @@ def create_services(
         plugins=plugin_registry,
         conversations=conversations,
         state=state,
+        contexts=contexts,
         legions=legions,
         llm_settings=LlmSettingsStore(database, settings.data_root),
         card_library=card_library,
@@ -3724,8 +3800,12 @@ def create_services(
     )
     from backend.capabilities.provider import WorldAgentCapabilityProvider
 
+    from backend.card_state import ScopedStateStore
+    services.card_state = ScopedStateStore(services)
     provider = WorldAgentCapabilityProvider(services)
     services.node_execution = NodeExecutionService(services)
+    from backend.sandbox.operations import SandboxOperations
+    services.sandbox_operations = SandboxOperations(services)
     services.summoning = SummoningService(services)
     from backend.security.model_connections import ModelConnectionStore
     services.run_manager = RunManager(
@@ -3736,13 +3816,15 @@ def create_services(
         capability_provider=provider,
         state=state,
         persist_provider_event=services._persist_conversation_provider_event,
+        cleanup_execution=services.sandbox_operations.cancel_run,
         default_runtime_provider_id=(
             default_runtime_provider_id
             if default_runtime_provider_id is not None
             else settings.agent_runtime
         ),
         provider_options={
-            "google.adk": {"app_name": "open-agent-world", "model_connections": ModelConnectionStore(services.llm_settings)},
+            "google.adk": {"app_name": "open-agent-world", "model_connections": ModelConnectionStore(services.llm_settings),
+                           "context_store": contexts},
             "openai.codex": {
                 "workspace_root": SandboxSettingsStore(database, settings.data_root).resolve_workspace_root,
             },

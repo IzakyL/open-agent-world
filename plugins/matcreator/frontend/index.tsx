@@ -6,6 +6,7 @@ import { useNestedFlowGestures } from "@oaw/plugin-api";
 import "./workspace.css";
 import { mapEdgeTypes } from "./MapEdge";
 import { graphLayout } from "./graphLayout";
+import { TaskBoard, TaskPreview } from "./TaskBoard";
 
 type Knowledge = { id: string; title: string; type: string; summary: string; content?: string; tags?: string[]; aliases?: string[]; trust: number; verification: string; refinement: string; owner?: string; provenance?: object; usage_count?: number };
 type Result = { nodes: Knowledge[]; edges: { id: string; source: string; target: string; relation: string }[]; next_offset: number | null; total: number; statistics: Record<string, number> };
@@ -189,4 +190,4 @@ function GraphWorkspace({ card, host }: PluginViewProps) {
     {menu && <div role="menu" style={{ position: "absolute", left: Math.max(0, Math.min(menu.x, (workspaceRef.current?.clientWidth ?? 400) - 190)), top: Math.max(0, Math.min(menu.y, (workspaceRef.current?.clientHeight ?? 400) - 90)), zIndex: 200, background: "var(--surface-solid)", padding: 8 }}><button role="menuitem" onClick={() => { void run(() => load([menu.id], true)); setMenu(null); }}>{t("Expand neighborhood")}</button><button role="menuitem" onClick={() => { void flow.fitView({ nodes: [{ id: menu.id }], padding: 0.5 }); setMenu(null); }}>{t("Focus")}</button></div>}
   </section>;
 }
-export default { apiVersion: 1, views: { workspace: Workspace } } satisfies FrontendPlugin;
+export default { apiVersion: 1, views: { workspace: Workspace, tasks: TaskBoard, 'tasks-preview': TaskPreview } } satisfies FrontendPlugin;
