@@ -45,12 +45,22 @@ Remote-job reconciliation remains outside this workflow.
 
 ### Research tasks
 
-The board supports multiple named plans with optional session references, task
+The board supports multiple named plans within each conversation session, task
 dependencies, **To do / In progress / Awaiting review / Blocked / Done**, acceptance criteria, result notes and output
-paths. A session reference is a label; switching conversation sessions does not
-automatically switch the selected plan or Sandbox folder. Choose the matching
-plan from **Research plans**. Output paths are recorded references; inspect the
-files in the Files and File preview sections.
+paths. OAW automatically binds plans, progress and execution attempts to the
+active conversation session: a new session starts with an empty board, and
+returning to an earlier session restores its plans. The card, its configuration
+and connections stay the same. No session field or persistence setting is needed.
+**Research plans** chooses among plans in the current session. Output paths are
+recorded references; inspect files in the Files and File preview sections.
+Sandbox files and the Know-Do Graph retain their shared behavior.
+
+Existing board documents and execution attempts are lazily retained in the
+workspace's default conversation session. Old plan `session_id` labels remain
+readable for compatibility but are not namespace keys or displayed in the UI;
+new Agent tool schemas do not request them. The host handles namespace creation,
+deletion and recovery. Switching sessions never redirects pending results, and
+live delegated work blocks deleting its card or originating session.
 
 Both human edits and `task_board_*` Agent tools use the same revision-checked
 document. Live updates are polled every three seconds. A concurrent edit retains

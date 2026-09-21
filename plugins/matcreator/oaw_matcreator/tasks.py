@@ -5,11 +5,12 @@ import hashlib
 import json
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
+from pydantic.json_schema import SkipJsonSchema
 from open_agent_world.task_graph import validate_task_graph
 from open_agent_world.plugin_api import (
     CapabilityDefinition, CapabilityGrantDefinition, NodeDocumentAction,
     NodeDocumentDefinition, NodeTypeDefinition, RelationshipDefinition,
-    NodeExecutionDefinition, ExecutionPolicy, WorkItem,
+    NodeExecutionDefinition, ExecutionPolicy, WorkItem, ScopedStateSpec,
 )
 
 
@@ -68,7 +69,9 @@ class Read(Model):
 class CreatePlan(Model):
     title: str = Field(min_length=1, max_length=180)
     goal: str = Field(default="", max_length=8000)
-    session_id: str = Field(default="", max_length=200)
+    # Accept old clients' descriptive labels, but do not advertise a namespace
+    # argument. The host owns session selection; this field never controls it.
+    session_id: SkipJsonSchema[str] = Field(default="", max_length=200)
     tasks: list[Task] = Field(default_factory=list, max_length=100)
 
 
@@ -246,6 +249,7 @@ def register(registration):
         icon="workflow", color="#8ba69c", deck_id="tools", deck_label="Tools", deck_icon="boxes",
         default_name="Research tasks", default_size=(640, 520), default_status="available",
         statuses=frozenset({"available"}), config_model=Model, templateable=True,
+        state=ScopedStateSpec(supportedScopes=("shared", "session"), defaultScope="session"),
         surfaces={"preview": True, "inspector": True, "workspace": True},
         frontend={"preview": "tasks-preview", "body": "tasks", "workspace": "tasks"},
         document=NodeDocumentDefinition(model=Board, initial_value={"plans": []}, actions=actions,

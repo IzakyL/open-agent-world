@@ -1,3 +1,4 @@
+import { useCardStateSession } from "../state/cardState";
 import { useWorkspaceAccess } from '../workspace/WorkspaceAccess';
 import { t, useLocale } from "../i18n";
 import { Check, Circle, GitBranch, ListTodo, Play, Plus, RefreshCw, Trash2, X } from "lucide-react";
@@ -17,6 +18,7 @@ const statuses = { todo: "To do", doing: "In progress", done: "Done", blocked: "
 const snapshot = (value: unknown) => value as BoardSnapshot;
 
 function useBoard(id: string) {
+  const sessionId = useCardStateSession(id);
   const { deployed } = useWorkspaceAccess();
   const eventId = useWorldStore((state) => state.events.find((e) => e.payload.scope_kind === "node_document" && e.payload.owner_id === id)?.id);
   const socketState = useWorldStore((state) => state.socketState);
@@ -24,14 +26,14 @@ function useBoard(id: string) {
   const [error, setError] = useState("");
   const accept = useCallback((next: BoardSnapshot) => setBoard((current) => !current || next.revision >= current.revision ? next : current), []);
   const reload = useCallback(async () => {
-    try { accept(snapshot(await worldApi.getNodeDocument(id))); setError(""); }
+    try { accept(snapshot(await worldApi.getNodeDocument(id, sessionId ?? null))); setError(""); }
     catch (e) { setError(apiErrorMessage(e)); }
-  }, [id, accept]);
+  }, [id, sessionId, accept]);
   useEffect(() => {
     let active = true;
-    worldApi.getNodeDocument(id).then((value) => { if (active) accept(snapshot(value)); }).catch((e) => { if (active) setError(apiErrorMessage(e)); });
+    worldApi.getNodeDocument(id, sessionId ?? null).then((value) => { if (active) accept(snapshot(value)); }).catch((e) => { if (active) setError(apiErrorMessage(e)); });
     return () => { active = false; };
-  }, [id, eventId, socketState, accept]);
+  }, [id, sessionId, eventId, socketState, accept]);
   useEffect(() => {
     if (!deployed) return;
     const timer = window.setInterval(() => { void reload(); }, 3000);
@@ -41,6 +43,11 @@ function useBoard(id: string) {
 }
 
 export function TaskBoardPreview({ card }: { card: WorldCard }) {
+  const sessionId = useCardStateSession(card.id);
+  return <TaskBoardPreviewView key={`${card.id}:${card.state_scope}:${sessionId ?? ''}`} card={card} />;
+}
+
+function TaskBoardPreviewView({ card }: { card: WorldCard }) {
   useLocale();
   const { board, error } = useBoard(card.id);
   return <div className="node-preview-summary task-board-preview">
@@ -115,7 +122,13 @@ function DependencyGraph({ tasks, onSelect }: { tasks: BoardTask[]; onSelect: (t
   </svg></div>;
 }
 
-export function TaskBoardBody({ card, workspace = false }: { card: WorldCard; workspace?: boolean }) {
+export function TaskBoardBody(props: { card: WorldCard; workspace?: boolean }) {
+  const sessionId = useCardStateSession(props.card.id);
+  return <TaskBoardBodyView key={`${props.card.id}:${props.card.state_scope}:${sessionId ?? ''}`} {...props} />;
+}
+
+function TaskBoardBodyView({ card, workspace = false }: { card: WorldCard; workspace?: boolean }) {
+  const sessionId = useCardStateSession(card.id);
   useLocale();
   const { deployed } = useWorkspaceAccess();
   const { board, accept, reload, error, setError } = useBoard(card.id);
@@ -134,7 +147,7 @@ export function TaskBoardBody({ card, workspace = false }: { card: WorldCard; wo
   const mutate = async (action: string, args: Record<string, unknown>, revision = board?.revision): Promise<boolean> => {
     if (revision === undefined) return false;
     setBusy(true); setError("");
-    try { accept(snapshot(await worldApi.nodeDocumentAction(card.id, action, args, revision))); return true; }
+    try { accept(snapshot(await worldApi.nodeDocumentAction(card.id, action, args, revision, sessionId ?? null))); return true; }
     catch (e) { setError(apiErrorMessage(e)); return false; }
     finally { setBusy(false); }
   };
@@ -145,7 +158,7 @@ export function TaskBoardBody({ card, workspace = false }: { card: WorldCard; wo
   };
   const patch = (change: Partial<BoardTask>) => setDraft((current) => current ? { ...current, task: { ...current.task, ...change } } : current);
   return <div className={`task-board nowheel ${workspace ? "is-workspace" : ""}`}>
-    <header className="task-board-heading"><div><span className="task-board-eyebrow">{t("SHARED WORK BOARD")}</span><h3>{board ? t("{v0} / {v1} complete", { v0: String(board.summary.done), v1: String(board.summary.total) }) : t("Loading tasks...")}</h3></div>
+    <header className="task-board-heading"><div><span className="task-board-eyebrow">{t("Task Board")}</span><h3>{board ? t("{v0} / {v1} complete", { v0: String(board.summary.done), v1: String(board.summary.total) }) : t("Loading tasks...")}</h3></div>
       <button className="secondary-button" title={t("Reload the board and discard the open task draft")} aria-label={t("Reload task board")} disabled={busy} onClick={() => { setDraft(undefined); void reload(); }}><RefreshCw size={14} /></button></header>
     <progress aria-label={t("Task completion")} value={board?.summary.done ?? 0} max={board?.summary.total || 1} />
     {!deployed && <><p className="task-board-help">{t("Connect an Agent to read tasks, update progress, or manage the plan.")}</p>

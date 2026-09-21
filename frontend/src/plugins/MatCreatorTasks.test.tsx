@@ -10,6 +10,21 @@ const board = (revision: number, title = task.title) => ({ revision, value: { pl
   { id: 'research', title: 'Copper study', goal: 'Verify a structure', session_id: '', tasks: [{ ...task, title }] },
 ] } });
 
+it('creates plans without session inputs and does not display legacy session labels', async () => {
+  const state = board(1);
+  state.value.plans[0].session_id = 'legacy-session-label';
+  const action = vi.fn().mockResolvedValue(board(2));
+  render(<TaskBoard {...{ host: { readDocument: vi.fn().mockResolvedValue(state), documentAction: action } } as unknown as PluginViewProps} />);
+  await screen.findByRole('heading', { name: 'Copper study' });
+  fireEvent.click(screen.getByLabelText('Plan details and actions'));
+  expect(screen.queryByText(/legacy-session-label/)).toBeNull();
+  fireEvent.click(screen.getByRole('button', { name: 'New plan' }));
+  expect(screen.queryByLabelText(/Session reference/)).toBeNull();
+  fireEvent.change(screen.getByLabelText('Plan title'), { target: { value: 'New study' } });
+  fireEvent.click(screen.getByRole('button', { name: 'Create plan' }));
+  await waitFor(() => expect(action).toHaveBeenCalledWith('create_plan', { title: 'New study', goal: '', tasks: [] }, 1));
+});
+
 it('shows executor evidence and sends a targeted stop without silently accepting a result', async () => {
   const state = board(1);
   const collect = { document: state, execution: {

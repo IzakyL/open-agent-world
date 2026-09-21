@@ -25,7 +25,8 @@ test('research tasks adapt to pane width and preserve detail actions', async ({ 
     // Keep the viewport fixed: exercise the actual plugin container query in its host.
     const size = async (width: number) => {
       await board.evaluate((element, width) => { (element as HTMLElement).style.width = `${width}px`; }, width);
-      await expect.poll(() => board.evaluate(element => element.getBoundingClientRect().width)).toBe(width);
+      // Container queries use layout pixels; canvas zoom scales screen bounds.
+      await expect(board).toHaveCSS('width', `${width}px`);
     };
     for (const [label, width] of [['narrow', 320], ['medium', 600], ['wide', 1000]] as const) {
       await size(width);
@@ -57,7 +58,7 @@ test('research tasks adapt to pane width and preserve detail actions', async ({ 
     await expect(board.getByRole('article', { name: 'Task detail' })).toBeVisible();
     await board.getByRole('button', { name: '‹ Tasks', exact: true }).click();
     await board.getByLabel('Plan details and actions').click();
-    await expect(board.getByText('Session: research-session-29496', { exact: true })).toBeVisible();
+    await expect(board.getByText('Session: research-session-29496', { exact: true })).toHaveCount(0);
     await board.getByRole('button', { name: 'Refresh', exact: true }).click();
     await board.getByLabel('Plan details and actions').press('Escape');
     await expect(board.getByRole('button', { name: 'Refresh', exact: true })).toBeHidden();

@@ -198,6 +198,7 @@ class CardCreate(BaseModel):
     size: Size | None = None
     expanded: bool = False
     status: str | None = None
+    state_scope: Literal["shared", "session"] | None = None
     config: dict[str, Any] = Field(default_factory=dict)
     content: str | None = None
     data_base64: str | None = None
@@ -218,6 +219,7 @@ class CardPatch(BaseModel):
     expanded: bool | None = None
     status: str | None = None
     config: dict[str, Any] | None = None
+    state_scope: Literal["shared", "session"] | None = None
 
 
 class CardsDelete(BaseModel):
@@ -269,6 +271,8 @@ class Card(BaseModel):
     expanded: bool
     status: str
     config: dict[str, Any]
+    state_scope: Literal["shared", "session"] | None = None
+    state_scope_override: Literal["shared", "session"] | None = None
     chunk: tuple[int, int]
     resource: ResourceSummary | None = None
     created_at: datetime

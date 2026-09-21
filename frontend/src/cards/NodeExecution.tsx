@@ -1,3 +1,4 @@
+import { useCardStateSession } from "../state/cardState";
 import { t, useLocale } from "../i18n";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Play, Square } from "lucide-react";
@@ -17,6 +18,7 @@ export interface ExecutionSnapshot {
 
 /** Shared host UI: no assumptions about DAGs, task fields or acceptance rules. */
 export function useNodeExecution(nodeId: string, onChanged: () => Promise<void>) {
+  const sessionId = useCardStateSession(nodeId);
   const { deployed } = useWorkspaceAccess();
   const [state, setState] = useState<ExecutionSnapshot>();
   const [busy, setBusy] = useState(false);
@@ -28,9 +30,9 @@ export function useNodeExecution(nodeId: string, onChanged: () => Promise<void>)
   const socketState = useWorldStore((s) => s.socketState);
   const reload = useCallback(async () => {
     const request = ++sequence.current;
-    try { const next = await worldApi.getNodeExecution(nodeId); if (request === sequence.current) setState(next); }
+    try { const next = await worldApi.getNodeExecution(nodeId, sessionId ?? null); if (request === sequence.current) setState(next); }
     catch (e) { if (request === sequence.current) setError(apiErrorMessage(e)); }
-  }, [nodeId]);
+  }, [nodeId, sessionId]);
   useEffect(() => { void reload(); return () => { sequence.current++; }; }, [reload, eventId, socketState]);
   useEffect(() => {
     if (!state?.active && !deployed) return;
@@ -43,8 +45,8 @@ export function useNodeExecution(nodeId: string, onChanged: () => Promise<void>)
     catch (e) { setError(apiErrorMessage(e)); }
     finally { setBusy(false); }
   };
-  return { state, busy, error, run: (revision: number, itemId?: string) => act(() => worldApi.startNodeExecution(nodeId, revision, itemId)),
-    stop: () => act(() => worldApi.stopNodeExecution(nodeId)) };
+  return { state, busy, error, run: (revision: number, itemId?: string) => act(() => worldApi.startNodeExecution(nodeId, revision, itemId, sessionId ?? null)),
+    stop: () => act(() => worldApi.stopNodeExecution(nodeId, sessionId ?? null)) };
 }
 
 export function NodeExecutionControls({ execution, revision, readyCount, disabled = false, titleForItem }: {

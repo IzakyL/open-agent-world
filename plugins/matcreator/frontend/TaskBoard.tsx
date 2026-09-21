@@ -4,7 +4,7 @@ import './tasks.css';
 
 type Status = 'pending' | 'running' | 'review' | 'blocked' | 'done';
 type Task = { id: string; title: string; description: string; acceptance?: string; depends_on: string[]; status: Status; result: string; outputs: string[] };
-type Plan = { id: string; title: string; goal: string; session_id: string; tasks: Task[] };
+type Plan = { id: string; title: string; goal: string; tasks: Task[] };
 type Snapshot = { value: { plans: Plan[] }; revision: number };
 type Attempt = { item_id: string; instance_id: string | null; agent_id: string | null; run_id: string | null; status: string; error?: string; text?: string; output_directory: string; reconciliation_error?: string };
 type Execution = { items: { id: string; metadata: { plan_id: string; task_id: string } }[]; attempts: Attempt[] };
@@ -71,7 +71,6 @@ export function TaskBoard({ host }: PluginViewProps) {
   const [creating, setCreating] = useState(false);
   const [title, setTitle] = useState('');
   const [goal, setGoal] = useState('');
-  const [session, setSession] = useState('');
   const [editor, setEditor] = useState<{ task: Task; planId: string; revision: number; fresh: boolean }>();
   const [taskId, setTaskId] = useState<string>();
   const [descriptionExpanded, setDescriptionExpanded] = useState(false);
@@ -139,8 +138,7 @@ export function TaskBoard({ host }: PluginViewProps) {
         {!plans.length && <option value="">{t('No research plans yet')}</option>}
         {plans.map(item => <option value={item.id} key={item.id}>{item.title}</option>)}
       </select></label>
-      {plan && <div className="mc-task-plan-details"><p>{plan.goal}</p><small>{t('Plan ID')}: {plan.id}</small>
-        {plan.session_id && <small>{t('Session')}: {plan.session_id}</small>}</div>}
+      {plan && <div className="mc-task-plan-details"><p>{plan.goal}</p><small>{t('Plan ID')}: {plan.id}</small></div>}
       <button disabled={!snapshot || busy || !!editor} onClick={() => { setCreating(true); setTaskId(undefined); setError(''); if (details.current) details.current.open = false; }}>{t('New plan')}</button>
       <button disabled={!snapshot || busy} onClick={() => void refresh().catch(reason => setError(message(reason)))}>{t('Refresh')}</button>
       <p className="mc-task-hint">{t('Task status records progress. Use the conversation or Sandbox controls to stop execution.')}</p>
@@ -154,14 +152,13 @@ export function TaskBoard({ host }: PluginViewProps) {
     {!snapshot && !readError && <p role="status">{t('Loading research tasks…')}</p>}
     {creating && <form className="mc-task-editor" onSubmit={async event => {
       event.preventDefault();
-      if (await mutate('create_plan', { title: title.trim(), goal, session_id: session, tasks: [] })) {
-        setCreating(false); setTitle(''); setGoal(''); setSession('');
+      if (await mutate('create_plan', { title: title.trim(), goal, tasks: [] })) {
+        setCreating(false); setTitle(''); setGoal('');
       }
     }}>
       <h3>{t('New research plan')}</h3>
       <label>{t('Plan title')}<input autoFocus aria-label={t('Plan title')} required maxLength={180} value={title} onChange={event => setTitle(event.target.value)} /></label>
       <label>{t('Research goal')}<textarea aria-label={t('Research goal')} maxLength={8000} value={goal} onChange={event => setGoal(event.target.value)} /></label>
-      <label>{t('Session reference (optional)')}<input maxLength={200} value={session} onChange={event => setSession(event.target.value)} /></label>
       <div className="mc-task-actions"><button disabled={busy || !title.trim()}>{t('Create plan')}</button><button type="button" disabled={busy} onClick={() => setCreating(false)}>{t('Cancel')}</button></div>
     </form>}
     {plan && !creating && <>
@@ -248,7 +245,7 @@ export function TaskBoard({ host }: PluginViewProps) {
           </section>
           {taskDetail.result && <section className="mc-task-detail-section"><h3>{t(taskDetail.status === 'blocked' ? 'Blocking reason' : taskDetail.status === 'running' ? 'Execution information' : 'Result')}</h3><p>{taskDetail.result}</p></section>}
           {!!taskDetail.outputs.length && <section className="mc-task-detail-section"><h3>{t('Outputs')}</h3><ul className="mc-task-detail-outputs">{taskDetail.outputs.map((output, index) => <li key={index}><code>{output}</code></li>)}</ul></section>}
-          <dl className="mc-task-detail-references"><dt>{t('Task ID')}</dt><dd>{taskDetail.id}</dd>{plan.session_id && <><dt>{t('Session')}</dt><dd>{plan.session_id}</dd></>}</dl>
+          <dl className="mc-task-detail-references"><dt>{t('Task ID')}</dt><dd>{taskDetail.id}</dd></dl>
         </> : <p role="status">{t('Task no longer exists')}</p>}
       </article> : <div className={`mc-task-sections${view === 'board' ? ' wants-board' : ''}`}>
         {(['running', 'review', 'blocked', 'pending', 'done'] as Status[]).map(status => {

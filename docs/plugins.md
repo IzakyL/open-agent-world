@@ -25,6 +25,11 @@ Plugin-specific documentation can remain in its own package or repository. These
 
 ## Developing a plugin
 
+Plugin API 1.23 adds declarative `state` policies, bound `ctx.state` / `host.state`,
+and host-owned shared/session namespaces. Legacy plugins remain unchanged. See
+[Card state lifecycle](card-state.md) for declarations, migration, defaults and
+stateless capabilities.
+
 Plugin API 1.22 adds Agent-directed delegation to `NodeExecutionDefinition` with
 `summoning=True`. Plugins reuse `WorkItem`/`WorkOutcome` for task readiness and
 acceptance; the host owns the attempt ledger, Run binding and Summoning admission.

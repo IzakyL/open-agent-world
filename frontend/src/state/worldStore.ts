@@ -1,3 +1,4 @@
+import { useConversationView } from "./conversationView";
 import type { MapPinLocation } from "../canvas/MapAtlas";
 import { create } from "zustand";
 import { EMPTY_MODEL_CATALOG, type ModelCatalog } from "./modelConnections";
@@ -51,6 +52,7 @@ export interface PendingConnection {
 
 type RestorableCard = WorldCard & {
   restoreDocument?: Record<string, unknown>;
+  restoreCardState?: { namespaces: unknown[] };
   restoreLegionState?: Record<string, unknown>;
   restoreContent?: string;
   restoreImageData?: string;
@@ -95,6 +97,7 @@ function copyEdge(edge: WorldEdge): WorldEdge {
 }
 
 function cardRestorePatch(card: WorldCard): Partial<Omit<WorldCard, "id" | "type">> {
+  const policy = useWorldStore.getState().catalog.node_types.find(d => d.id === card.type)?.state;
   return {
     name: card.name,
     parent_id: card.parent_id ?? null,
@@ -105,6 +108,7 @@ function cardRestorePatch(card: WorldCard): Partial<Omit<WorldCard, "id" | "type
     expanded: card.expanded,
     status: card.status,
     config: { ...card.config },
+    ...(policy?.mode === "scoped" && policy.userConfigurable && policy.supportedScopes.length > 1 ? { state_scope: card.state_scope_override ?? null } : {}),
   };
 }
 
@@ -138,6 +142,10 @@ function restoreCardInput(card: RestorableCard): CardCreateInput {
 
 async function restoreCard(card: RestorableCard): Promise<WorldCard> {
   const restored = await worldApi.restoreNode(restoreCardInput(card));
+  if (card.restoreCardState) {
+    try { await worldApi.restoreCardStateSnapshot(restored.id, card.restoreCardState); }
+    catch (error) { await worldApi.deleteNode(restored.id); throw error; }
+  }
   if (card.restoreDocument) {
     try {
       const current = await worldApi.getNodeDocument(restored.id);
@@ -156,7 +164,9 @@ async function snapshotCardForHistory(card: WorldCard, strict = false): Promise<
   const warning = useWorldStore.getState().catalog.node_types.find((definition) => definition.id === card.type)?.deletion_warning;
   if (warning) throw new Error(`${card.name}: ${warning} Delete this card directly to review its removal.`);
   const snapshot = copyCard(card);
-  if (useWorldStore.getState().catalog.node_types.find((definition) => definition.id === card.type)?.has_document) {
+  if (useWorldStore.getState().catalog.node_types.find((definition) => definition.id === card.type)?.has_scoped_state) {
+    snapshot.restoreCardState = await worldApi.getCardStateSnapshot(card.id);
+  } else if (useWorldStore.getState().catalog.node_types.find((definition) => definition.id === card.type)?.has_document) {
     snapshot.restoreDocument = (await worldApi.getNodeDocument(card.id)).value;
     const field = useWorldStore.getState().catalog.node_types.find((definition) => definition.id === card.type)?.container?.document_field;
     if (field) snapshot.restoreDocument[field] = [];
@@ -1738,6 +1748,13 @@ export const useWorldStore = create<WorldState>()(persist((set, get) => ({
       if (gap) { markWorldMutation(); void get().refreshWorld(); }
     }
     if (normalizedType === "connection_ready") return;
+    if (normalizedType === "conversation_session_deleted") {
+      const view = useConversationView.getState();
+      const sessionId = event.session_id ?? event.payload.session_id;
+      for (const [conversationId, selected] of Object.entries(view.sessions)) {
+        if (selected === sessionId) view.selectSession(conversationId, undefined);
+      }
+    }
     if (["card_created", "card_updated", "card_deleted", "edge_created", "edge_updated", "edge_deleted"].includes(normalizedType)) {
       markWorldMutation();
       set(state => {

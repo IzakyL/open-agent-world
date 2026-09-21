@@ -554,6 +554,7 @@ class ApplicationServices:
     _execution_secrets: ContextVar[tuple[str, ...]] = field(
         default_factory=lambda: ContextVar("execution_secrets", default=()), init=False, repr=False)
     run_manager: RunManager | None = None
+    card_state: object = None
     node_execution: NodeExecutionService | None = None
     sandbox_operations: Any = None
     summoning: SummoningService | None = None
@@ -807,7 +808,7 @@ class ApplicationServices:
                     except OSError as exc:
                         raise ResourceValidationError(f"Cannot create Sandbox workspace: {exc}") from exc
                 card = self.world.create_card(request, card_id=preview.id)
-                if definition.document is not None and definition.document.initial_value is not None:
+                if definition.document is not None and definition.document.initial_value is not None and definition.state is None:
                     from backend.node_documents import write_document
                     initial = dict(definition.document.initial_value)
                     if _skip_collection_seed and definition.container and definition.container.document_field:
@@ -901,6 +902,8 @@ class ApplicationServices:
 
     async def update_card(self, card_id: str, request: CardPatch) -> Card:
         async with self._node_mutation():
+            if "state_scope" in request.model_fields_set:
+                self.node_execution.assert_editable(card_id, all_states=True)
             if request.config is not None:
                 self.resources.artifacts.assert_source_idle(card_id)
             current = self.world.get_card(card_id)
@@ -965,6 +968,8 @@ class ApplicationServices:
             previous_cards = {item.node_id: self.world.get_card(item.node_id) for item in updates}
             prepared: list[tuple[CardBatchPatch, NodeLifecycleTransaction]] = []
             for item in updates:
+                if "state_scope" in item.patch.model_fields_set:
+                    self.node_execution.assert_editable(item.node_id, all_states=True)
                 if item.patch.config is not None:
                     self.resources.artifacts.assert_source_idle(item.node_id)
                 current = self.world.get_card(item.node_id)
@@ -1030,7 +1035,10 @@ class ApplicationServices:
             for card in cards:
                 self.resources.artifacts.assert_source_idle(card.id)
             for card in cards:
-                self.node_execution.assert_editable(card.id)
+                self.node_execution.assert_editable(card.id, all_states=True)
+                if self.plugins.has_trait(card.type, "core.conversation"):
+                    for session in self.conversations.list_sessions(card.id):
+                        self.node_execution.assert_session_idle(session.id)
             for card in cards:
                 if self.world.is_container(card) and any(m.id not in ids for m in self.world.list_members(card.id)):
                     raise GraphValidationError("Detach members before deleting their container")
@@ -1759,6 +1767,7 @@ class ApplicationServices:
                 owner_key=node_keys.get(card.equipment.owner_id) if card.equipment else None,
                 equipment_relationship=card.equipment.relationship if card.equipment else None,
                 initial_document=definition.document.remap_references(definition.document.capture(documents[card.id]["value"]), node_keys) if definition.document else None,
+                state_scope=card.state_scope_override,
                 initial_shared_state=shared_states[card.id]["value"] if card.id in shared_states else None,
                 type=card.type,
                 plugin_id=self.plugins.node_type_owner_id(card.type),
@@ -1932,6 +1941,7 @@ class ApplicationServices:
                 ), _creation_receipts=creation_receipts, _publish_event=False)
                 created_nodes.append(wrapper)
             from backend.node_containers import parent_first
+            scoped_document_seeds = []
             for node in parent_first(template_nodes, key=lambda n: n.key, parent=lambda n: n.owner_key or n.parent_key):
                 definition = self.plugins.node_type(node.type)
                 config = (definition.template_remap_config(dict(node.config), node_ids)
@@ -1942,6 +1952,7 @@ class ApplicationServices:
                         parent_id=node_ids.get(node.parent_key) if node.parent_key else (wrapper.id if wrapper and not node.owner_key else None),
                         equipment={"owner_id": node_ids[node.owner_key], "relationship": node.equipment_relationship} if node.owner_key else None,
                         type=node.type,
+                        state_scope=node.state_scope,
                         name=node.name,
                         position={
                             "x": request.position.x + node.position.x,
@@ -1958,7 +1969,9 @@ class ApplicationServices:
                     _publish_event=False,
                     _skip_collection_seed=node.initial_document is not None,
                 ))
-                if node.initial_document is not None:
+                if node.initial_document is not None and definition.state is not None:
+                    scoped_document_seeds.append(node)
+                elif node.initial_document is not None:
                     from backend.node_documents import read_document, write_document
                     document_spec = self.plugins.node_type(node.type).document
                     revision = read_document(self, node_ids[node.key])["revision"]
@@ -1967,6 +1980,14 @@ class ApplicationServices:
                     from backend.legions.runtime import LegionStateWrite, write_shared_state
                     write_shared_state(self.world, self.state, node_ids[node.key],
                                        LegionStateWrite(value=node.initial_shared_state, expected_revision=0))
+            for node in scoped_document_seeds:
+                from backend.node_documents import read_document, write_document
+                new_id = node_ids[node.key]
+                spec = self.plugins.node_type(node.type).document
+                kind = self.world.get_card(new_id).state_scope
+                identity = (kind, self.card_state.default_session(new_id) if kind == "session" else "*")
+                revision = read_document(self, new_id, state_identity=identity)["revision"]
+                write_document(self, new_id, spec.remap_references(node.initial_document, node_ids), revision, state_identity=identity)
             for edge in record.blueprint.edges:
                 if edge.source in removed_keys or edge.target in removed_keys:
                     continue
@@ -2614,6 +2635,9 @@ class ApplicationServices:
 
     async def delete_conversation_group(self, conversation_id: str, group_id: str) -> None:
         self._require_card_type(conversation_id, CardType.CONVERSATION)
+        for session in self.conversations.list_sessions(conversation_id):
+            if session.group_id == group_id:
+                self.node_execution.assert_session_idle(session.id)
         session_ids = self.conversations.delete_group(conversation_id, group_id)
         for session_id in session_ids:
             self.state.delete_scope("session", session_id)
@@ -2629,6 +2653,7 @@ class ApplicationServices:
         session = self.conversations.get_session(conversation_id, session_id)
         if session.is_default:
             raise ConversationValidationError("the default General session cannot be deleted")
+        self.node_execution.assert_session_idle(session_id)
         self.conversations.delete_session(conversation_id, session_id)
         self.state.delete_scope("session", session_id)
         await self.events.publish(
@@ -3719,6 +3744,8 @@ def create_services(
     services = None
 
     def publish_state_mutation(mutation: StateMutation) -> None:
+        with database.locked() as db:
+            namespace = db.execute("SELECT card_id, scope_type, scope_id FROM card_state_instances WHERE state_scope_id=?", (mutation.scope.scope_id,)).fetchone()
         event = RuntimeEvent(
             type=state_event_types[mutation.kind],
             node_id=(
@@ -3731,7 +3758,8 @@ def create_services(
             payload={
                 "scope_id": mutation.scope.scope_id,
                 "scope_kind": mutation.scope.scope_kind,
-                "owner_id": mutation.scope.owner_id,
+                "owner_id": namespace["card_id"] if namespace else mutation.scope.owner_id,
+                **({"state_scope": namespace["scope_type"], "state_session_id": namespace["scope_id"]} if namespace else {}),
                 "key": mutation.key,
                 "revision": mutation.revision,
                 **({"actor_id": mutation.actor_id} if mutation.actor_id else {}),
@@ -3769,6 +3797,8 @@ def create_services(
     )
     from backend.capabilities.provider import WorldAgentCapabilityProvider
 
+    from backend.card_state import ScopedStateStore
+    services.card_state = ScopedStateStore(services)
     provider = WorldAgentCapabilityProvider(services)
     services.node_execution = NodeExecutionService(services)
     from backend.sandbox.operations import SandboxOperations

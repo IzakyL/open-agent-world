@@ -8,18 +8,21 @@ import pytest_asyncio
 from backend.agents import AgentEvent, AgentEventType
 from backend.capabilities.provider import WorldAgentCapabilityProvider
 from backend.capabilities.projection import authorized_resources
+from backend.card_state import state_session
+from backend.conversations.models import ConversationSessionCreate
 from backend.skill_runtime import SKILL_SELECTOR
 from backend.config import Settings
 from backend.errors import ConflictError, PermissionDeniedError, ResourceValidationError
 from backend.legions.models import LegionInstantiate
 from backend.legions.presets import preset_record
-from backend.node_documents import DocumentActionRequest, invoke_document_action, read_document
+from backend.node_documents import DocumentActionRequest, invoke_document_action, read_document, write_document
 from backend.plugins.loader import load_plugin_registry
 from backend.runs.models import RunStatus
 from backend.services import create_services
 from backend.plugins.summoning import SummoningAction
 from backend.tests.plugin_support import install_test_plugin
 from backend.tests.test_runs import RecordingProvider
+from backend.world.models import CardCreate
 
 
 class ResearchRuntime(RecordingProvider):
@@ -109,7 +112,7 @@ async def test_parallel_dispatch_dedup_private_context_wait_and_review(research)
         assert all(e["applied"] for e in finished["execution"]["attempts"])
         assert "32 atoms" in finished["execution"]["attempts"][0]["text"]
     runtime.script = script
-    root = await services.run_manager.start_run(ids["agent"], "Research", context_id="parent-conversation")
+    root = await services.run_manager.start_run(ids["agent"], "Research", context_id=services.card_state.default_session(ids["tasks"]))
     await until(lambda: launched.is_set() or runtime.errors)
     assert not runtime.errors
     await until(lambda: len(runtime.children) == 2)
@@ -261,3 +264,97 @@ async def test_summoning_wait_timeout_and_followup_retain_private_context(resear
     assert not runtime.errors
     contexts = [c[0] for c in runtime.children.values()]
     assert contexts[0].context_id == contexts[1].context_id != "main"
+
+
+@pytest.mark.asyncio
+async def test_research_board_adopts_legacy_data_once_and_session_creation_stays_lazy(research):
+    services, ids, _, _ = research
+    board = await services.create_card(CardCreate(type="matcreator.tasks", parent_id=ids["group"], name="Existing research"))
+    value = read_document(services, ids["tasks"])["value"]
+    value["plans"][0]["session_id"] = "old-descriptive-label"
+    legacy = services.state.ensure_scope("node_document", board.id, schema_id="core.node_document")
+    services.state.set(legacy, "document", value)
+    a = services.card_state.default_session(board.id)
+    b = services.conversations.create_session(ids["conversation"], ConversationSessionCreate(title="B"))
+    assert services.card_state.existing(board.id) == []
+    with state_session(b.id):
+        assert read_document(services, board.id)["value"] == {"plans": []}
+    with state_session(a):
+        restored = read_document(services, board.id)
+        assert restored["revision"] == 1 and restored["value"] == value
+    current = services.world.get_card(board.id)
+    assert current.config == board.config and current.state_scope == "session"
+    assert current.state_scope_override is None
+    assert services.plugins.node_type(board.type).state.user_configurable is False
+    # A legacy descriptive label survives, but new tools never request a session key.
+    from oaw_matcreator.tasks import CreatePlan
+    assert "session_id" not in CreatePlan.model_json_schema()["properties"]
+
+
+@pytest.mark.asyncio
+async def test_delegated_results_and_deletion_guards_follow_the_origin_session(research):
+    services, ids, runtime, execute = research
+    a = services.conversations.create_session(ids["conversation"], ConversationSessionCreate(title="A"))
+    b = services.conversations.create_session(ids["conversation"], ConversationSessionCreate(title="B"))
+    initial = read_document(services, ids["tasks"])["value"]
+    with state_session(a.id):
+        write_document(services, ids["tasks"], initial, 0)
+    ready = asyncio.Event()
+    captured = {}
+
+    async def script(context):
+        first = await execute("delegate", **dispatch_args(ids, await execute("collect"), 0, "same-request"))
+        captured["first"] = first
+        ready.set()
+        captured["finished"] = await execute("wait", instance_ids=[first["attempt"]["instance_id"]], timeout_seconds=5)
+
+    runtime.script = script
+    root = await services.run_manager.start_run(ids["agent"], "Research A", context_id=a.id)
+    await until(lambda: ready.is_set() or runtime.errors)
+    assert not runtime.errors
+    await until(lambda: len(runtime.children) == 1)
+    with state_session(b.id):
+        empty = await services.node_execution.delegation_action(ids["tasks"], "collect", {})
+        assert empty["document"]["value"] == {"plans": []}
+        assert empty["execution"]["attempts"] == [] and not empty["execution"]["active"]
+        # Same task IDs in B must not receive A's report or execution attempts.
+        write_document(services, ids["tasks"], initial, 0)
+        await services.node_execution.stop(ids["tasks"])
+        assert not next(iter(runtime.children.values()))[2].done()
+        with pytest.raises(ResourceValidationError, match="not assigned"):
+            await services.node_execution.delegation_action(ids["tasks"], "stop", {"instance_id": captured["first"]["attempt"]["instance_id"]})
+        with pytest.raises(ConflictError):
+            await services.delete_cards([ids["tasks"]])
+        with pytest.raises(ConflictError):
+            await services.delete_conversation_session(ids["conversation"], a.id)
+        with pytest.raises(ConflictError):
+            await services.delete_conversation_group(ids["conversation"], a.group_id)
+        next(iter(runtime.children.values()))[2].set_result("A verified output")
+        await asyncio.wait_for(services.run_manager.wait_execution(root.run_id), 5)
+        assert not runtime.errors
+        assert read_document(services, ids["tasks"])["value"] == initial
+        assert services.node_execution.state(ids["tasks"])["attempts"] == []
+    assert captured["finished"]["document"]["value"]["plans"][0]["tasks"][0]["status"] == "review"
+    with state_session(a.id):
+        attempt = services.node_execution.state(ids["tasks"])["attempts"][0]
+        assert attempt["text"] == "A verified output" and attempt["applied"]
+        # Recover an unapplied terminal result in an inactive session on restart.
+        ledger = services.node_execution.state(ids["tasks"])
+        ledger["attempts"][0]["applied"] = False
+        services.node_execution.save(ids["tasks"], ledger)
+    namespaces = services.card_state.existing(ids["tasks"])
+    await services.shutdown()
+    restarted = create_services(services.settings, plugins=services.plugins)
+    try:
+        await restarted.startup()
+        assert restarted.card_state.existing(ids["tasks"]) == namespaces
+        with state_session(a.id):
+            assert restarted.node_execution.state(ids["tasks"])["attempts"][0]["applied"]
+            assert read_document(restarted, ids["tasks"])["value"]["plans"][0]["tasks"][0]["status"] == "review"
+        with state_session(b.id):
+            assert read_document(restarted, ids["tasks"])["value"] == initial
+            await restarted.delete_conversation_session(ids["conversation"], a.id)
+            assert ("session", a.id) not in restarted.card_state.existing(ids["tasks"])
+            assert read_document(restarted, ids["tasks"])["value"] == initial
+    finally:
+        await restarted.shutdown()

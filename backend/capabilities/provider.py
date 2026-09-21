@@ -31,6 +31,17 @@ def _validate_tool_request(model: type[BaseModel], arguments):
 @dataclass(frozen=True, slots=True)
 class _CapabilityContext:
     services: ApplicationServices
+    capability: Any = None
+
+    @property
+    def state(self):
+        def authorize():
+            live = self.services.capabilities.capability_for_id(self.capability.agent_id, self.capability.id)
+            if live.target_id != self.capability.target_id or live.kind != self.capability.kind:
+                from backend.errors import PermissionDeniedError
+                raise PermissionDeniedError("State access was revoked")
+        authorize()
+        return self.services.card_state.bind(self.capability.target_id, authorize=authorize)
 
     async def node_resource_action(self, capability, action, arguments):
         from backend.node_resources import ResourceActionRequest, invoke_resource_action
@@ -332,7 +343,7 @@ class WorldAgentCapabilityProvider:
         handler = self.services.plugins.capability_handler(capability.kind)
         from backend.sandbox.models import SandboxValidationError, SandboxStateError, SandboxOperationError
         try:
-            return await handler(_CapabilityContext(self.services), capability, dict(arguments))
+            return await handler(_CapabilityContext(self.services, capability), capability, dict(arguments))
         except SandboxOperationError as exc:
             return exc.feedback()
         except SandboxValidationError as exc:

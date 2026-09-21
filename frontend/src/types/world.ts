@@ -1,3 +1,5 @@
+export type PluginStateSpec = { mode: "none" } | { mode: "scoped"; supportedScopes: ("shared" | "session")[]; defaultScope: "shared" | "session"; userConfigurable?: boolean };
+
 export type CardType = string;
 
 export type NodeSurfaceLevel = "node" | "preview" | "inspector" | "workspace";
@@ -107,6 +109,8 @@ export interface CardConfig extends Record<string, unknown> {
 }
 
 export interface WorldCard {
+  state_scope?: "shared" | "session" | null;
+  state_scope_override?: "shared" | "session" | null;
   id: string;
   revision?: number;
   parent_id?: string | null;
@@ -151,6 +155,8 @@ export interface WorldSnapshot {
 }
 
 export interface NodeTypeCatalogItem {
+  state?: PluginStateSpec;
+  has_scoped_state?: boolean;
   icon_url?: string | null;
   frontend?: Partial<Record<"preview" | "body" | "settings" | "workspace", string>>;
   id: CardType;

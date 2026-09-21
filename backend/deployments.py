@@ -37,7 +37,7 @@ def views(node):
 def configuration_digest(db):
     """Detect edits between publication and the offline snapshot (ignore live status)."""
     cards = []
-    for row in db.execute("SELECT id,type,plugin_id,name,config_json,parent_id,equipment_json,minister_json FROM cards ORDER BY id"):
+    for row in db.execute("SELECT id,type,plugin_id,name,config_json,parent_id,equipment_json,minister_json,state_scope FROM cards ORDER BY id"):
         values = list(row)
         config = json.loads(values[4])
         config.pop("status", None)

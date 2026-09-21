@@ -18,6 +18,7 @@ from backend.errors import (
     PermissionDeniedError,
 )
 from backend.plugins.registry import PluginRegistry
+from backend.card_state import effective_scope, validate_override
 from backend.persistence.database import Database
 from backend.world.terrain import ensure_terrain_seed
 from backend.world.models import (
@@ -267,6 +268,8 @@ class WorldStore:
         self.validate_equipment(resolved_id, request.type, request.parent_id, request.equipment)
         now = utc_now()
         definition = self.registry.node_type(request.type)
+        if request.state_scope is not None:
+            validate_override(definition.state, request.state_scope)
         self.validate_minister(request.type, request.minister)
         self.registry.validate_creation_fields(
             request.type, content=request.content, data_base64=request.data_base64
@@ -282,6 +285,8 @@ class WorldStore:
             raw_config["status"] = request.status
         config = self._validate_config(request.type, raw_config)
         return Card(
+            state_scope=effective_scope(definition.state, request.state_scope),
+            state_scope_override=request.state_scope,
             id=resolved_id,
             parent_id=request.parent_id,
             equipment=request.equipment,
@@ -319,6 +324,7 @@ class WorldStore:
             card.parent_id,
             card.equipment.model_dump_json() if card.equipment else None,
             card.minister.model_dump_json() if card.minister else None,
+            card.state_scope_override,
         )
         try:
             with (nullcontext(_connection) if _connection is not None else self.database.transaction(immediate=True)) as connection:
@@ -326,8 +332,8 @@ class WorldStore:
                     """
                     INSERT INTO cards (
                         id, type, plugin_id, name, x, y, width, height, expanded,
-                        config_json, chunk_x, chunk_y, created_at, updated_at, parent_id, equipment_json, minister_json
-                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                        config_json, chunk_x, chunk_y, created_at, updated_at, parent_id, equipment_json, minister_json, state_scope
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                     """,
                     values,
                 )
@@ -370,6 +376,8 @@ class WorldStore:
         self._require_structure_edit(request)
         current = self.get_card(card_id)
         self.check_revision(current, request.expected_revision)
+        if "state_scope" in request.model_fields_set:
+            validate_override(self.registry.node_type(current.type).state, request.state_scope)
         changes = request.model_dump(exclude_unset=True, exclude={"expected_revision"})
         if not changes:
             return current
@@ -400,7 +408,7 @@ class WorldStore:
                 UPDATE cards
                 SET name = ?, x = ?, y = ?, width = ?, height = ?, expanded = ?,
                     config_json = ?, chunk_x = ?, chunk_y = ?, updated_at = ?,
-                    revision = revision + 1, parent_id = ?, equipment_json = ?, minister_json = ?
+                    revision = revision + 1, parent_id = ?, equipment_json = ?, minister_json = ?, state_scope = ?
                 WHERE id = ? AND revision = ?
                 """,
                 (
@@ -417,6 +425,7 @@ class WorldStore:
                     parent_id,
                     equipment.model_dump_json() if equipment else None,
                     minister.model_dump_json() if minister else None,
+                    request.state_scope if "state_scope" in request.model_fields_set else current.state_scope_override,
                     card_id,
                     current.revision,
                 ),
@@ -448,7 +457,7 @@ class WorldStore:
                         UPDATE cards
                         SET name = ?, x = ?, y = ?, width = ?, height = ?, expanded = ?,
                             config_json = ?, chunk_x = ?, chunk_y = ?, updated_at = ?,
-                            revision = revision + 1, parent_id = ?, equipment_json = ?, minister_json = ?
+                            revision = revision + 1, parent_id = ?, equipment_json = ?, minister_json = ?, state_scope = ?
                         WHERE id = ? AND revision = ?
                         """,
                         (
@@ -465,6 +474,7 @@ class WorldStore:
                             preview.parent_id,
                             preview.equipment.model_dump_json() if preview.equipment else None,
                             preview.minister.model_dump_json() if preview.minister else None,
+                            preview.state_scope_override,
                             item.node_id,
                             preview.revision - 1,
                         ),
@@ -484,6 +494,8 @@ class WorldStore:
 
         current = self.get_card(card_id)
         self.check_revision(current, request.expected_revision)
+        if "state_scope" in request.model_fields_set:
+            validate_override(self.registry.node_type(current.type).state, request.state_scope)
         changes = request.model_dump(exclude_unset=True, exclude={"expected_revision"})
         if not changes:
             return current
@@ -505,7 +517,10 @@ class WorldStore:
             if self._config_accepts_status(current.type):
                 config = {**config, "status": request.status}
         config = self._validate_config(current.type, config)
+        override = request.state_scope if "state_scope" in request.model_fields_set else current.state_scope_override
         return current.model_copy(update={
+            "state_scope_override": override,
+            "state_scope": effective_scope(self.registry.node_type(current.type).state, override),
             "parent_id": parent_id,
             "equipment": equipment,
             "minister": minister,
@@ -800,6 +815,8 @@ class WorldStore:
         if not self._config_accepts_status(card_type):
             config.pop("status", None)
         return Card(
+            state_scope=effective_scope(definition.state, row["state_scope"]),
+            state_scope_override=row["state_scope"],
             id=row["id"],
             parent_id=row["parent_id"],
             equipment=json.loads(row["equipment_json"]) if row["equipment_json"] else None,

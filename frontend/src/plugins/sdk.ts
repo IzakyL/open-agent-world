@@ -1,6 +1,6 @@
 import type { ComponentType } from "react";
 import type { NodeSurfaceLevel, NodeTypeCatalogItem, WorldCard } from "../types/world";
-export type { NodePresentation, NodeSurfaceLevel } from "../types/world";
+export type { NodePresentation, NodeSurfaceLevel, PluginStateSpec } from "../types/world";
 export { SchemaFields } from "./SchemaFields";
 export { t, useLocale } from "../i18n";
 export { useNestedFlowGestures } from "../canvas/useNestedFlowGestures";
@@ -9,12 +9,23 @@ export type { FileReference, OpenedFile } from "../state/openFiles";
 export { WorkspaceSection, useWorkspaceSections } from "../workspace/WorkspaceSection";
 export type { WorkspaceSectionProps } from "../workspace/WorkspaceSection";
 
+export interface CardStateStore {
+  get(): Promise<{ value: Record<string, unknown>; revision: number }>;
+  set(value: Record<string, unknown>, expectedRevision?: number): Promise<{ value: Record<string, unknown>; revision: number }>;
+  update(patch: Record<string, unknown>, expectedRevision?: number): Promise<{ value: Record<string, unknown>; revision: number }>;
+  delete(expectedRevision?: number): Promise<{ value: Record<string, unknown>; revision: number }>;
+}
+
 export type PluginSlot = "preview" | "body" | "settings" | "workspace";
 export interface PluginViewProps {
   card: WorldCard;
   definition: NodeTypeCatalogItem;
   level: NodeSurfaceLevel;
   host: {
+    /** Absent for state.mode=none. The host owns namespace and lifecycle. */
+    state?: CardStateStore;
+    /** Present only when the developer permits a choice; null restores its default. */
+    setDataPersistence?: (value: "shared" | "session" | null) => Promise<void>;
     /** Present only in a deployed Workspace. Reuse the view and hide engineering controls. */
     deployment?: import('../workspace/WorkspaceAccess').PluginDeploymentAccess;
     updateConfig(patch: Record<string, unknown>): Promise<void>;

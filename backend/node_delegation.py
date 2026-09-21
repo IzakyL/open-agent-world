@@ -77,7 +77,7 @@ class NodeDelegationMixin:
         # Same lock order as Summoning and portable capture. No waits for child work inside.
         async with services.summoning.admission(request.agent_id):
             self.delegation_authorize(node_id, capability)
-            if node_id in self.stopping:
+            if self.worker_key(node_id) in self.stopping:
                 raise ConflictError("This work source is stopping; new tasks cannot be admitted")
             context = manager.current_context
             if context is None or context.agent_id != capability.agent_id:

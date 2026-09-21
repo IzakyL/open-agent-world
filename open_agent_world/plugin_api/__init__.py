@@ -12,6 +12,7 @@ from backend.plugins.documents import NodeDocumentAction, NodeDocumentDefinition
 from backend.plugins.documents import NodeDocumentTransformation
 from backend.plugins.deployment import DeploymentSurface, NodeDeploymentDefinition
 from backend.plugins.resources import NodeResourceAction, NodeResourceContext
+from backend.plugins.state import PluginStateSpec, ScopedStateSpec, StatelessStateSpec, CardStateStore
 from backend.plugins.containers import NodeContainerDefinition
 from backend.plugins.execution import ExecutionPolicy, NodeExecutionDefinition, WorkItem, WorkOutcome
 from backend.plugins.execution import DelegationRequest, DelegationWait, DelegationStop
@@ -82,6 +83,7 @@ from backend.runs import InvocationContext, RuntimeInput
 from backend.world.models import Card, CardCreate, CardPatch, Edge
 
 __all__ = [
+    "PluginStateSpec", "ScopedStateSpec", "StatelessStateSpec", "CardStateStore",
     "DelegationRequest", "DelegationWait", "DelegationStop",
     "DeploymentSurface", "NodeDeploymentDefinition",
     "LegionPresetDefinition", "PresetNode", "PresetEdge",

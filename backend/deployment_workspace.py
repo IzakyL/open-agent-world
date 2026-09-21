@@ -26,14 +26,14 @@ def workspace_snapshot(manifest, services):
             plugin_types.add(card.type)
             config = {key: value for key, value in card.config.items() if key in access["config_fields"]}
         cards.append({"id": card.id, "type": card.type, "name": card.name, "status": card.status,
-                      "parent_id": manifest["legion_id"], "config": config})
+                      "parent_id": manifest["legion_id"], "config": config, "state_scope": card.state_scope})
         sections = {"conversation": ("sessions", "conversation", "participants"),
                     "sandbox": ("files", "preview", "terminal")}.get(card.type, ())
         if access is not None:
             sections = services.plugins.node_type(card.type).deployment.sections
         hidden.extend({"card_id": node_id, "section_id": section} for section in sections if section not in grants)
-    catalog = services.plugins.catalog().model_dump(mode="json")
-    presentation_keys = {"id", "plugin_id", "label", "icon", "color", "traits", "surfaces", "presentation", "has_execution"}
+    catalog = services.plugins.catalog().model_dump(mode="json", by_alias=True)
+    presentation_keys = {"id", "plugin_id", "label", "icon", "color", "traits", "surfaces", "presentation", "has_execution", "state"}
     definitions = [{key: value for key, value in node.items() if key in presentation_keys}
                    for node in catalog["node_types"] if node["id"] in types]
     for definition in definitions:
@@ -47,7 +47,20 @@ def workspace_snapshot(manifest, services):
 
 
 def workspace_router(manifest):
-    router = APIRouter(prefix="/workspace")
+    async def state_access(request: Request, services=Depends(get_services)):
+        session_id = request.headers.get("X-OAW-State-Session") or request.query_params.get("state_session")
+        node_id = request.path_params.get("node_id")
+        if not session_id or session_id == "default" or not node_id:
+            return
+        card = services.world.get_card(node_id)
+        if card.state_scope != "session":
+            return
+        with services.database.locked() as db:
+            session = db.execute("SELECT conversation_id FROM conversation_sessions WHERE id=?", (session_id,)).fetchone()
+        if session is None or not {"conversation", "sessions"}.intersection(manifest["permissions"].get(session["conversation_id"], [])):
+            raise HTTPException(404, "This conversation session is not published")
+
+    router = APIRouter(prefix="/workspace", dependencies=[Depends(state_access)])
 
     def require(node_id, *operations):
         if node_id in manifest.get("plugin_access", {}) or not set(operations).intersection(manifest["permissions"].get(node_id, [])):

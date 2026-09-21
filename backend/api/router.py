@@ -21,6 +21,7 @@ from backend.api.execution_credentials import router as execution_credentials_ro
 from backend.api.artifacts import router as artifacts_router
 from backend.api.library_translation import router as library_translation_router
 from backend.api.card_library import router as card_library_router
+from backend.api.card_state import router as card_state_router
 from backend.api.file_preview import router as file_preview_router
 from backend.plugins import PluginCatalog
 from backend.services import ApplicationServices
@@ -50,6 +51,7 @@ api_router.include_router(execution_credentials_router)
 api_router.include_router(plugin_assets_router)
 api_router.include_router(summoning_router)
 api_router.include_router(node_documents_router)
+api_router.include_router(card_state_router)
 api_router.include_router(node_resources_router)
 api_router.include_router(legions_router)
 api_router.include_router(legion_groups_router)
