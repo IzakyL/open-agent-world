@@ -1462,7 +1462,7 @@ button:disabled { cursor: not-allowed; opacity: 0.48; }
 }
 
 .component-palette:hover,
-.component-palette:focus-within { box-shadow: 0 16px 34px var(--shadow-deep), inset 0 1px 0 var(--highlight); }
+.component-palette:has(:focus-visible, .deck-editor:focus-within) { box-shadow: 0 16px 34px var(--shadow-deep), inset 0 1px 0 var(--highlight); }
 
 .deck-tabs {
   display: grid;
@@ -1568,8 +1568,9 @@ button:disabled { cursor: not-allowed; opacity: 0.48; }
     visibility 0s linear 260ms;
 }
 
+/* Pointer clicks retain focus; only keyboard focus or active editing pins the deck open. */
 .component-palette:hover .deck-stage,
-.component-palette:focus-within .deck-stage,
+.component-palette:has(:focus-visible, .deck-editor:focus-within) .deck-stage,
 .component-palette[data-tutorial-highlight] .deck-stage,
 .component-palette:has([data-palette-card][data-tutorial-highlight]) .deck-stage,
 body:has(.tutorial-bubble[data-step="place-demo"]) .component-palette .deck-stage {
@@ -1881,7 +1882,7 @@ body:has(.tutorial-bubble[data-step="place-demo"]) .component-palette .deck-stag
 
 .chunk-readout { display: none; }
 .edge-inspector { top: 68px; bottom: auto; transition: top 260ms cubic-bezier(0.22, 1, 0.36, 1); }
-.world-shell:has(.component-palette:is(:hover, :focus-within)) .edge-inspector { top: 206px; }
+.world-shell:has(.component-palette:hover, .component-palette :focus-visible, .component-palette .deck-editor:focus-within) .edge-inspector { top: 206px; }
 .backend-unavailable { top: 18px; }
 .activity-panel { top: 20px; }
 .toast-stack { top: 20px; }
@@ -1899,9 +1900,9 @@ body:has(.tutorial-bubble[data-step="place-demo"]) .component-palette .deck-stag
   .top-bar { top: auto; right: auto; bottom: 82px; left: 10px; transition: bottom 260ms cubic-bezier(0.22, 1, 0.36, 1); }
   .world-controls.react-flow__controls { right: 10px; bottom: 82px; transition: bottom 260ms cubic-bezier(0.22, 1, 0.36, 1); }
   .edge-inspector { top: 62px; bottom: auto; }
-  .world-shell:has(.component-palette:is(:hover, :focus-within)) .top-bar,
-  .world-shell:has(.component-palette:is(:hover, :focus-within)) .world-controls.react-flow__controls,
-  .world-shell:has(.component-palette:is(:hover, :focus-within)) .edge-inspector { bottom: 222px; }
+  .world-shell:has(.component-palette:hover, .component-palette :focus-visible, .component-palette .deck-editor:focus-within) .top-bar,
+  .world-shell:has(.component-palette:hover, .component-palette :focus-visible, .component-palette .deck-editor:focus-within) .world-controls.react-flow__controls,
+  .world-shell:has(.component-palette:hover, .component-palette :focus-visible, .component-palette .deck-editor:focus-within) .edge-inspector { bottom: 222px; }
 }
 
 @media (max-width: 620px) {
@@ -1932,9 +1933,9 @@ body:has(.tutorial-bubble[data-step="place-demo"]) .component-palette .deck-stag
   .legion-palette-entry .palette-item,
   .legion-palette-entry .palette-item:hover { min-height: var(--compact-card-height); height: var(--compact-card-height); }
   .component-palette .palette-item-icon { width: 38px; height: 38px; }
-  .world-shell:has(.component-palette:is(:hover, :focus-within)) .top-bar,
-  .world-shell:has(.component-palette:is(:hover, :focus-within)) .world-controls.react-flow__controls,
-  .world-shell:has(.component-palette:is(:hover, :focus-within)) .edge-inspector { bottom: 200px; }
+  .world-shell:has(.component-palette:hover, .component-palette :focus-visible, .component-palette .deck-editor:focus-within) .top-bar,
+  .world-shell:has(.component-palette:hover, .component-palette :focus-visible, .component-palette .deck-editor:focus-within) .world-controls.react-flow__controls,
+  .world-shell:has(.component-palette:hover, .component-palette :focus-visible, .component-palette .deck-editor:focus-within) .edge-inspector { bottom: 200px; }
 }
 .legion-container { width: 100%; height: 100%; border: 1px solid #82958c; border-radius: 24px; background: color-mix(in srgb, var(--surface, #f6f4ec) 82%, transparent); box-shadow: inset 0 0 0 7px #82958c0c; position: relative; }
 /* Empty team space belongs to the canvas; only its controls intercept gestures. */
