@@ -15,6 +15,7 @@ import { CardName } from "./CardName";
 import { IconButton } from "../components/IconButton";
 import { NODE_SURFACE_RADIUS, collapsedSurface, nodePresentation, nodeSurfaceSupport, surfaceLevelForNode, useNodeSurfaceStore, type NodeSurfaceLevel } from "../state/nodeSurfaces";
 import { useWorldStore } from "../state/worldStore";
+import { useConversationView } from "../state/conversationView";
 import { type CardType, type WorldCard } from "../types/world";
 import { TaskBoardBody } from "./TaskBoard";
 import { SkillToolboxBody, SkillNodeBody } from "./SkillToolbox";
@@ -151,6 +152,7 @@ const WorldCardNodeComponent = memo(function WorldCardNodeComponent({ data, sele
   };
 
   const onPointerDownCapture = (event: ReactPointerEvent<HTMLElement>) => {
+    if (card.type === 'conversation') useConversationView.getState().activate(card.id);
     pointerStart.current = { x: event.clientX, y: event.clientY, moved: false };
   };
 

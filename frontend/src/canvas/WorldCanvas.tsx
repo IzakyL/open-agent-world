@@ -23,6 +23,7 @@ import {
   type Viewport,
 } from "@xyflow/react";
 import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
+import { sessionVisibleCards, useConversationView } from '../state/conversationView';
 import { apiErrorMessage, worldApi } from "../api/client";
 import { transformationOptions } from "./documentTransformations";
 import { appointMinister, MINISTER_ROLE_CARD } from '../state/ministerRole';
@@ -119,7 +120,11 @@ export function WorldCanvas() {
   const wrapper = useRef<HTMLDivElement>(null);
   const clipboardTask = useRef<Promise<unknown>>(Promise.resolve());
   const clipboardPending = useRef(false);
-  const cards = useWorldStore((state) => state.cards);
+  const allCards = useWorldStore((state) => state.cards);
+  const activeConversationId = useConversationView(state => state.activeConversationId);
+  const activeSessionId = useConversationView(state => state.sessions[state.activeConversationId ?? '']);
+  const cards = useMemo(() => sessionVisibleCards(allCards, activeConversationId, activeSessionId),
+    [allCards, activeConversationId, activeSessionId]);
   const catalog = useWorldStore((state) => state.catalog);
   const stressCards = useWorldStore((state) => state.stressCards);
   const edges = useWorldStore((state) => state.edges);
@@ -154,6 +159,15 @@ export function WorldCanvas() {
   const deleteSelectedEdge = useWorldStore((state) => state.deleteSelectedEdge);
   const deleteCards = useWorldStore((state) => state.deleteCards);
   const selectCards = useWorldStore((state) => state.selectCards);
+  useEffect(() => {
+    const visible = new Set([...cards, ...stressCards].map(card => card.id));
+    const selected = selectedCardIds.filter(id => visible.has(id));
+    if (selected.length !== selectedCardIds.length) selectCards(selected);
+    if (selectedEdgeId) {
+      const edge = edges.find(item => item.id === selectedEdgeId);
+      if (edge && (!visible.has(edge.source) || !visible.has(edge.target))) selectEdge(undefined);
+    }
+  }, [cards, stressCards, edges, selectedCardIds, selectedEdgeId, selectCards, selectEdge]);
   const undo = useWorldStore((state) => state.undo);
   const redo = useWorldStore((state) => state.redo);
   const { fitView, getNodes, getViewport, screenToFlowPosition } = useReactFlow<CanvasNode, CanvasEdge>();

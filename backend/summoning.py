@@ -11,7 +11,7 @@ from backend.legions.models import LegionInstantiate, LegionRecord
 from backend.node_documents import read_document
 from backend.plugins.summoning import SummoningPolicy
 from backend.runs.models import TERMINAL_RUN_STATUSES
-from backend.world.models import CardCreate, CardPatch, EdgeCreate, Point
+from backend.world.models import CardBatchPatch, CardCreate, CardPatch, EdgeCreate, Point
 from backend.world.layout import WorldLayout
 from backend.events import EventType
 
@@ -39,6 +39,7 @@ class SummoningService:
             raise ConflictError('Summoned instance admission is closed while cleanup is pending')
 
     async def recover(self):
+        await self.recover_session_workspaces()
         for record in self.records():
             if record.get('stopping'):
                 try:
@@ -127,9 +128,84 @@ class SummoningService:
         world = self.services.world
         owned = {node.id for key in record["root_node_ids"] if world.maybe_get_card(key)
                  for node in [world.get_card(key), *world.owned_descendants(key)]}
-        if record.get("workspace_id") and world.maybe_get_card(record["workspace_id"]):
+        # Session workspaces belong to the session, not any individual summon.
+        if not record.get("session_id") and record.get("workspace_id") and world.maybe_get_card(record["workspace_id"]):
             owned.add(record["workspace_id"])
         return owned
+
+    def conversation_scope(self, context, owner):
+        if owner and owner.get("session_id"):
+            return {key: owner[key] for key in ("conversation_id", "session_id")}
+        if context:
+            conversation_id, session_id = self.services.run_manager._conversation_scope(
+                self.services.run_manager.get_run(context.run_id))
+            if conversation_id and session_id:
+                return {"conversation_id": conversation_id, "session_id": session_id}
+        return {}
+
+    def session_workspace(self, scope):
+        if not scope:
+            return None
+        return next((node for node in self.services.world.list_cards()
+                     if node.type == "core.virtual-workspace"
+                     and all(node.config.get(key) == value for key, value in scope.items())), None)
+
+    async def place_in_workspace(self, workspace, nodes, placement):
+        # Batch explicit positions so nested containers do not move children twice.
+        await self.services.update_cards([CardBatchPatch(node_id=node.id, patch=CardPatch(
+            position=Point(x=node.position.x + placement.offset.x, y=node.position.y + placement.offset.y),
+            **({"parent_id": workspace.id} if node.id in placement.root_node_ids else {}))) for node in nodes])
+        return await self.services.update_card(workspace.id, CardPatch(size=placement.size))
+
+    async def generated_edge(self, source_id, workspace_id):
+        if source_id != workspace_id and not any(edge.source == source_id and edge.target == workspace_id
+                and edge.relationship == "core.generated" for edge in self.services.world.list_edges()):
+            await self.services.create_edge(EdgeCreate(source=source_id, target=workspace_id, relationship="core.generated"))
+
+    async def recover_session_workspaces(self):
+        """Upgrade persisted summons using durable Run ancestry; safe to repeat after restart."""
+        services = self.services
+        async with services._node_mutation():
+            records = self.records()
+            for record in records:
+                if record.get("session_id") or record["reclaimed"]:
+                    continue
+                scope = {}
+                for attempt in record["attempts"]:
+                    run = services.run_manager.get_run(attempt["run_id"])
+                    scope = self.conversation_scope(run, None)
+                    if scope:
+                        break
+                if not scope:
+                    continue
+                workspace = services.world.maybe_get_card(record.get("workspace_id"))
+                if workspace:
+                    await services.update_card(workspace.id, CardPatch(config=scope))
+                record.update(scope)
+                self.save(record)
+            canonical = {}
+            for workspace in services.world.list_cards():
+                if workspace.type != "core.virtual-workspace" or not workspace.config.get("session_id"):
+                    continue
+                key = (workspace.config["conversation_id"], workspace.config["session_id"])
+                if key not in canonical:
+                    canonical[key] = workspace.id
+                    continue
+                target = services.world.get_card(canonical[key])
+                nodes = services.world.owned_descendants(workspace.id)
+                if nodes:
+                    layout = WorldLayout.capture(services.world)
+                    placement = layout.plan_container_append(target, services.world.list_members(target.id), nodes,
+                        services.plugins.node_type(target.type).container)
+                    await self.place_in_workspace(target, nodes, placement)
+                for edge in services.world.list_edges():
+                    if edge.target == workspace.id and edge.relationship == "core.generated":
+                        await self.generated_edge(edge.source, target.id)
+                for record in records:
+                    if record.get("workspace_id") == workspace.id:
+                        record["workspace_id"] = target.id
+                        self.save(record)
+                await services.delete_cards([workspace.id])
 
     def agents(self, node_id):
         self.spec(node_id)
@@ -240,33 +316,49 @@ class SummoningService:
                 now = datetime.now(timezone.utc)
                 portable = LegionRecord(id=agent.id, name=agent.name, description="", blueprint=blueprint,
                                         created_at=now, updated_at=now, revision=1)
-                layout = WorldLayout.capture(services.world)
+                scope = self.conversation_scope(context, owner)
+                if scope:
+                    services.conversations.get_session(scope["conversation_id"], scope["session_id"])
+                workspace = self.session_workspace(scope)
+                # Hidden session history must not push each new session farther off canvas.
+                hidden = {node.id for other in services.world.list_cards()
+                          if scope and other.type == "core.virtual-workspace" and other.config.get("session_id")
+                          and any(other.config.get(key) != value for key, value in scope.items())
+                          for node in [other, *services.world.owned_descendants(other.id)]}
+                layout = WorldLayout.capture(services.world, exclude_ids=hidden)
                 library_bounds = layout.footprints[node_id]
                 spec = services.plugins.node_type("core.virtual-workspace").container
                 preferred = Point(x=library_bounds.x + library_bounds.width + 140, y=library_bounds.y)
                 instance = await services.instantiate_legion(agent.id, LegionInstantiate(position={
                     "x": preferred.x + spec.content_inset[0],
                     "y": preferred.y + spec.content_inset[1],
-                }), record=portable, bindings=bindings)
-                workspace = None
+                }), record=portable, bindings=bindings, _publish_graph=False)
+                previous_workspace = workspace
+                created_workspace = workspace is None
                 try:
-                    placement = layout.plan_container(instance.nodes, spec, preferred=preferred)
-                    workspace = await services._create_card(CardCreate(
-                        type="core.virtual-workspace", name=f"{agent.name} workspace",
-                        position=placement.position, size=placement.size))
+                    if workspace is None:
+                        placement = layout.plan_container(instance.nodes, spec, preferred=preferred)
+                        workspace = await services._create_card(CardCreate(
+                            type="core.virtual-workspace", name="Session workspace" if scope else f"{agent.name} workspace",
+                            position=placement.position, size=placement.size, config=scope))
+                    else:
+                        placement = layout.plan_container_append(workspace, services.world.list_members(workspace.id), instance.nodes, spec)
+                    workspace = await self.place_in_workspace(workspace, instance.nodes, placement)
+                    # Publish final ownership so clients initialize generated cards as members.
                     for node in instance.nodes:
-                        await services.update_card(node.id, CardPatch(
-                            position=Point(x=node.position.x + placement.offset.x, y=node.position.y + placement.offset.y),
-                            **({"parent_id": workspace.id} if node.id in placement.root_node_ids else {})))
+                        services._publish_card_created_nowait(services.world.get_card(node.id))
+                    for edge in instance.edges:
+                        services._publish_edge_change_nowait(EventType.EDGE_CREATED, edge)
                     source_id = (services.capabilities.capability_for_id(capability.agent_id, capability.id).source_node_id
                                  if capability else node_id)
-                    await services.create_edge(EdgeCreate(
-                        source=source_id, target=workspace.id, relationship="core.generated"))
+                    await self.generated_edge(source_id, workspace.id)
                 except Exception:
-                    await services.delete_cards([n.id for n in instance.nodes] + ([workspace.id] if workspace else []))
+                    await services.delete_cards([n.id for n in instance.nodes] + ([workspace.id] if workspace and created_workspace else []))
+                    if previous_workspace:
+                        await services.update_card(previous_workspace.id, CardPatch(size=previous_workspace.size))
                     raise
                 record = {"id": str(uuid4()), "library_id": node_id, "agent_id": request.agent_id,
-                          "workspace_id": workspace.id,
+                          "workspace_id": workspace.id, **scope,
                           "name": agent.name, "caller_agent_id": capability.agent_id if capability else None,
                           "parent_instance_id": owner["id"] if owner else None,
                           "entry_agent_id": instance.node_ids[entry_key],

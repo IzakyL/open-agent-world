@@ -5,6 +5,17 @@ import type { NodePresentation, NodeSurfaceLevel } from "../types/world";
 import { buildCardDraft } from './helpers';
 
 describe("node surface state", () => {
+  it('starts new container members at node level and preserves explicit choices', () => {
+    useNodeSurfaceStore.setState({ surfaceLevels: { saved: 'inspector' }, baseLevels: {} });
+    useNodeSurfaceStore.getState().syncCards([
+      { id: 'member', type: 'text', parent_id: 'room' },
+      { id: 'saved', type: 'text', parent_id: 'room' },
+      { id: 'outside', type: 'text' },
+    ], TEST_CATALOG);
+    expect(useNodeSurfaceStore.getState().surfaceLevels).toMatchObject({
+      member: 'node', saved: 'inspector', outside: 'preview',
+    });
+  });
   it('migrates legacy workspace sizes and keeps resized details independent across collapse', async () => {
     const migrated = await useNodeSurfaceStore.persist.getOptions().migrate!({ workspaceSizes: { a: { width: 1234, height: 876 } }, surfaceLevels: { a: 'workspace' } }, 3);
     expect(migrated).toEqual({ surfaceSizes: { a: { workspace: { width: 1234, height: 876 } } }, surfaceLevels: { a: 'workspace' } });

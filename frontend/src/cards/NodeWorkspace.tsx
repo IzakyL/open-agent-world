@@ -19,6 +19,7 @@ import { CardName } from "./CardName";
 import { IconButton } from "../components/IconButton";
 import { collapsedSurface, nodePresentation, useNodeSurfaceStore } from "../state/nodeSurfaces";
 import { useWorldStore } from "../state/worldStore";
+import { useConversationView } from "../state/conversationView";
 import type { ConversationSession, WorldCard } from "../types/world";
 import { TaskBoardBody } from "./TaskBoard";
 import { SkillToolboxBody, SkillNodeBody } from "./SkillToolbox";
@@ -102,7 +103,10 @@ function AgentWorkspace({ card }: { card: WorldCard }) {
               type="button"
               className={`workspace-session agent-history-session nodrag nopan ${session.id === activeSessionId ? "is-active" : ""}`}
               key={session.id}
-              onClick={() => setActiveSessionId(session.id)}
+              onClick={() => {
+                setActiveSessionId(session.id);
+                useConversationView.getState().showSession(session.conversation_id, session.id);
+              }}
               aria-label={t("Show runtime history for {v0}", { v0: String(session.title) })}
             >
               <MessageSquare size={13} />

@@ -1873,7 +1873,7 @@ class ApplicationServices:
             return self._legion_summary(self.legions.delete(legion_id))
 
     async def instantiate_legion(
-        self, legion_id: str, request: LegionInstantiate, *, record=None, bindings=()
+        self, legion_id: str, request: LegionInstantiate, *, record=None, bindings=(), _publish_graph=True
     ) -> LegionInstance:
         async with self._node_mutation():
             event_transaction = _SandboxEventTransaction()
@@ -1886,10 +1886,11 @@ class ApplicationServices:
                 raise
             event_transaction.state = "committing"
             self._sandbox_event_transaction.reset(token)
-            for node in instance.nodes:
-                self._publish_card_created_nowait(node)
-            for edge in instance.edges:
-                self._publish_edge_change_nowait(EventType.EDGE_CREATED, edge)
+            if _publish_graph:
+                for node in instance.nodes:
+                    self._publish_card_created_nowait(node)
+                for edge in instance.edges:
+                    self._publish_edge_change_nowait(EventType.EDGE_CREATED, edge)
             for event in event_transaction.state_events:
                 self.events.publish_event_nowait(event)
             index = 0

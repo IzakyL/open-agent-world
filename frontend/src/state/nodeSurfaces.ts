@@ -77,7 +77,7 @@ interface NodeSurfaceState {
   capturePresentation: (cards: readonly WorldCard[], catalog: PluginCatalog) => Record<string, LegionNodePresentation>;
   restorePresentation: (cards: readonly WorldCard[], catalog: PluginCatalog, presentation?: Record<string, LegionNodePresentation>) => void;
   presentations: Record<string, NodePresentation>;
-  syncCards: (cards: readonly Pick<WorldCard, "id" | "type">[], catalog: PluginCatalog) => void;
+  syncCards: (cards: readonly (Pick<WorldCard, "id" | "type"> & Partial<Pick<WorldCard, "parent_id">>)[], catalog: PluginCatalog) => void;
   surfaceSizes: SurfaceSizes;
   resizeSurface: (nodeId: string, level: NodeSurfaceLevel, size: SurfaceSize) => void;
   surfaceLevels: Record<string, NodeSurfaceLevel>;
@@ -156,7 +156,10 @@ export const useNodeSurfaceStore = create<NodeSurfaceState>()(persist((set, get)
       if (!catalog.node_types.some(type => type.id === card.type)) continue;
       const presentation = nodePresentation(card.type, catalog);
       presentations[card.id] = presentation;
-      surfaceLevels[card.id] = supportedLevel(presentation, surfaceLevels[card.id] ?? presentation.initial);
+      const definition = catalog.node_types.find(type => type.id === card.type)!;
+      const initial = card.parent_id && !definition.container && presentation.states.includes("node")
+        ? "node" : presentation.initial;
+      surfaceLevels[card.id] = supportedLevel(presentation, surfaceLevels[card.id] ?? initial);
       baseLevels[card.id] = baseLevel(presentation, baseLevels[card.id] ?? surfaceLevels[card.id]);
     }
     return { presentations, surfaceLevels, baseLevels };

@@ -4,6 +4,7 @@ import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testi
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { worldApi } from "../api/client";
 import { useWorldStore } from "../state/worldStore";
+import { useConversationView } from "../state/conversationView";
 import type {
   ConversationMessage,
   ConversationSession,
@@ -53,6 +54,7 @@ describe("ConversationWorkspace snapshots", () => {
       value: vi.fn(),
     });
     useWorldStore.setState({ events: [], socketState: "closed", toasts: [] });
+    useConversationView.setState({ sessions: {}, activeConversationId: undefined });
     vi.spyOn(worldApi, "getConversation").mockResolvedValue({
       conversation_id: card.id,
       sessions: [session],
@@ -62,6 +64,33 @@ describe("ConversationWorkspace snapshots", () => {
   });
 
   afterEach(() => cleanup());
+
+  it('restores session selection after remount and switches the canvas scope between open conversations', async () => {
+    const otherSession = { ...session, id: 'session-2', title: 'Second', group_id: 'group', group_title: 'Research' };
+    vi.mocked(worldApi.getConversation).mockResolvedValue({
+      conversation_id: card.id, sessions: [{ ...session, group_id: 'group', group_title: 'Research' }, otherSession], agents: [],
+    });
+    const first = render(<ConversationWorkspace card={card} />);
+    fireEvent.click(await screen.findByRole('button', { name: /^Second/ }));
+    expect(useConversationView.getState().sessions[card.id]).toBe(otherSession.id);
+    first.unmount();
+    const restored = render(<ConversationWorkspace card={card} />);
+    await waitFor(() => expect(screen.getByRole('button', { name: /^Second/ }).getAttribute('aria-current')).toBe('true'));
+    const otherCard = { ...card, id: 'other-room' };
+    vi.mocked(worldApi.getConversation).mockResolvedValue({
+      conversation_id: otherCard.id, sessions: [{ ...session, conversation_id: otherCard.id }], agents: [],
+    });
+    const other = render(<ConversationWorkspace card={otherCard} />);
+    await waitFor(() => expect(useConversationView.getState().sessions[otherCard.id]).toBe(session.id));
+    // A background chat mounting/loading must not take over the active canvas.
+    expect(useConversationView.getState().activeConversationId).toBe(card.id);
+    fireEvent.pointerDown(other.container.querySelector('.conversation-workspace-grid')!);
+    expect(useConversationView.getState().activeConversationId).toBe(otherCard.id);
+    fireEvent.pointerDown(restored.container.querySelector('.conversation-workspace-grid')!);
+    expect(useConversationView.getState().activeConversationId).toBe(card.id);
+    expect(useConversationView.getState().sessions[card.id]).toBe(otherSession.id);
+    other.unmount();
+  });
 
   it("creates an inline named group with the only connected agent selected by default", async () => {
     vi.mocked(worldApi.getConversation).mockResolvedValue({

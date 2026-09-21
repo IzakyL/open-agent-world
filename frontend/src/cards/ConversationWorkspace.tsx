@@ -6,7 +6,7 @@ import { ConversationAttachments } from "./ConversationAttachments";
 import { ConversationActions } from "./ConversationActions";
 import { ContextAvatar } from "./ContextAvatar";
 import { ArrowDown, Bot, Check, Info, LoaderCircle, MessageSquare, Paperclip, Pencil, Plus, Send, Trash2, UserMinus, UserRound, Users, X } from "lucide-react";
-import { useEffect, useLayoutEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useRef, useState, type SetStateAction } from "react";
 import { createPortal } from "react-dom";
 import { apiErrorMessage, worldApi } from "../api/client";
 import {
@@ -16,6 +16,7 @@ import {
   resolveConversationTargets,
 } from "../state/conversationMentions";
 import { useWorldStore } from "../state/worldStore";
+import { useConversationView } from "../state/conversationView";
 import { useOpenFiles } from "../state/openFiles";
 import type { ContextStatus, ConversationAgent, ConversationAttachment, ConversationMessage, ConversationSession, WorldCard } from "../types/world";
 import { reportInteraction } from '../state/interactions';
@@ -67,7 +68,15 @@ export function ConversationWorkspace({ card }: { card: WorldCard }) {
   const contextEvent = useWorldStore((state) => state.events.find((event) => (
     event.type === "context_status" && event.conversation_id === card.id
   ))?.id);
-  const [activeSessionId, setActiveSessionId] = useState<string>();
+  const activeSessionId = useConversationView(state => state.sessions[card.id]);
+  const activateConversation = useCallback(() => useConversationView.getState().activate(card.id), [card.id]);
+  const setActiveSessionId = useCallback((value: SetStateAction<string | undefined>) => {
+    const view = useConversationView.getState();
+    view.selectSession(card.id, typeof value === 'function' ? value(view.sessions[card.id]) : value);
+  }, [card.id]);
+  useEffect(() => {
+    if (!useConversationView.getState().activeConversationId) activateConversation();
+  }, [activateConversation]);
   useEffect(() => () => useOpenFiles.getState().clear(card.id), [card.id, activeSessionId]);
 
   const [draft, setDraft] = useState("");
@@ -185,7 +194,7 @@ export function ConversationWorkspace({ card }: { card: WorldCard }) {
     void refresh();
     const timer = deployed ? window.setInterval(() => { void refresh(); }, 3000) : undefined;
     return () => { current = false; window.clearInterval(timer); };
-  }, [accessEvent, card.id, refreshEvent, socketLive, contextEvent, deployed]);
+  }, [accessEvent, card.id, refreshEvent, socketLive, contextEvent, deployed, setActiveSessionId]);
 
   useEffect(() => {
     const eligible = activeSession?.participant_ids.filter((id) => agents.some((agent) => agent.id === id && agent.connected)) ?? [];
@@ -360,7 +369,8 @@ export function ConversationWorkspace({ card }: { card: WorldCard }) {
   };
 
   return (
-    <div className="conversation-workspace-grid" style={{ gridTemplateColumns: columns }}>
+    <div className="conversation-workspace-grid" style={{ gridTemplateColumns: columns }}
+      onPointerDownCapture={activateConversation} onFocusCapture={activateConversation}>
       <WorkspaceSection id="sessions" title={t("Sessions")} className={`conversation-sessions-section${conversationInline || participantsInline ? " has-neighbor" : ""}`}>
       <div ref={setSessionRegion} className="conversation-session-region">
       <nav className="workspace-session-sidebar conversation-session-navigation nodrag nopan nowheel" aria-label={t("Sessions")}>

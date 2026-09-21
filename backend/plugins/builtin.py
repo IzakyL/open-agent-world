@@ -48,7 +48,8 @@ from pydantic import BaseModel
 
 
 class VirtualWorkspaceConfig(BaseModel):
-    pass
+    conversation_id: str | None = None
+    session_id: str | None = None
 
 
 class _LifecycleOperation(NodeLifecycleTransaction):
