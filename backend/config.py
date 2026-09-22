@@ -35,6 +35,9 @@ class Settings:
     control_plane_token: str | None = field(default=None, repr=False)
     storage_config_path: Path | None = None
     application_mode: str = "production"
+    # Official endpoint is unset until deployment; environment override is for
+    # development/acceptance, never an ordinary Settings UI preference.
+    marketplace_url: str | None = None
 
     @classmethod
     def from_environment(cls) -> "Settings":
@@ -68,6 +71,7 @@ class Settings:
             inactivity_timeout = parsed if parsed > 0 else None
         return cls(
             application_mode=mode,
+            marketplace_url=os.environ.get("OPEN_AGENT_WORLD_MARKETPLACE_URL") or None,
             data_root=root,
             storage_config_path=None if os.environ.get("OPEN_AGENT_WORLD_DATA_ROOT") else root.with_name(root.name + ".storage.json"),
             database_path=root / "database" / "world.sqlite3",

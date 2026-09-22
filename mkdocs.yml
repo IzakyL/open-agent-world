@@ -87,6 +87,7 @@ nav:
       - Add a custom interface: developers/frontend.md
       - Test and distribute: developers/testing.md
       - Local Pack distribution: pack-distribution.md
+      - Pack Store client: pack-store.md
       - Choose an extension point: developers/extension-points.md
   - Technical reference:
       - reference/index.md

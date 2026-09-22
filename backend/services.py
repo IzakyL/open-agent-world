@@ -561,6 +561,7 @@ class ApplicationServices:
     sandbox_backend: SandboxBackend | None = None
     plugin_bootstrap: Any = None
     pack_installations: Any = None
+    marketplace: Any = None
     _node_mutation_lock: asyncio.Lock = field(
         default_factory=asyncio.Lock, init=False, repr=False
     )
@@ -3862,4 +3863,6 @@ def create_services(
         services.sandbox_backend.pack_requirements = services.plugin_bootstrap.requirements
     from backend.packs.installation import PackInstallationManager
     services.pack_installations = PackInstallationManager(settings.data_root, plugin_registry)
+    from backend.packs.marketplace import MarketplaceClient
+    services.marketplace = MarketplaceClient(settings.marketplace_url)
     return services
