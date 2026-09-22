@@ -2076,6 +2076,11 @@ class ApplicationServices:
             edge_count=len(record.blueprint.edges),
             bounds=record.blueprint.bounds,
             node_types=sorted({node.type for node in record.blueprint.nodes}),
+            required_card_ids=sorted({
+                *(node.type for node in record.blueprint.nodes),
+                *(dependency.id for node in record.blueprint.nodes
+                  for dependency in node.dependencies if dependency.kind == "node_type"),
+            }),
             plugin_ids=sorted({
                 *(node.plugin_id for node in record.blueprint.nodes),
                 *(

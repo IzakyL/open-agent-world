@@ -1,4 +1,10 @@
 {
+  "Dependency details": ["Dependency details", "依赖详情"],
+  "Not collected": ["Not collected", "尚未收集"],
+  "Required packs": ["Required packs", "所需卡包"],
+  "Open required packs…": ["Open required packs…", "打开所需卡包…"],
+  "Required cards have no available owned pack: {cards}": ["Required cards have no available owned pack: {cards}", "以下依赖卡牌没有可用的已拥有卡包：{cards}"],
+  "This action requires uncollected cards:\n{cards}\n\nOpen these owned packs and continue?\n{packs}": ["This action requires uncollected cards:\n{cards}\n\nOpen these owned packs and continue?\n{packs}", "此操作需要尚未收集的卡牌：\n{cards}\n\n是否打开以下已拥有的卡包并继续？\n{packs}"],
   "Local Pack management": ["Local Pack management", "本地 Pack 管理"],
   "Pack file": ["Pack file", "Pack 文件"],
   "Install Pack from File...": ["Install Pack from File...", "从文件安装 Pack..."],

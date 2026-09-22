@@ -188,6 +188,7 @@ class LegionSummary(BaseModel):
     edge_count: int
     bounds: LegionBounds
     node_types: list[str]
+    required_card_ids: list[str] = Field(default_factory=list)
     plugin_ids: list[str]
     compatible: bool
     issues: list[str]

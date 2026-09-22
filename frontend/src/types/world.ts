@@ -251,6 +251,7 @@ export interface LegionSummary {
   edge_count: number;
   bounds: LegionBounds;
   node_types: CardType[];
+  required_card_ids?: string[];
   plugin_ids: string[];
   compatible: boolean;
   issues: string[];
