@@ -1,6 +1,7 @@
 import { expect, test } from '@playwright/test';
 
-test.skip(!process.env.OAW_PACK_ARTIFACT, 'Run scripts/run-pack-e2e.mjs with an externally built Greeter artifact');
+test.skip(!process.env.OAW_PACK_ARTIFACT && process.env.OAW_PACK_SOURCE !== 'store-official',
+  'Run scripts/run-pack-e2e.mjs with an externally built Greeter artifact or --store-official');
 
 async function dismissOnboarding(page: import('@playwright/test').Page) {
   const profile = await (await page.request.get('/api/application')).json();

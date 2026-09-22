@@ -12,8 +12,13 @@ The official Marketplace endpoint has not been deployed. An unconfigured build
 shows **Store unavailable → Retry**, while Packs, Cards, Deck and World continue
 to work. Development and acceptance can set `OPEN_AGENT_WORLD_MARKETPLACE_URL`
 to the Marketplace service origin (without `/v1`). This is a host environment
-override, not an ordinary Settings UI field. An official endpoint can become the
-host default when deployment is ready.
+override, not an ordinary Settings UI field. The single release-owned default is
+`backend/official_marketplace.py:OFFICIAL_MARKETPLACE_URL`. An explicit override
+wins; an explicit empty override disables Store for development/offline checks.
+All URL validation and networking remain lazy, so startup does not need internet.
+Tagged Desktop releases require a confirmed default. The default stays unset
+until the service is deployed and verified; no guessed address is shipped.
+See [production readiness and remaining operator steps](marketplace-production.md).
 
 ## Ownership and HTTP
 
