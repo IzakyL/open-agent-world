@@ -154,7 +154,7 @@ Declare a zero-argument plugin factory as the entry point:
 [project]
 name = "acme-open-agent-world-plugin"
 version = "1.2.0"
-requires-python = ">=3.11"
+requires-python = ">=3.12"
 dependencies = ["pydantic>=2.11,<3"]
 
 [project.entry-points."open_agent_world.plugins"]
