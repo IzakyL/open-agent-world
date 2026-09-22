@@ -560,6 +560,7 @@ class ApplicationServices:
     summoning: SummoningService | None = None
     sandbox_backend: SandboxBackend | None = None
     plugin_bootstrap: Any = None
+    pack_installations: Any = None
     _node_mutation_lock: asyncio.Lock = field(
         default_factory=asyncio.Lock, init=False, repr=False
     )
@@ -3723,7 +3724,7 @@ def create_services(
         (settings.data_root / directory).mkdir(parents=True, exist_ok=True)
     new_world = not settings.database_path.exists()
     database = Database(settings.database_path)
-    plugin_registry = plugins or load_plugin_registry(plugin_directories=settings.plugin_directories)
+    plugin_registry = plugins or load_plugin_registry(plugin_directories=settings.plugin_directories, data_root=settings.data_root)
     world = WorldStore(database, plugin_registry, chunk_size=settings.chunk_size, new_world=new_world)
     try:
         card_library = CardLibraryStore(database, plugin_registry)
@@ -3857,4 +3858,8 @@ def create_services(
     from backend.plugins.bootstrap import PluginEnvironmentBootstrap
     services.plugin_bootstrap = PluginEnvironmentBootstrap(settings.data_root, plugin_registry,
         services.sandbox_backend if isinstance(services.sandbox_backend, SandboxManager) else None)
+    if isinstance(services.sandbox_backend, SandboxManager):
+        services.sandbox_backend.pack_requirements = services.plugin_bootstrap.requirements
+    from backend.packs.installation import PackInstallationManager
+    services.pack_installations = PackInstallationManager(settings.data_root, plugin_registry)
     return services

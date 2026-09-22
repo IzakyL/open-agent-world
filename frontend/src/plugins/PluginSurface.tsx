@@ -13,7 +13,7 @@ class PluginBoundary extends Component<{ children: ReactNode }, { error: string 
   state: { error: string | null } = { error: null };
   static getDerivedStateFromError(error: unknown) { return { error: error instanceof Error ? error.message : String(error) }; }
   render() {
-    return this.state.error ? <div role="alert" className="mini-empty">{t("Plugin view unavailable:")} {this.state.error}</div> : this.props.children;
+    return this.state.error ? <div role="alert" className="mini-empty">{t("Pack view unavailable:")} {this.state.error}</div> : this.props.children;
   }
 }
 
@@ -24,6 +24,7 @@ export function PluginSurface({ card, slot, level, children }: {
   const access = useWorkspaceAccess();
   const sessionId = useCardStateSession(card.id);
   const definition = useWorldStore((s) => s.catalog.node_types.find((d) => d.id === card.type));
+  const runtime = useWorldStore((s) => definition ? s.catalog.frontend_modules?.[definition.plugin_id] : undefined);
   const updateCard = useWorldStore((s) => s.updateCard);
   const host = useMemo<PluginViewProps["host"]>(() => ({
     state: access.deployed || definition?.state?.mode === 'none' ? undefined : {
@@ -53,9 +54,9 @@ export function PluginSurface({ card, slot, level, children }: {
   }), [card.id, updateCard, access, definition, sessionId]);
   const reference = definition?.frontend?.[slot];
   if (!reference || !definition) return <>{children}</>;
-  const View = pluginView(definition.plugin_id, reference);
-  return <PluginBoundary key={`${card.id}:${definition.plugin_id}:${reference}:${card.state_scope}:${sessionId ?? ""}`}>
-    <Suspense fallback={<p role="status">{t("Loading plugin view...")}</p>}>
+  const View = pluginView(definition.plugin_id, reference, runtime);
+  return <PluginBoundary key={`${card.id}:${definition.plugin_id}:${runtime?.version}:${reference}:${card.state_scope}:${sessionId ?? ""}`}>
+    <Suspense fallback={<p role="status">{t("Loading Pack view...")}</p>}>
       <View card={card} definition={definition} level={level} host={host} />
     </Suspense>
   </PluginBoundary>;

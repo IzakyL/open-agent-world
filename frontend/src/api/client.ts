@@ -223,7 +223,7 @@ export function normalizeWorldSnapshot(input: unknown): WorldSnapshot {
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
   const headers = new Headers(init?.headers);
-  if (!(init?.body instanceof FormData) && init?.body !== undefined) {
+  if (!(init?.body instanceof FormData) && init?.body !== undefined && !headers.has("Content-Type")) {
     headers.set("Content-Type", "application/json");
   }
   headers.set("Accept", "application/json");
@@ -266,6 +266,16 @@ function unwrap<T>(input: unknown, key: string): T {
 }
 
 export const worldApi = {
+  getInstalledPacks(): Promise<import('../types/packs').PackInstallations> { return request('/packs'); },
+  inspectPack(file: File): Promise<import('../types/packs').PackInspection> {
+    return request('/packs/inspect', { method: 'POST', headers: { 'Content-Type': 'application/vnd.oaw.pack', 'X-OAW-Pack-Install': '1' }, body: file });
+  },
+  installPack(file: File): Promise<import('../types/packs').PackInstallations> {
+    return request('/packs/install', { method: 'POST', headers: { 'Content-Type': 'application/vnd.oaw.pack', 'X-OAW-Pack-Install': '1' }, body: file });
+  },
+  managePack(path: string, method: string, body?: unknown): Promise<import('../types/packs').PackInstallations> {
+    return request(`/packs/${path}`, { method, headers: { 'X-OAW-Pack-Install': '1' }, body: body === undefined ? undefined : JSON.stringify(body) });
+  },
   getGlue(): Promise<import("../state/glue").SharedGlue> { return request('/canvas/glue'); },
   saveGlue(patch: { revision: number; boxes?: Record<string, import("../state/glue").GlueBox>; bonds?: import("../state/glue").GlueBond[]; detach?: string[] }): Promise<import("../state/glue").SharedGlue> {
     // Snap candidates and older browser caches can carry gesture-only dx/dy.

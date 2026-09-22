@@ -212,11 +212,14 @@ export interface RelationshipCatalogItem {
 }
 
 export interface PackDefinition {
+  source?: 'bundled' | 'installed';
   id: string; plugin_id: string; name: string; description: string; cards: string[];
   artwork_asset?: string | null; artwork_url?: string | null; accent_color?: string | null;
 }
 
+export interface RuntimeFrontendModule { version: string; api_version: number; url: string }
 export interface PluginCatalog {
+  frontend_modules?: Record<string, RuntimeFrontendModule>;
   packs: PackDefinition[];
   plugins: Array<{
     id: string;
