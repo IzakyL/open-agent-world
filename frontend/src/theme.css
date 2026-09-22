@@ -164,7 +164,17 @@ button:disabled { cursor: not-allowed; opacity: 0.48; }
 
 .world-shell { background: var(--canvas); isolation: isolate; overflow: clip; }
 
-.world-canvas .react-flow { background: transparent; }
+.world-canvas .react-flow {
+  background: transparent;
+  touch-action: none;
+  overscroll-behavior: none;
+}
+
+.world-canvas .react-flow__node.draggable,
+.world-canvas .node-drag-region,
+.world-canvas .container-drag-region {
+  touch-action: none;
+}
 
 .world-canvas .react-flow__pane { cursor: grab; }
 .world-canvas .react-flow__pane:active { cursor: grabbing; }
