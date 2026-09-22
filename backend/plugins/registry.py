@@ -11,7 +11,7 @@ from backend.plugins.state import PluginStateSpec, LEGACY_STATE
 
 from backend.errors import GraphValidationError, PluginCompatibilityError, PluginUnavailableError
 from backend.plugins.lifecycle import NodeLifecycleHandler
-from backend.plugins.resources import NodeResourceAction
+from backend.plugins.resources import NodeResourceAction, served_file_pattern_valid
 from backend.plugins.template import NodeTemplateHandler
 from backend.plugins.presets import LegionPresetDefinition
 
@@ -28,7 +28,7 @@ from backend.plugins.deployment import NodeDeploymentDefinition
 from backend.plugins.containers import NodeContainerDefinition
 from backend.plugins.execution import NodeExecutionDefinition
 
-PLUGIN_API_VERSION = "1.23"
+PLUGIN_API_VERSION = "1.24"
 _IDENTIFIER = re.compile(r"^[a-z][a-z0-9]*(?:[._:/-][a-z0-9]+)*$")
 _API_VERSION = re.compile(r"^(0|[1-9]\d*)\.(0|[1-9]\d*)$")
 
@@ -271,6 +271,10 @@ class NodeTypeDefinition:
     template_remap_config: Callable[[dict[str, Any], Mapping[str, str]], dict[str, Any]] | None = None
     document: NodeDocumentDefinition | None = None
     resource_actions: Mapping[str, NodeResourceAction] = field(default_factory=dict)
+    # Files under storage_path the trusted UI may read (GET /api/nodes/{id}/files/{key}),
+    # as '/'-separated patterns matched segment by segment, e.g. "figures/*.png".
+    # Anything not listed stays private to the plugin; Agents never reach the route.
+    served_files: tuple[str, ...] = ()
     # Native state with no browser snapshot must never masquerade as undoable.
     deletion_warning: str | None = None
     execution: NodeExecutionDefinition | None = None
@@ -679,6 +683,9 @@ class PluginRegistry:
                     raise ValueError("resource actions require a valid name and handler")
                 if action.capability_kind and action.capability_kind not in staged.capability_handlers:
                     raise ValueError("resource action capabilities must be owned by the same plugin")
+            for pattern in definition.served_files:
+                if not isinstance(pattern, str) or not served_file_pattern_valid(pattern):
+                    raise ValueError(f"node type {definition.id!r} has an invalid served file pattern {pattern!r}")
             if definition.deployment is not None:
                 if not isinstance(definition.deployment, NodeDeploymentDefinition):
                     raise TypeError("deployment must be a NodeDeploymentDefinition")

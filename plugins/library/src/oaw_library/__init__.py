@@ -1,12 +1,19 @@
-"""Portable PDF documents and native OAW library containers."""
-from open_agent_world.plugin_api import PackDefinition
-import base64
+"""Library Papers: raw PDF and structured extractions as files of the node.
+
+The node document holds only the reader's own layer (page, notes, annotations).
+The PDF, page text, figure crops and versioned PaperStructure JSON are files in
+the node's storage directory (see store.py); structure comes from GROBID (grobid.py).
+"""
+import asyncio
+
 from pydantic import BaseModel, Field
 from open_agent_world.plugin_api import (
-    NodeTypeDefinition, NodeContainerDefinition, NodeDocumentDefinition,
-    NodeDocumentAction, NodeDocumentDownload, PluginDescriptor, RelationshipDefinition,
-    CapabilityDefinition, CapabilityGrantDefinition, ResourceValidationError,
+    CapabilityDefinition, CapabilityGrantDefinition, NodeContainerDefinition, NodeDocumentAction,
+    NodeDocumentDefinition, NodeLifecycleHandler, NodeLifecycleTransaction, NodeResourceAction,
+    NodeTypeDefinition, PackDefinition, PluginDescriptor, RelationshipDefinition, ResourceValidationError,
 )
+from . import store
+from .store import import_pdf
 
 class RegionConfig(BaseModel):
     description: str = "A field of literature, agents and research data."
@@ -17,37 +24,15 @@ class PaperConfig(BaseModel):
     doi: str = ""
 
 class PaperDocument(BaseModel):
-    filename: str = "paper.pdf"
-    pdf: str = ""
-    thumbnail: str = ""
-    pages: int = 0
-    text: list[str] = Field(default_factory=list)
     page: int = 1
     notes: str = ""
     annotations: list[dict] = Field(default_factory=list)
     study_layout: bool = False
     study_title: str = "学习画布"
 
-def import_pdf(value, arguments):
-    import pymupdf
-    try:
-        raw = base64.b64decode(arguments.get("pdf", ""), validate=True)
-        if not raw.startswith(b"%PDF-") or len(raw) > 25 * 1024 * 1024:
-            raise ValueError("Upload a PDF up to 25 MiB")
-        with pymupdf.open(stream=raw, filetype="pdf") as pdf:
-            if pdf.needs_pass or not len(pdf):
-                raise ValueError("PDF must contain readable, unencrypted pages")
-            thumbnail = pdf[0].get_pixmap(matrix=pymupdf.Matrix(.35, .35)).tobytes("png")
-            return {**value, "filename": str(arguments.get("filename", "paper.pdf"))[:200],
-                    "pdf": base64.b64encode(raw).decode(), "pages": len(pdf), "page": 1, "annotations": [], "notes": "", "study_layout": False,
-                    "text": [p.get_text() for p in pdf],
-                    "thumbnail": "data:image/png;base64," + base64.b64encode(thumbnail).decode()}
-    except Exception as exc:
-        raise ResourceValidationError(f"Cannot import PDF: {exc}") from exc
-
 def annotate(value, args):
     page = int(args.get("page", value["page"]))
-    if page < 1 or page > max(1, value["pages"]):
+    if not 1 <= page <= 100_000:  # The page count lives with the raw PDF object, not this document.
         raise ResourceValidationError("Page is outside the PDF")
     annotations = list(value.get("annotations", []))
     if "annotation" in args:
@@ -96,20 +81,62 @@ def annotate(value, args):
             "study_layout": True if "study_positions" in args else value.get("study_layout", False),
             "study_title": str(args.get("study_title", value.get("study_title", "学习画布"))).strip()[:100] or "学习画布"}
 
-def read(value, args):
-    page = int(args.get("page", 1))
-    if page < 1 or page > len(value["text"]):
-        raise ResourceValidationError("Page is outside the PDF")
-    return {"filename": value["filename"], "pages": value["pages"], "page": page,
-            "text": value["text"][page-1], "notes": value["notes"]}
+def read_notes(value, args):
+    return {"notes": value["notes"], "page": value["page"]}
+
+
+class ClearFiles(NodeLifecycleTransaction):
+    def __init__(self, paper):
+        self.paper = paper
+
+    async def finalize(self):
+        # Journaled by the host and retried after restart; the graph commit already happened.
+        await asyncio.to_thread(self.paper.clear)
+
+
+class PaperLifecycle(NodeLifecycleHandler):
+    async def prepare_delete(self, context, node):
+        return ClearFiles(store.PaperFiles(context.resources.node_storage_path(node.id)))
+
+
+STRUCTURE_TOOL = ("Read this paper's structured extraction (schema 1.0, produced by GROBID). Without path it returns an "
+    "overview: metadata, abstract, section/figure/table outline and warnings. Pass a dotted path such as 'sections.2', "
+    "'references' or 'metadata.authors' for details. Large values return an outline; request a narrower path.")
+REVISE_TOOL = ("Create a new extraction version by revising the active one. Read it first and pass its version as base_version. "
+    "Each change: op set|append|remove, a dotted path (e.g. 'metadata.title', 'sections.0.blocks.1.text', "
+    "'references', 'domain.materials') and a value for set/append. Fix only what the PDF text supports "
+    "(check with read_paper); the GROBID version stays available.")
+EXTRACT_TOOL = ("Run GROBID on this paper again in the background, for example when there is no extraction yet or "
+    "it was interrupted. The result becomes a new active version; your earlier revisions stay available.")
+
+# Inline (no $ref) so every model provider accepts it; store.Revision validates the same shape.
+REVISE_SCHEMA = {"type": "object", "required": ["base_version", "changes"], "additionalProperties": False, "properties": {
+    "base_version": {"type": "string", "maxLength": 20, "description": "The version you read, e.g. v1"},
+    "note": {"type": "string", "maxLength": 500, "description": "What you changed and why"},
+    "changes": {"type": "array", "minItems": 1, "maxItems": 200, "items": {"type": "object", "required": ["op", "path"],
+        "additionalProperties": False, "properties": {
+            "op": {"type": "string", "enum": ["set", "append", "remove"]},
+            "path": {"type": "string", "maxLength": 200},
+            "value": {"description": "New value for set/append (any JSON)"}}}}}}
+
 
 class LibraryPlugin:
-    descriptor = PluginDescriptor(id="research.library", version="0.2.0",
-        plugin_api_version="1.14", name="Library", description="PDF reading and native research spaces")
+    descriptor = PluginDescriptor(id="research.library", version="0.3.0",
+        plugin_api_version="1.24", name="Library", description="PDF reading, structured extraction and native research spaces")
 
     async def read_paper(self, context, capability, arguments):
-        document = await context.node_document_action(capability, "read", arguments)
-        return read(document["value"], arguments)
+        page = await context.node_resource_action(capability, "page_text", arguments)
+        document = await context.node_document_action(capability, "read", {})
+        return {**page, "notes": document["value"]["notes"]}
+
+    async def read_structure(self, context, capability, arguments):
+        return await context.node_resource_action(capability, "structure", arguments)
+
+    async def revise_structure(self, context, capability, arguments):
+        return await context.node_resource_action(capability, "revise", arguments)
+
+    async def reextract(self, context, capability, arguments):
+        return await context.node_resource_action(capability, "agent_extract", arguments)
 
     def register(self, registration):
         common = dict(color="#70a79a", deck_id="objects", deck_label="Objects", deck_icon="boxes",
@@ -118,21 +145,49 @@ class LibraryPlugin:
             description="Literature field with native movable members", icon="library", default_name="New Library",
             default_size=(1100, 800), config_model=RegionConfig, container=NodeContainerDefinition(content_inset=(24,150,24,32)),
             frontend={"body":"region"}, user_creatable=False, templateable=True, **common))
-        registration.register_node_type(NodeTypeDefinition(id="library.paper", label="Paper", description="PDF and reading notes",
+        registration.register_node_type(NodeTypeDefinition(id="library.paper", label="Paper", description="PDF, structured content and reading notes",
             icon="book-open", default_name="Paper", default_size=(300,210), config_model=PaperConfig,
-            traits=frozenset({"library.readable"}), templateable=True, deck_revision=2,
+            traits=frozenset({"library.readable"}), templateable=True, deck_revision=3, lifecycle=PaperLifecycle(),
             frontend={"preview":"thumbnail", "body":"reader", "workspace":"reader"},
             surfaces={"preview":True,"inspector":True,"workspace":True},
+            deletion_warning="Deleting this Paper permanently removes its PDF and every structured extraction version. Canvas undo and templates do not preserve them.",
+            served_files=store.SERVED_FILES,
+            resource_actions={
+                "import": NodeResourceAction(store.import_pdf),
+                "manifest": NodeResourceAction(store.manifest_action),
+                "extract": NodeResourceAction(store.reextract),
+                "activate": NodeResourceAction(store.activate),
+                "page_text": NodeResourceAction(store.page_text, capability_kind="library.read"),
+                "structure": NodeResourceAction(store.read_structure, capability_kind="library.structure"),
+                "revise": NodeResourceAction(store.revise, capability_kind="library.curate"),
+                "agent_extract": NodeResourceAction(store.agent_reextract, capability_kind="library.extract"),
+            },
             document=NodeDocumentDefinition(model=PaperDocument, max_size_bytes=48*1024*1024,
-                actions={"import":NodeDocumentAction(import_pdf), "annotate":NodeDocumentAction(annotate),
-                         "read":NodeDocumentAction(read, read_only=True, capability_kind="library.read")},
-                downloads={"pdf":lambda v: NodeDocumentDownload(v["filename"],base64.b64decode(v["pdf"]),"application/pdf")}), **common))
+                actions={"annotate":NodeDocumentAction(annotate),
+                         "read":NodeDocumentAction(read_notes, read_only=True, project=True, capability_kind="library.read")}), **common))
         registration.register_capability(CapabilityDefinition(kind="library.read", tool_name="read_paper",
-            description="Read extracted text and notes from a PDF page. Scanned pages may have no text.",
+            description="Read extracted plain text and your notes for one PDF page. Scanned pages may have no text.",
             input_schema={"type":"object","properties":{"page":{"type":"integer","minimum":1}},"additionalProperties":False}), self.read_paper)
+        registration.register_capability(CapabilityDefinition(kind="library.structure", tool_name="read_paper_structure",
+            description=STRUCTURE_TOOL, input_schema={"type":"object","properties":{
+                "path":{"type":"string","maxLength":200,"description":"Dotted path, e.g. sections.2 or references.0"},
+                "version":{"type":"string","maxLength":20,"description":"Extraction version; defaults to the active one"}},
+                "additionalProperties":False}), self.read_structure)
+        registration.register_capability(CapabilityDefinition(kind="library.curate", tool_name="revise_paper_structure",
+            description=REVISE_TOOL, input_schema=REVISE_SCHEMA), self.revise_structure)
+        registration.register_capability(CapabilityDefinition(kind="library.extract", tool_name="reextract_paper",
+            description=EXTRACT_TOOL, input_schema={"type":"object","properties":{
+                "note":{"type":"string","maxLength":500,"description":"Why a fresh GROBID run is needed"}},
+                "additionalProperties":False}), self.reextract)
         registration.register_relationship(RelationshipDefinition(id="library.read",label="Read paper",short_label="read",
-            description="Read this paper's text",source_traits=frozenset({"core.agent"}),target_traits=frozenset({"library.readable"}),
-            capabilities=(CapabilityGrantDefinition(kind="library.read"),),templateable=True))
+            description="Read this paper's text and structured extraction",source_traits=frozenset({"core.agent"}),
+            target_traits=frozenset({"library.readable"}),
+            capabilities=(CapabilityGrantDefinition(kind="library.read"),CapabilityGrantDefinition(kind="library.structure")),templateable=True))
+        registration.register_relationship(RelationshipDefinition(id="library.curate",label="Curate structure",short_label="curate",
+            description="Read this paper and publish revised extraction versions; earlier versions are kept",
+            source_traits=frozenset({"core.agent"}),target_traits=frozenset({"library.readable"}),
+            capabilities=(CapabilityGrantDefinition(kind="library.read"),CapabilityGrantDefinition(kind="library.structure"),
+                          CapabilityGrantDefinition(kind="library.curate"),CapabilityGrantDefinition(kind="library.extract")),templateable=True))
         registration.register_relationship(RelationshipDefinition(id="library.research",label="Research",short_label="research",
             description="Associate an Agent with a library; membership alone grants no paper access.",
             source_traits=frozenset({"core.agent"}),target_types=frozenset({"library.region"}),templateable=True))

@@ -6876,5 +6876,16 @@
   "done": ["Done", "已完成"],
   "blocked": ["Blocked", "已阻塞"],
   "Run tasks": ["Run tasks", "执行任务"],
-  "Existing conversations and files are included. Users with the password share this application’s data.": ["Existing conversations and files are included. Users with the password share this application’s data.", "部署会保留已有会话和文件。持有访问密码的用户共享此应用的数据。"]
+  "Existing conversations and files are included. Users with the password share this application’s data.": ["Existing conversations and files are included. Users with the password share this application’s data.", "部署会保留已有会话和文件。持有访问密码的用户共享此应用的数据。"],
+  "Structured extraction": ["Structured extraction", "结构化抽取"],
+  "Extraction version": ["Extraction version", "抽取版本"],
+  "Manual": ["Manual", "人工"],
+  "Re-extract": ["Re-extract", "重新解析"],
+  "Download JSON": ["Download JSON", "下载 JSON"],
+  "Authors": ["Authors", "作者"],
+  "{sections} sections · {figures} figures · {tables} tables · {references} references": ["{sections} sections · {figures} figures · {tables} tables · {references} references", "{sections} 节 · {figures} 图 · {tables} 表 · {references} 篇参考文献"],
+  "No structured extraction yet: {error}": ["No structured extraction yet: {error}", "尚无结构化抽取：{error}"],
+  "The last extraction failed: {error}": ["The last extraction failed: {error}", "上次抽取失败：{error}"],
+  "(untitled)": ["(untitled)", "（无标题）"],
+  "GROBID is extracting the structure…": ["GROBID is extracting the structure…", "GROBID 正在解析结构…"]
 }

@@ -4,7 +4,9 @@ Unlike node documents, these handlers operate on native resources (for example
 SQLite), not JSON snapshots. The host serializes them with graph mutations and
 runs blocking work off the event loop. Plugins own their format and lifecycle.
 """
+import re
 from dataclasses import dataclass
+from fnmatch import fnmatchcase
 from pathlib import Path
 from threading import Event
 from typing import Any, Callable
@@ -19,9 +21,37 @@ class NodeResourceContext:
     actor_id: str | None = None
     confirmed: bool = False  # Desktop only; never accepted from Agent arguments.
     state: CardStateStore | None = None
+    # background(work, commit, abandon=None): run ``work(cancelled)`` off every
+    # host lock, then ``commit(context, outcome)`` as a resource write on this node
+    # if it still exists. ``outcome`` is work's return value or the exception it
+    # raised. work must not touch the graph or storage_path; commit gets a fresh
+    # context. ``abandon()`` runs, without host locks, when the commit is skipped
+    # or fails while the host keeps running.
+    background: Callable[..., None] | None = None
 
 
 @dataclass(frozen=True, slots=True)
 class NodeResourceAction:
     handler: Callable[[NodeResourceContext, dict[str, Any]], dict[str, Any]]
     capability_kind: str | None = None
+
+
+_FILE_SEGMENT = re.compile(r"[A-Za-z0-9_][A-Za-z0-9._-]{0,127}")
+_PATTERN_SEGMENT = re.compile(r"[A-Za-z0-9_*][A-Za-z0-9._*-]{0,127}")
+
+
+def served_file_pattern_valid(pattern: str) -> bool:
+    parts = pattern.split("/")
+    return len(parts) <= 8 and all(_PATTERN_SEGMENT.fullmatch(part) for part in parts)
+
+
+def served_file(storage_path: Path, key: str, patterns: tuple[str, ...]) -> Path | None:
+    """The file ``key`` names under ``storage_path`` if a pattern serves it, else None."""
+    parts = key.split("/")
+    if len(parts) > 8 or not all(_FILE_SEGMENT.fullmatch(part) for part in parts):
+        return None
+    if not any(len(rule := pattern.split("/")) == len(parts) and all(map(fnmatchcase, parts, rule))
+               for pattern in patterns):
+        return None
+    path = storage_path.joinpath(*parts)
+    return path if path.is_file() else None

@@ -22,9 +22,13 @@ LLM agents use OAW model settings; XRD runs locally without an LLM API key.
 
 ## Library
 
-`plugins/library` registers `library.region`, `library.paper`, and the explicit
-`library.read` capability. PDF bytes, extracted page text, thumbnail, notes and
-reading page are revisioned OAW node documents, not browser-only storage.
+`plugins/library` registers `library.region`, `library.paper` and the
+`library.read` / `library.curate` relationships. The raw PDF, page text, thumbnail,
+figure crops and versioned structured extractions are files in the Paper's
+node storage; notes, annotations and reading page are its revisioned node document.
+Structured extraction uses a GROBID service (`OAW_GROBID_URL`, default
+`http://localhost:8070`); without it PDFs still import and read. See
+[plugins/library/README.md](plugins/library/README.md).
 Each PDF is limited to 25 MiB. Scanned PDFs are viewable but require separate OCR
 before an agent can read their text. No automatic web search/downloader is added.
 
