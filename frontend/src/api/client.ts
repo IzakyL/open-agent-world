@@ -189,6 +189,10 @@ export function normalizeLegionSummary(input: unknown): LegionSummary {
       height: asNumber(bounds.height, 0),
     },
     node_types: asStringArray(source.node_types),
+    members: Array.isArray(source.members) ? source.members.map(item => {
+      const member = asRecord(item);
+      return { name: String(member.name ?? ""), type: String(member.type ?? "") };
+    }) : undefined,
     plugin_ids: asStringArray(source.plugin_ids),
     compatible: source.compatible === true,
     issues: asStringArray(source.issues),

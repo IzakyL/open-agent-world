@@ -114,7 +114,7 @@ export function CardLibrary() {
   const renderCard = (item: LibraryCard) => {
     const included = deck?.entries.some(entry => same(entry, item));
     return <PhysicalLibraryCard key={`${item.kind}:${item.id}`} selected={Boolean(selected && same(selected, item))} included={Boolean(included)} color={item.definition?.color ?? "#78967b"}>
-      <button className="library-card-inspect" draggable={false} data-can-drag={item.available && !item.internal && !library.busy}
+      <button className="library-card-inspect" draggable={false} data-legion-preview={item.kind === "legion" ? item.id : undefined} data-can-drag={item.available && !item.internal && !library.busy}
         onPointerDown={event => {
           if (!item.available || item.internal || library.busy || event.button !== 0 || !event.isPrimary) return;
           suppressClick.current = false;

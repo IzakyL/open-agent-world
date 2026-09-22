@@ -2076,6 +2076,7 @@ class ApplicationServices:
             edge_count=len(record.blueprint.edges),
             bounds=record.blueprint.bounds,
             node_types=sorted({node.type for node in record.blueprint.nodes}),
+            members=[{"name": node.name, "type": node.type} for node in record.blueprint.nodes],
             required_card_ids=sorted({
                 *(node.type for node in record.blueprint.nodes),
                 *(dependency.id for node in record.blueprint.nodes
