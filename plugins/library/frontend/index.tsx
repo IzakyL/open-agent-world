@@ -10,6 +10,7 @@ import { useReaderEntrance } from "./useReaderEntrance";
 import { ReaderTransition } from "./GlassTransition";
 import { loadPaper, loadPaperPreview, rememberPaper, forgetPaper, withSource, type PaperDoc, type PaperPreview } from "./paperCache";
 import { ExtractionPanel, type Loc } from "./ExtractionPanel";
+import { LibraryBody, LibraryCatalog } from "./LibraryCollection";
 const PdfReading = lazy(() => import("./PdfReading").then(module => ({default:module.PdfReading})));
 
 async function api(path: string, body?: unknown) {
@@ -143,4 +144,4 @@ function Region({card,host}:PluginViewProps) {
     <label>{t("导入 / 拖入 PDF")}<input disabled={busy} type="file" accept=".pdf" multiple onChange={e=>{void upload(e.target.files);e.target.value="";}}/></label><small role="status">{message}</small>
   </div>;
 }
-export default {apiVersion:1,views:{region:Region,thumbnail:Thumbnail,reader:Reader}} satisfies FrontendPlugin;
+export default {apiVersion:1,views:{region:Region,thumbnail:Thumbnail,reader:Reader,collection:LibraryBody,catalog:LibraryCatalog}} satisfies FrontendPlugin;

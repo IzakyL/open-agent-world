@@ -14,6 +14,20 @@ from backend.plugins.state import CardStateStore
 
 
 @dataclass(frozen=True, slots=True)
+class NodeMember:
+    """A direct member of a container node, as its resource actions see it.
+
+    Read-only by contract: a container may read a member's files to serve its
+    own action (for example a search index) but never writes them.
+    """
+    node_id: str
+    type: str
+    name: str
+    storage_path: Path
+    config: dict[str, Any]
+
+
+@dataclass(frozen=True, slots=True)
 class NodeResourceContext:
     node_id: str
     storage_path: Path
@@ -28,6 +42,8 @@ class NodeResourceContext:
     # context. ``abandon()`` runs, without host locks, when the commit is skipped
     # or fails while the host keeps running.
     background: Callable[..., None] | None = None
+    # Direct members of a container node at the time of the action; empty otherwise.
+    members: tuple[NodeMember, ...] = ()
 
 
 @dataclass(frozen=True, slots=True)

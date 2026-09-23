@@ -65,12 +65,42 @@ retries. PDFs without a text layer are not sent to GROBID (it does not OCR).
 The schema is `schema.py` (`PaperStructure`, version 1.0). `domain` is free-form
 for field-specific facts (e.g. materials, synthesis conditions, properties).
 
+## Literature library
+
+A **Literature library** (`library.collection`) is a card folder for Papers: drag
+Paper cards into it, drop PDFs on it or use **Import PDFs**. Its header toggles
+between the member cards and its workspace, a catalog of up to 2000 Papers with
+full-text search, year filters, **Move out**, and results that open the reader at
+the matching page and GROBID box.
+
+Connections to the library mirror the Paper ones and apply to every current member,
+including Papers added later; moving a Paper out revokes them on the next call.
+
+| Connection | Tools |
+| --- | --- |
+| Read library | `list_papers`, `search_library`, and on every member `read_paper`, `read_paper_structure`, `view_paper_figure` |
+| Curate library | the above plus `revise_paper_structure` and `reextract_paper` on every member |
+
+`search_library` ranks passages with SQLite FTS5 (BM25, Porter stemming): title and
+keywords, abstract, section text in ~1200-character chunks, figure captions and
+table text, falling back to page text for Papers without an extraction. Each hit
+has the paper id, section heading, page, bbox, extraction path and `cite`
+(`<paper id>#p<page>`) for citing. Filters: year range, paper ids, passage kinds.
+The index (`index.sqlite` in the library's storage) is derived data. Every library
+action reconciles it with the current members and each Paper's PDF hash and active
+extraction version, re-indexing only what changed; deleting the library deletes
+it. Keyword search does not match synonyms or paraphrases; there is no embedding
+search yet. CJK text is tokenized by Unicode word rules, which suits English papers best.
+
 ## Agent fallback
 
 | Connection | Tools |
 | --- | --- |
-| Read paper | `read_paper` (page text + notes), `read_paper_structure` |
+| Read paper | `read_paper` (page text + notes), `read_paper_structure`, `view_paper_figure` |
 | Curate structure | the above plus `revise_paper_structure` and `reextract_paper` |
+
+`view_paper_figure` returns GROBID's crop of one figure as an image with its caption
+(select by label such as `Figure 1`, id `f1` or path `figures.0`).
 
 `read_paper_structure` without `path` returns an overview (outline, extractor,
 warnings); dotted paths such as `sections.2` or `references.0` return details, and

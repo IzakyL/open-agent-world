@@ -3,6 +3,10 @@
 The node document holds only the reader's own layer (page, notes, annotations).
 The PDF, page text, figure crops and versioned PaperStructure JSON are files in
 the node's storage directory (see store.py); structure comes from GROBID (grobid.py).
+
+A Literature library (``library.collection``) is a container of Papers with a
+full-text index (collection.py). Connecting an Agent to it grants the same kinds
+as connecting each member Paper, for every current member.
 """
 import asyncio
 
@@ -11,12 +15,16 @@ from open_agent_world.plugin_api import (
     CapabilityDefinition, CapabilityGrantDefinition, NodeContainerDefinition, NodeDocumentAction,
     NodeDocumentDefinition, NodeLifecycleHandler, NodeLifecycleTransaction, NodeResourceAction,
     NodeTypeDefinition, PackDefinition, PluginDescriptor, RelationshipDefinition, ResourceValidationError,
+    ToolImage, VisualToolResult,
 )
-from . import store
+from . import collection, store
 from .store import import_pdf
 
 class RegionConfig(BaseModel):
     description: str = "A field of literature, agents and research data."
+
+class CollectionConfig(BaseModel):
+    description: str = ""
 
 class PaperConfig(BaseModel):
     authors: str = ""
@@ -99,6 +107,10 @@ class PaperLifecycle(NodeLifecycleHandler):
         return ClearFiles(store.PaperFiles(context.resources.node_storage_path(node.id)))
 
 
+# The index is the library's only file; members keep their own files.
+CollectionLifecycle = PaperLifecycle
+
+
 STRUCTURE_TOOL = ("Read this paper's structured extraction (schema 1.0, produced by GROBID). Without path it returns an "
     "overview: metadata, abstract, section/figure/table outline and warnings. Pass a dotted path such as 'sections.2', "
     "'references' or 'metadata.authors' for details. Large values return an outline; request a narrower path.")
@@ -106,6 +118,30 @@ REVISE_TOOL = ("Create a new extraction version by revising the active one. Read
     "Each change: op set|append|remove, a dotted path (e.g. 'metadata.title', 'sections.0.blocks.1.text', "
     "'references', 'domain.materials') and a value for set/append. Fix only what the PDF text supports "
     "(check with read_paper); the GROBID version stays available.")
+FIGURE_TOOL = ("Look at one figure of this paper (the image GROBID cropped from the PDF) with its caption. Select it by "
+    "label (Figure 1, or just 1), id (f1) or path (figures.0); read_paper_structure lists the figures.")
+LIST_TOOL = ("List the Papers in this literature library with title, authors, year, venue, DOI, page count and "
+    "extraction status. Filter by text (title/author/venue/DOI) and publication year. Paper ids are the targets of "
+    "read_paper, read_paper_structure and view_paper_figure.")
+SEARCH_TOOL = ("Full-text search (BM25 keyword ranking) across every Paper in this literature library: title, abstract, "
+    "section text, figure and table captions. Returns ranked passages with paper id, section, page, location and a "
+    "cite value (paper#pN). Use specific terms; search again with other wording if needed, then read the source "
+    "passage before answering, and cite it as [paper#pN].")
+YEAR = {"type": "integer", "minimum": 1000, "maximum": 3000}
+LIST_SCHEMA = {"type": "object", "additionalProperties": False, "properties": {
+    "text": {"type": "string", "maxLength": 200, "description": "Substring of title, author, venue or DOI"},
+    "year_from": {**YEAR, "description": "Earliest publication year"}, "year_to": {**YEAR, "description": "Latest publication year"},
+    "limit": {"type": "integer", "minimum": 1, "maximum": 500}, "offset": {"type": "integer", "minimum": 0}}}
+SEARCH_SCHEMA = {"type": "object", "required": ["query"], "additionalProperties": False, "properties": {
+    "query": {"type": "string", "minLength": 1, "maxLength": 1000, "description": "Keywords; any word may match, rarer matches rank higher"},
+    "limit": {"type": "integer", "minimum": 1, "maximum": 30, "description": "Passages to return (default 8)"},
+    "per_paper": {"type": "integer", "minimum": 1, "maximum": 30, "description": "At most this many passages per paper (default 3)"},
+    "papers": {"type": "array", "maxItems": 500, "items": {"type": "string"}, "description": "Only these paper ids"},
+    "kinds": {"type": "array", "items": {"type": "string", "enum": ["metadata", "abstract", "section", "figure", "table", "page"]}},
+    "year_from": {**YEAR, "description": "Earliest publication year"}, "year_to": {**YEAR, "description": "Latest publication year"}}}
+PAPER_READ = ("library.read", "library.structure", "library.figure")
+PAPER_CURATE = (*PAPER_READ, "library.curate", "library.extract")
+
 EXTRACT_TOOL = ("Run GROBID on this paper again in the background, for example when there is no extraction yet or "
     "it was interrupted. The result becomes a new active version; your earlier revisions stay available.")
 
@@ -121,8 +157,8 @@ REVISE_SCHEMA = {"type": "object", "required": ["base_version", "changes"], "add
 
 
 class LibraryPlugin:
-    descriptor = PluginDescriptor(id="research.library", version="0.3.0",
-        plugin_api_version="1.24", name="Library", description="PDF reading, structured extraction and native research spaces")
+    descriptor = PluginDescriptor(id="research.library", version="0.4.0",
+        plugin_api_version="1.25", name="Library", description="PDF reading, structured extraction and native research spaces")
 
     async def read_paper(self, context, capability, arguments):
         page = await context.node_resource_action(capability, "page_text", arguments)
@@ -138,6 +174,20 @@ class LibraryPlugin:
     async def reextract(self, context, capability, arguments):
         return await context.node_resource_action(capability, "agent_extract", arguments)
 
+    async def view_figure(self, context, capability, arguments):
+        result = await context.node_resource_action(capability, "figure", arguments)
+        image = result.pop("image")
+        if image is None:
+            return result
+        import base64
+        return VisualToolResult(result, (ToolImage(base64.b64decode(image), result.pop("media_type")),))
+
+    async def list_papers(self, context, capability, arguments):
+        return await context.node_resource_action(capability, "list_papers", arguments)
+
+    async def search_library(self, context, capability, arguments):
+        return await context.node_resource_action(capability, "search", arguments)
+
     def register(self, registration):
         common = dict(color="#70a79a", deck_id="objects", deck_label="Objects", deck_icon="boxes",
                       default_status="available", statuses=frozenset({"available"}))
@@ -145,6 +195,20 @@ class LibraryPlugin:
             description="Literature field with native movable members", icon="library", default_name="New Library",
             default_size=(1100, 800), config_model=RegionConfig, container=NodeContainerDefinition(content_inset=(24,150,24,32)),
             frontend={"body":"region"}, user_creatable=False, templateable=True, **common))
+        registration.register_node_type(NodeTypeDefinition(id="library.collection", label="Literature library",
+            description="A folder of Papers with full-text search. One connection gives an Agent every Paper inside.",
+            icon="library", default_name="Literature library", default_size=(720, 480), config_model=CollectionConfig,
+            traits=frozenset({"library.collection"}), templateable=True, lifecycle=CollectionLifecycle(),
+            container=NodeContainerDefinition(member_traits=frozenset({"library.readable"}), max_members=2000,
+                min_size=(560, 360), content_inset=(24, 150, 24, 24)),
+            frontend={"body": "collection", "workspace": "catalog"},
+            surfaces={"preview": True, "inspector": True, "workspace": True},
+            deletion_warning="Deleting this library removes its search index. What happens to its Papers follows the container deletion you choose.",
+            resource_actions={
+                "catalog": NodeResourceAction(collection.list_papers),
+                "list_papers": NodeResourceAction(collection.list_papers, capability_kind="library.catalog"),
+                "search": NodeResourceAction(collection.search, capability_kind="library.search"),
+            }, **common))
         registration.register_node_type(NodeTypeDefinition(id="library.paper", label="Paper", description="PDF, structured content and reading notes",
             icon="book-open", default_name="Paper", default_size=(300,210), config_model=PaperConfig,
             traits=frozenset({"library.readable"}), templateable=True, deck_revision=3, lifecycle=PaperLifecycle(),
@@ -161,6 +225,7 @@ class LibraryPlugin:
                 "structure": NodeResourceAction(store.read_structure, capability_kind="library.structure"),
                 "revise": NodeResourceAction(store.revise, capability_kind="library.curate"),
                 "agent_extract": NodeResourceAction(store.agent_reextract, capability_kind="library.extract"),
+                "figure": NodeResourceAction(store.figure_image, capability_kind="library.figure"),
             },
             document=NodeDocumentDefinition(model=PaperDocument, max_size_bytes=48*1024*1024,
                 actions={"annotate":NodeDocumentAction(annotate),
@@ -179,15 +244,35 @@ class LibraryPlugin:
             description=EXTRACT_TOOL, input_schema={"type":"object","properties":{
                 "note":{"type":"string","maxLength":500,"description":"Why a fresh GROBID run is needed"}},
                 "additionalProperties":False}), self.reextract)
+        registration.register_capability(CapabilityDefinition(kind="library.figure", tool_name="view_paper_figure",
+            description=FIGURE_TOOL, input_schema={"type":"object","required":["figure"],"properties":{
+                "figure":{"type":"string","maxLength":100,"description":"Label (Figure 1), id (f1) or path (figures.0)"},
+                "version":{"type":"string","maxLength":20,"description":"Extraction version; defaults to the active one"}},
+                "additionalProperties":False}), self.view_figure)
+        registration.register_capability(CapabilityDefinition(kind="library.catalog", tool_name="list_papers",
+            description=LIST_TOOL, input_schema=LIST_SCHEMA, target_parameter="library"), self.list_papers)
+        registration.register_capability(CapabilityDefinition(kind="library.search", tool_name="search_library",
+            description=SEARCH_TOOL, input_schema=SEARCH_SCHEMA, target_parameter="library"), self.search_library)
         registration.register_relationship(RelationshipDefinition(id="library.read",label="Read paper",short_label="read",
-            description="Read this paper's text and structured extraction",source_traits=frozenset({"core.agent"}),
+            description="Read this paper's text, figures and structured extraction",source_traits=frozenset({"core.agent"}),
             target_traits=frozenset({"library.readable"}),
-            capabilities=(CapabilityGrantDefinition(kind="library.read"),CapabilityGrantDefinition(kind="library.structure")),templateable=True))
+            capabilities=tuple(CapabilityGrantDefinition(kind=kind) for kind in PAPER_READ),templateable=True))
         registration.register_relationship(RelationshipDefinition(id="library.curate",label="Curate structure",short_label="curate",
             description="Read this paper and publish revised extraction versions; earlier versions are kept",
             source_traits=frozenset({"core.agent"}),target_traits=frozenset({"library.readable"}),
-            capabilities=(CapabilityGrantDefinition(kind="library.read"),CapabilityGrantDefinition(kind="library.structure"),
-                          CapabilityGrantDefinition(kind="library.curate"),CapabilityGrantDefinition(kind="library.extract")),templateable=True))
+            capabilities=tuple(CapabilityGrantDefinition(kind=kind) for kind in PAPER_CURATE),templateable=True))
+        # Library connections mirror the Paper ones for every current member, plus library-wide listing and search.
+        library_wide = (CapabilityGrantDefinition(kind="library.catalog"), CapabilityGrantDefinition(kind="library.search"))
+        members = lambda kinds: tuple(CapabilityGrantDefinition(kind=kind, scope="members",
+            member_traits=frozenset({"library.readable"})) for kind in kinds)
+        registration.register_relationship(RelationshipDefinition(id="library.collection.read",label="Read library",
+            short_label="read", description="Search and read every Paper in this library, including Papers added later",
+            source_traits=frozenset({"core.agent"}), target_types=frozenset({"library.collection"}),
+            capabilities=(*library_wide, *members(PAPER_READ)), templateable=True))
+        registration.register_relationship(RelationshipDefinition(id="library.collection.curate",label="Curate library",
+            short_label="curate", description="Read library, plus revise and re-extract the structure of every Paper in it; earlier versions are kept",
+            source_traits=frozenset({"core.agent"}), target_types=frozenset({"library.collection"}),
+            capabilities=(*library_wide, *members(PAPER_CURATE)), templateable=True))
         registration.register_relationship(RelationshipDefinition(id="library.research",label="Research",short_label="research",
             description="Associate an Agent with a library; membership alone grants no paper access.",
             source_traits=frozenset({"core.agent"}),target_types=frozenset({"library.region"}),templateable=True))

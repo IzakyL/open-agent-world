@@ -372,6 +372,43 @@ def read_structure(context: NodeResourceContext, arguments: dict) -> dict:
     return {"version": entry["id"], "path": path, "value": value}
 
 
+def _normal(label: str) -> str:
+    return re.sub(r"[^0-9a-z]+", "", label.casefold().replace("figure", "").replace("fig", ""))
+
+
+def figure_image(context: NodeResourceContext, arguments: dict) -> dict:
+    """One figure's crop (base64 PNG) with its caption; select by label (Figure 1), id (f1) or path (figures.0)."""
+    manifest = view(context, require_manifest(context))
+    entry, structure = load_structure(context, manifest, arguments.get("version"))
+    figures, selector = structure["figures"], arguments.get("figure")
+    if not isinstance(selector, str) or not selector.strip():
+        raise ResourceValidationError("Select a figure by label (e.g. Figure 1), id (e.g. f1) or path (e.g. figures.0)")
+    wanted = selector.strip()
+    path = re.fullmatch(r"figures\.(\d+)", wanted)
+    if path:
+        index = int(path.group(1)) if int(path.group(1)) < len(figures) else None
+    else:
+        index = next((i for i, f in enumerate(figures) if f["id"] == wanted), None)
+        if index is None and _normal(wanted):
+            index = next((i for i, f in enumerate(figures) if _normal(f["label"]) == _normal(wanted)), None)
+    if index is None:
+        listing = ", ".join(f"{i}: {f['label'] or f['id']}" for i, f in enumerate(figures)) or "none"
+        raise ResourceValidationError(f"No figure {selector!r} in {entry['id']}. Figures: {listing}")
+    figure = figures[index]
+    result = {"version": entry["id"], "path": f"figures.{index}", "id": figure["id"], "label": figure["label"],
+              "caption": figure["caption"], "loc": figure["loc"]}
+    if not figure["image"] or not files(context).exists(figure["image"]):
+        # GROBID often splits a figure into a captioned entry and an unlabelled one holding the graphic.
+        page = (figure["loc"] or {}).get("page")
+        nearby = [f"figures.{i}" for i, other in enumerate(figures) if other is not figure and other["image"]
+                  and page is not None and (other["loc"] or {}).get("page") == page]
+        hint = (f"GROBID cropped no image for this entry, but {', '.join(nearby)} on the same page has one "
+                "(GROBID sometimes splits a figure from its caption); view that path." if nearby else
+                "GROBID located no image for this figure; read the page text instead.")
+        return {**result, "image": None, "hint": hint}
+    return {**result, "media_type": "image/png", "image": base64.b64encode(files(context).get(figure["image"])).decode()}
+
+
 class Change(BaseModel):
     model_config = ConfigDict(extra="forbid")
     op: Literal["set", "remove", "append"]
@@ -445,4 +482,4 @@ def revise(context: NodeResourceContext, arguments: dict) -> dict:
 
 
 __all__ = ["PaperFiles", "SERVED_FILES", "import_pdf", "manifest_action", "page_text", "reextract", "agent_reextract", "activate", "read_structure",
-           "revise"]
+           "revise", "figure_image"]

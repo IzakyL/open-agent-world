@@ -28,7 +28,7 @@ from backend.plugins.deployment import NodeDeploymentDefinition
 from backend.plugins.containers import NodeContainerDefinition
 from backend.plugins.execution import NodeExecutionDefinition
 
-PLUGIN_API_VERSION = "1.24"
+PLUGIN_API_VERSION = "1.25"
 _IDENTIFIER = re.compile(r"^[a-z][a-z0-9]*(?:[._:/-][a-z0-9]+)*$")
 _API_VERSION = re.compile(r"^(0|[1-9]\d*)\.(0|[1-9]\d*)$")
 
@@ -186,11 +186,18 @@ class PluginCatalog(BaseModel):
 
 @dataclass(frozen=True, slots=True)
 class CapabilityGrantDefinition:
-    """Relationships grant kinds; inline metadata is a legacy install input."""
+    """Relationships grant kinds; inline metadata is a legacy install input.
+
+    ``scope="members"`` grants the kind on each current direct member of the
+    target container (with ``member_traits``) instead of on the target itself.
+    Membership is read live, so moving a member out revokes it immediately.
+    """
     kind: str
     tool_prefix: str = ""
     description: str = ""
     input_schema: Mapping[str, Any] = field(default_factory=dict)
+    scope: Literal["target", "members"] = "target"
+    member_traits: frozenset[str] = frozenset()
 
 
 @dataclass(frozen=True, slots=True)
@@ -530,6 +537,8 @@ class PluginRegistry:
         # Legacy input is normalized once. Projection uses the same registry.
         for relationship in staged.relationships.values():
             for grant in relationship.capabilities:
+                if grant.scope not in {"target", "members"}:
+                    raise ValueError(f"Capability grant {grant.kind!r} has an unknown scope {grant.scope!r}")
                 existing = staged.capabilities.get(grant.kind) or self._capabilities.get(grant.kind)
                 if grant.tool_prefix:
                     definition = CapabilityDefinition(grant.kind, grant.tool_prefix,

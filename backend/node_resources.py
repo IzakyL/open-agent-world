@@ -8,7 +8,7 @@ from pydantic import BaseModel, ConfigDict, Field
 
 from backend.errors import NotFoundError, PermissionDeniedError, ResourceValidationError
 from backend.node_documents import validation_message
-from backend.plugins.resources import NodeResourceContext
+from backend.plugins.resources import NodeMember, NodeResourceContext
 
 logger = logging.getLogger(__name__)
 
@@ -22,7 +22,16 @@ class ResourceActionRequest(BaseModel):
 def _context(services, node_id, *, actor_id=None, confirmed=False, cancelled=None):
     return NodeResourceContext(node_id, services.resources.node_storage_path(node_id), cancelled or Event(),
         actor_id=actor_id, confirmed=confirmed, state=services.card_state.bind(node_id),
-        background=services.resource_jobs.starter(node_id) if services.resource_jobs else None)
+        background=services.resource_jobs.starter(node_id) if services.resource_jobs else None,
+        members=_members(services, node_id))
+
+
+def _members(services, node_id):
+    node = services.world.get_card(node_id)
+    if services.plugins.node_type(node.type).container is None:
+        return ()
+    return tuple(NodeMember(member.id, member.type, member.name, services.resources.node_storage_path(member.id),
+                            dict(member.config)) for member in services.world.list_members(node_id))
 
 
 async def invoke_resource_action(services, node_id, action, request, *, capability=None):

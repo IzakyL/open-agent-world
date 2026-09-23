@@ -29,6 +29,18 @@ Plugin-specific documentation can remain in its own package or repository. These
 
 ## Developing a plugin
 
+Plugin API 1.25 lets a connection to a container reach its members. A
+`CapabilityGrantDefinition(kind, scope="members", member_traits=...)` in a
+relationship grants `kind` on each current direct member of the target container
+that has those traits, instead of on the container itself. Membership is read on
+every derivation, so moving a member in grants it and moving it out revokes it
+on the next call; grants from a direct edge and from a container merge into one
+tool. Container nodes' resource actions also receive `NodeResourceContext.members`
+(`NodeMember`: id, type, name, `storage_path`, config), a read-only view of their
+direct members for derived data such as a search index. When a tool has more than
+40 authorized targets its target parameter lists no enum; a listing tool should
+return node IDs instead. The Library's `library.collection` uses all three.
+
 Plugin API 1.24 lets the trusted UI read plugin files. A node type lists
 `served_files`: `/`-separated patterns under its `storage_path`, matched segment by
 segment (`*` never crosses a `/`), e.g. `("raw.pdf", "figures/*.png")`. The UI reads

@@ -32,6 +32,9 @@ Structured extraction uses a GROBID service (`OAW_GROBID_URL`, default
 Each PDF is limited to 25 MiB. Scanned PDFs are viewable but require separate OCR
 before an agent can read their text. No automatic web search/downloader is added.
 
+- Place a **Literature library** from Objects to keep Papers in a searchable card
+  folder; connecting an Agent with **Read library** or **Curate library** grants
+  every Paper inside (see the Library README).
 - Create Paper nodes from Objects and import PDFs with the file picker.
 - Use native Legion team spaces to organize Papers and Agents. New standalone
   Library Regions are no longer offered; existing migrated Regions retain their
