@@ -278,7 +278,9 @@ def page_text(context: NodeResourceContext, arguments: dict) -> dict:
     if not isinstance(page, int) or isinstance(page, bool) or not 1 <= page <= manifest["pages"]:
         raise ResourceValidationError(f"Page must be between 1 and {manifest['pages']}")
     text = files(context).get_json(PAGES)[page - 1]
-    return {"filename": manifest["filename"], "pages": manifest["pages"], "page": page, "text": text}
+    # Same fingerprint as the library index: changes when the PDF or the active extraction does.
+    return {"filename": manifest["filename"], "pages": manifest["pages"], "page": page, "text": text,
+            "fingerprint": f"{manifest['sha256']}:{manifest.get('active') or 'text'}"}
 
 
 def reextract(context: NodeResourceContext, arguments: dict) -> dict:

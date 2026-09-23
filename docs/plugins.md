@@ -29,6 +29,13 @@ Plugin-specific documentation can remain in its own package or repository. These
 
 ## Developing a plugin
 
+Plugin API 1.26 adds `CapabilityContext.agent_capability(capability, kind, target_id)`:
+the calling Agent's own live capability of `kind` on another node, or
+`PermissionDeniedError` when it holds none (a missing node reports the same way).
+A handler can pass it to `node_resource_action` to check a source the Agent cites,
+for example that a quoted passage is on a Paper page the Agent can read, without
+the plugin gaining any access of its own. The Knowledge plugin uses it for provenance.
+
 Plugin API 1.25 lets a connection to a container reach its members. A
 `CapabilityGrantDefinition(kind, scope="members", member_traits=...)` in a
 relationship grants `kind` on each current direct member of the target container

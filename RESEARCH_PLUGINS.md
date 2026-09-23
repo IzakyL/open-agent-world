@@ -50,6 +50,17 @@ translation settings/routes, PDF.js resolution, palette registration and focused
 canvas interaction changes. The legacy file-drop hook attaches to the shared
 `.container-frame` shell and handles native file events only.
 
+## Knowledge
+
+`plugins/knowledge` adds four Data cards that Agents write explicitly: a Fact table,
+a Vector store, an Ontology and a Structure database. They connect only to Agents
+(Read / Curate); nothing is synchronised from Papers. Agent writes cite Paper pages,
+verified with the writing Agent's own live grant (Plugin API 1.26) and pinned to the
+Paper's fingerprint; `check_knowledge_provenance` marks records whose source changed.
+The Vector store embeds through an OpenAI-compatible service (`OAW_EMBEDDING_URL`) and
+falls back to keyword search without one. See
+[plugins/knowledge/README.md](plugins/knowledge/README.md).
+
 ## XRD
 
 **Early prototype, not yet carefully polished.** This port primarily establishes
